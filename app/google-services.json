@@ -1,1 +1,30 @@
-
+{
+  "project_info": {
+    "project_number": "342812088855",
+    "firebase_url": "https://washcarhma-pos-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "washcarhma-pos",
+    "storage_bucket": "washcarhma-pos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:342812088855:android:3c94e8d7d13def75e0da52",
+        "android_client_info": {
+          "package_name": "com.example.pos_hma"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6A3yZShAj6BDnVSMzn7rHV4gZE9ESALU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
