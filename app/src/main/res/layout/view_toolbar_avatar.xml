@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:foreground="?attr/selectableItemBackgroundBorderless"
+    android:padding="8dp">
+
+    <!-- Pakai CircleImageView (sudah ada dependensinya di project kamu) -->
+    <de.hdodenhof.circleimageview.CircleImageView
+        android:id="@+id/ivAvatar"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:src="@drawable/ic_person"
+        android:contentDescription="Profil"/>
+</FrameLayout>

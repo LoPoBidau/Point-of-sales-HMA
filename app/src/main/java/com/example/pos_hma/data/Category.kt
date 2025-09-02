@@ -1,15 +1,22 @@
 package com.example.pos_hma.data
 
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.IgnoreExtraProperties
 
+@IgnoreExtraProperties
 data class Category(
-    @get:Exclude @set:Exclude var id: String = "",
+    var id: String = "",
     var name: String = "",
     var slug: String = "",
-    var forType: String = "goods",  // "goods"|"service"|"both"
+    var forType: String = "both", // goods / service / both
+
+    // Tambahkan field yang memicu warning di logcat
     var isActive: Boolean = true,
+    var nameLowercase: String = "",
+
+    // Proyek terbaru pakai sortOrder; beberapa dokumen lama pakai "order"
     var sortOrder: Long = 0L,
-    var createdAt: Timestamp? = null,
-    var updatedAt: Timestamp? = null
-)
+    var order: Long? = null
+) {
+    // Biar aman saat sort, kalau sortOrder kosong pakai order lama
+    val effectiveOrder: Long get() = if (sortOrder != 0L) sortOrder else (order ?: 0L)
+}

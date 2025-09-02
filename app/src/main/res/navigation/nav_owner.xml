@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_owner"
+    app:startDestination="@id/ownerDashboardFragment">
+
+    <fragment
+        android:id="@+id/ownerDashboardFragment"
+        android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminDashboardFragment"
+        android:label="Dashboard" />
+
+    <fragment
+        android:id="@+id/ownerProductsFragment"
+        android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminProductFragment"
+        android:label="Barang dan Jasa" />
+
+    <fragment
+        android:id="@+id/ownerAdjustRequestsFragment"
+        android:name="com.example.pos_hma.ui.owner.SuperAdminAdjustRequestFragment"
+        android:label="Permintaan Penyesuaian" />
+
+</navigation>

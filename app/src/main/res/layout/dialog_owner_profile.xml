@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:padding="20dp"
+    android:layout_width="match_parent" android:layout_height="wrap_content">
+
+    <TextView
+        android:id="@+id/tvTitles"
+        android:text="Profil"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+    <View android:layout_width="match_parent" android:layout_height="8dp"/>
+
+    <TextView
+        android:text="Email"
+        android:textStyle="bold"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView
+        android:id="@+id/tvEmails"
+        android:text="-"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+    <View android:layout_width="match_parent" android:layout_height="8dp"/>
+
+    <TextView
+        android:text="Role"
+        android:textStyle="bold"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+    <TextView
+        android:id="@+id/tvRoles"
+        android:text="Loading…"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+
+    <View android:layout_width="match_parent" android:layout_height="16dp"/>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnLogouts"
+        android:text="Logout"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="match_parent" android:layout_height="wrap_content"/>
+</LinearLayout>

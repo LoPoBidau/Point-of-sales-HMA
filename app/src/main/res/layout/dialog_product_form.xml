@@ -8,8 +8,12 @@
         android:layout_width="match_parent" android:layout_height="wrap_content">
 
         <com.google.android.material.card.MaterialCardView
+            android:id="@+id/cardImage"
             android:layout_width="match_parent" android:layout_height="180dp"
-            app:cardCornerRadius="12dp" android:foreground="?android:attr/selectableItemBackground">
+            app:cardCornerRadius="12dp"
+            app:strokeWidth="0dp"
+            android:foreground="?android:attr/selectableItemBackground">
+
             <ImageView
                 android:id="@+id/imgPreview"
                 android:layout_width="match_parent" android:layout_height="match_parent"
@@ -17,6 +21,16 @@
                 android:alpha=".25"
                 android:contentDescription="@null"/>
         </com.google.android.material.card.MaterialCardView>
+
+        <!-- error foto -->
+        <TextView
+            android:id="@+id/tvPhotoError"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Foto wajib"
+            android:textColor="?attr/colorError"
+            android:visibility="gone"
+            android:layout_marginTop="4dp"/>
 
         <LinearLayout
             android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -33,33 +47,40 @@
                 android:text="Hapus Foto"/>
         </LinearLayout>
 
+        <!-- Nama -->
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content">
             <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etName"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:id="@+id/etName" android:hint="Nama"/>
+                android:hint="Nama"/>
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- SKU -->
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilSKU"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp">
             <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etSKU"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:id="@+id/etSKU" android:hint="SKU (unik)"/>
+                android:hint="SKU (unik)"/>
         </com.google.android.material.textfield.TextInputLayout>
 
         <!-- Kategori (dropdown) -->
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/tilCategory"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
-            <AutoCompleteTextView
+            android:layout_marginTop="8dp">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/actCategory"
                 android:hint="Kategori"
                 android:inputType="none"
@@ -78,39 +99,52 @@
             android:text="Tambah kategori"/>
 
         <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/swService"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:id="@+id/swService" android:layout_marginTop="8dp"
+            android:layout_marginTop="8dp"
             android:text="Apakah Jasa?"/>
 
+        <!-- Harga jual -->
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilPrice"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp">
             <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etPrice"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:id="@+id/etPrice" android:hint="Harga jual (Rp)" android:inputType="number"/>
+                android:hint="Harga jual (Rp)"
+                android:inputType="number"/>
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- Stok awal (barang saja) -->
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilStock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:id="@+id/tilStock" android:layout_marginTop="8dp">
+            android:layout_marginTop="8dp">
             <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etStock"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:id="@+id/etStock" android:hint="Stok awal" android:inputType="number"/>
+                android:hint="Stok awal"
+                android:inputType="number"/>
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- Harga modal awal (barang saja, wajib kalau stok > 0) -->
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilInitCost"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:id="@+id/tilInitCost" android:layout_marginTop="8dp">
+            android:layout_marginTop="8dp">
             <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/etInitCost"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:id="@+id/etInitCost" android:hint="Harga modal awal (Rp)" android:inputType="number"/>
+                android:hint="Harga modal awal (Rp)"
+                android:inputType="number"/>
         </com.google.android.material.textfield.TextInputLayout>
     </LinearLayout>
 </ScrollView>

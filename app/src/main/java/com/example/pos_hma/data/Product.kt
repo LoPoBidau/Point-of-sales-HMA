@@ -1,26 +1,33 @@
 package com.example.pos_hma.data
 
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.IgnoreExtraProperties
 
+@IgnoreExtraProperties
 data class Product(
-    @get:Exclude @set:Exclude var id: String = "",
+    var id: String = "",
+    var sku: String = "",
     var name: String = "",
     var nameLowercase: String = "",
-    var sku: String = "",
+
     var categoryId: String = "",
     var categoryName: String = "",
-    var type: String = "goods",         // "goods"|"service"
-    var trackStock: Boolean = true,     // service = false
+
+    // Firestore menyimpan "type" = "goods" / "service"
+    var type: String = "goods",
+    var trackStock: Boolean = true,
+
     var stock: Long = 0L,
-    var minStock: Long = 0L,
-    var lastCost: Long = 0L,            // harga beli terakhir (dipakai COGS ke depan)
+    var lastCost: Long = 0L,
     var salePrice: Long = 0L,
-    var isActive: Boolean = true,
+
     var images: List<String> = emptyList(),
+
+    // FIELD YANG HILANG DI LOGCAT
+    var isActive: Boolean = true,
+
     var createdAt: Timestamp? = null,
     var updatedAt: Timestamp? = null
 ) {
-    @get:Exclude
-    val isService: Boolean get() = type.equals("service", true) || !trackStock
+    val isService: Boolean get() = type == "service"
 }

@@ -65,7 +65,7 @@
                 android:layout_marginTop="8dp"
                 android:nestedScrollingEnabled="false"
                 android:overScrollMode="never"
-                tools:listitem="@layout/item_product"/>
+                tools:listitem="@layout/item_product_owner"/>
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 

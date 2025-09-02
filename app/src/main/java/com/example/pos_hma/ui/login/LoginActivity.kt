@@ -1,4 +1,3 @@
-
 package com.example.pos_hma.ui.login
 
 import android.content.Intent
@@ -8,7 +7,8 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.pos_hma.databinding.ActivityLoginBinding
 import com.example.pos_hma.ui.role.admin.DashboardAdminActivity
-import com.example.pos_hma.ui.role.super_admin.DashboardSuperAdminActivity
+import com.example.pos_hma.ui.role.super_admin.SuperAdminMainActivity
+import com.example.pos_hma.utils.AppFlags
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
@@ -25,6 +25,8 @@ class LoginActivity : AppCompatActivity() {
         auth = FirebaseAuth.getInstance()
         db = FirebaseFirestore.getInstance()
         binding.btnLogin.setOnClickListener { doLogin() }
+        // pastikan flag reset saat layar ini tampil
+        AppFlags.isLoggingOut = false
     }
 
     override fun onStart() {
@@ -73,11 +75,14 @@ class LoginActivity : AppCompatActivity() {
 
     private fun goToDashboard(role: String) {
         setLoading(false)
-        when (role) {
-            "super-admin" -> startActivity(Intent(this, DashboardSuperAdminActivity::class.java))
-            "admin" -> startActivity(Intent(this, DashboardAdminActivity::class.java))
+        AppFlags.isLoggingOut = false   // penting: biar listener aktif lagi
+        val intent = when (role) {
+            "superadmin", "super-admin", "owner" -> Intent(this, SuperAdminMainActivity::class.java)
+            "admin" -> Intent(this, DashboardAdminActivity::class.java)
             else -> { Toast.makeText(this, "Role tidak dikenali: $role", Toast.LENGTH_SHORT).show(); return }
         }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        startActivity(intent)
         finish()
     }
 
