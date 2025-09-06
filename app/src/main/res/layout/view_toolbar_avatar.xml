@@ -11,5 +11,6 @@
         android:layout_width="32dp"
         android:layout_height="32dp"
         android:src="@drawable/ic_person"
+        android:tint="?attr/colorOnSurface"
         android:contentDescription="Profil"/>
 </FrameLayout>

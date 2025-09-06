@@ -1,73 +1,100 @@
-package com.example.pos_hma.ui.role.super_admin
+package com.example.pos_hma.ui.role.admin
 
 import android.content.Intent
 import android.os.Bundle
-import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
-import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
-import androidx.navigation.ui.NavigationUI
+import androidx.navigation.ui.navigateUp
+import androidx.navigation.ui.setupActionBarWithNavController
+import androidx.navigation.ui.setupWithNavController
 import com.example.pos_hma.R
-import com.example.pos_hma.databinding.ActivitySuperAdminMainBinding
+import com.example.pos_hma.databinding.ActivityAdminCashierMainBinding
 import com.example.pos_hma.ui.login.LoginActivity
-import com.example.pos_hma.utils.AppFlags
-import com.example.pos_hma.utils.SnapshotDisposable
-import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.color.MaterialColors
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import de.hdodenhof.circleimageview.CircleImageView
+import com.example.pos_hma.utils.AppFlags
+import com.example.pos_hma.utils.SnapshotDisposable
 
-class SuperAdminMainActivity : AppCompatActivity() {
+class AdminCashierMainActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivitySuperAdminMainBinding
+    private lateinit var binding: ActivityAdminCashierMainBinding
     private lateinit var navController: NavController
     private lateinit var appBarConfig: AppBarConfiguration
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivitySuperAdminMainBinding.inflate(layoutInflater)
+
+        binding = ActivityAdminCashierMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // 1) Toolbar
         setSupportActionBar(binding.toolbar)
 
-        ensureRoleAllowedOrExit(setOf("owner", "super-admin", "superadmin")) {
-            val host = supportFragmentManager.findFragmentById(R.id.nav_host_owner) as NavHostFragment
-            navController = host.navController
+        // 2) Ambil NavHostFragment (ID HARUS: nav_host_cashier)
+        val host = supportFragmentManager.findFragmentById(R.id.nav_host_cashier) as? NavHostFragment
+            ?: error("NavHost R.id.nav_host_cashier tidak ditemukan di layout Activity!")
 
-            appBarConfig = AppBarConfiguration(
-                setOf(
-                    R.id.superAdminDashboardFragment,
-                    R.id.superAdminInventoryFragment,
-                    R.id.superAdminAdjustRequestFragment,
-                    R.id.superAdminReportFragment
-                )
+        // 3) NavController
+        navController = host.navController
+
+        // 4) Top-level destinations (ID harus match dengan nav graph)
+        appBarConfig = AppBarConfiguration(
+            setOf(
+                // Top-level: Katalog dan Pembayaran (Payment tanpa ikon back)
+                R.id.adminCashierCatalogFragment,
+                R.id.adminCashierPaymentFragment
             )
+        )
 
-            NavigationUI.setupWithNavController(binding.toolbar, navController, appBarConfig)
-            NavigationUI.setupWithNavController(binding.bottomNav, navController)
+        // 5) Hubungkan Toolbar & BottomNav
+        setupActionBarWithNavController(navController, appBarConfig)
+        binding.bottomNav.setupWithNavController(navController)
+
+        // 6) Refresh options menu + toggle bottom nav visibility on destination changes
+        navController.addOnDestinationChangedListener { _, dest, _ ->
+            invalidateOptionsMenu()
+            val hideBottomNavOn = setOf(R.id.adminCartFragment, R.id.adminCashierPaymentFragment)
+            val shouldHide = dest.id in hideBottomNavOn
+            binding.bottomNav.visibility = if (shouldHide) View.GONE else View.VISIBLE
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        // pastikan listener boleh jalan
-        AppFlags.isLoggingOut = false
+    override fun onSupportNavigateUp(): Boolean {
+        // gunakan extension navigateUp
+        return navController.navigateUp(appBarConfig) || super.onSupportNavigateUp()
     }
 
-    // ===== AppBar avatar bulat =====
+    // ==== menu profil/logout ====
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.menu_super_admin_appbar, menu)
+        menuInflater.inflate(R.menu.menu_admin_cashier_appbar, menu)
         val item = menu.findItem(R.id.action_profile)
-        val actionView: View? = item.actionView
-        val ivAvatar = actionView?.findViewById<CircleImageView>(R.id.ivAvatar)
-        actionView?.setOnClickListener { showProfileDialog() }
-        ivAvatar?.setOnClickListener { showProfileDialog() }
+
+        // Hide profile on cart & payment screens
+        val destId = navController.currentDestination?.id
+        val hideOn = setOf(R.id.adminCartFragment, R.id.adminCashierPaymentFragment)
+        val shouldHide = destId in hideOn
+        item.isVisible = !shouldHide
+
+        if (!shouldHide) {
+            val actionView: View? = item.actionView
+            val ivAvatar = actionView?.findViewById<CircleImageView>(R.id.ivAvatar)
+
+            // klik membuka dialog profil/logout
+            actionView?.setOnClickListener { showProfileDialog() }
+            ivAvatar?.setOnClickListener { showProfileDialog() }
+
+            // tint sesuai tema (dark/light)
+            val color = MaterialColors.getColor(binding.toolbar, com.google.android.material.R.attr.colorOnSurface)
+            ivAvatar?.setColorFilter(color, android.graphics.PorterDuff.Mode.SRC_IN)
+        }
         return true
     }
 
@@ -80,14 +107,14 @@ class SuperAdminMainActivity : AppCompatActivity() {
 
     private fun showProfileDialog() {
         val user = FirebaseAuth.getInstance().currentUser ?: run { goLogin(); return }
-        val v = LayoutInflater.from(this).inflate(R.layout.dialog_owner_profile, null, false)
-        val tvEmail = v.findViewById<TextView>(R.id.tvEmails)
-        val tvRole  = v.findViewById<TextView>(R.id.tvRoles)
-        val btnLogout = v.findViewById<MaterialButton>(R.id.btnLogouts)
+        val v = layoutInflater.inflate(R.layout.dialog_owner_profile, null, false)
+        val tvEmail = v.findViewById<android.widget.TextView>(R.id.tvEmails)
+        val tvRole  = v.findViewById<android.widget.TextView>(R.id.tvRoles)
+        val btnLogout = v.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnLogouts)
 
         tvEmail.text = user.email ?: "-"
-
         tvRole.text = "Loading…"
+
         user.getIdToken(false)
             .addOnSuccessListener { tok ->
                 val r = normalize(tok.claims["role"] as? String)
@@ -111,20 +138,17 @@ class SuperAdminMainActivity : AppCompatActivity() {
             .create()
 
         btnLogout.setOnClickListener {
-            // cegah listener nge-log error saat signOut
             AppFlags.isLoggingOut = true
             disposeAllChildSnapshotListeners()
             FirebaseAuth.getInstance().signOut()
             dlg.dismiss()
             goLogin()
-            // tidak perlu reset flag di sini karena activity akan finish
         }
 
         dlg.show()
     }
 
     private fun disposeAllChildSnapshotListeners() {
-        // dispose di semua fragment (navhost & anak-anak)
         val roots = supportFragmentManager.fragments
         for (f in roots) {
             (f as? SnapshotDisposable)?.disposeSnapshots()
@@ -137,34 +161,6 @@ class SuperAdminMainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun ensureRoleAllowedOrExit(allowed: Set<String>, onOk: () -> Unit) {
-        val user = FirebaseAuth.getInstance().currentUser
-        if (user == null) { goLogin(); return }
-
-        user.getIdToken(false)
-            .addOnSuccessListener { tok ->
-                val claimsRole = normalize(tok.claims["role"] as? String)
-                if (claimsRole != null && allowed.contains(claimsRole)) {
-                    onOk()
-                } else {
-                    FirebaseFirestore.getInstance().collection("users").document(user.uid).get()
-                        .addOnSuccessListener { snap ->
-                            val fsRole = normalize(snap.getString("role"))
-                            if (fsRole != null && allowed.contains(fsRole)) onOk() else goLogin()
-                        }
-                        .addOnFailureListener { goLogin() }
-                }
-            }
-            .addOnFailureListener {
-                FirebaseFirestore.getInstance().collection("users").document(user.uid).get()
-                    .addOnSuccessListener { snap ->
-                        val fsRole = normalize(snap.getString("role"))
-                        if (fsRole != null && allowed.contains(fsRole)) onOk() else goLogin()
-                    }
-                    .addOnFailureListener { goLogin() }
-            }
     }
 
     private fun normalize(r: String?) =
@@ -182,11 +178,5 @@ class SuperAdminMainActivity : AppCompatActivity() {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         startActivity(i)
         finish()
-    }
-
-    override fun onSupportNavigateUp(): Boolean {
-        return if (::navController.isInitialized) {
-            NavigationUI.navigateUp(navController, appBarConfig)
-        } else super.onSupportNavigateUp()
     }
 }

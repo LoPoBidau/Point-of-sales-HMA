@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_admin_cashier"
+    app:startDestination="@id/adminCashierCatalogFragment">
+
+    <fragment
+        android:id="@+id/adminCashierCatalogFragment"
+        android:name="com.example.pos_hma.ui.role.admin.AdminCashierCatalogFragment"
+        android:label="Katalog" />
+
+    <fragment
+        android:id="@+id/adminCartFragment"
+        android:name="com.example.pos_hma.ui.role.admin.AdminCashierCartFragment"
+        android:label="Keranjang" />
+
+    <fragment
+        android:id="@+id/adminCashierPaymentFragment"
+        android:name="com.example.pos_hma.ui.role.admin.AdminCashierPaymentFragment"
+        android:label="Pembayaran" />
+
+    <action
+        android:id="@+id/action_adminCashierCatalogFragment_to_adminCartFragment"
+        app:destination="@id/adminCartFragment"
+        app:enterAnim="@anim/slide_in_right"
+        app:exitAnim="@anim/slide_out_left"
+        app:popEnterAnim="@anim/slide_in_left"
+        app:popExitAnim="@anim/slide_out_right" />
+
+</navigation>

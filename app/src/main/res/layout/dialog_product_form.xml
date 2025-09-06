@@ -72,22 +72,21 @@
                 android:hint="SKU (unik)"/>
         </com.google.android.material.textfield.TextInputLayout>
 
-        <!-- Kategori (dropdown) -->
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/tilCategory"
             style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp">
+            android:hint="Kategori">
 
             <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/actCategory"
-                android:hint="Kategori"
-                android:inputType="none"
-                android:focusable="false"
-                android:clickable="true"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"/>
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:focusable="true"
+                android:focusableInTouchMode="true"
+                android:clickable="true" />
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.button.MaterialButton
@@ -96,7 +95,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="Tambah kategori"/>
+            android:text="Tambah kategori"
+            android:visibility="gone"/>
 
         <com.google.android.material.materialswitch.MaterialSwitch
             android:id="@+id/swService"

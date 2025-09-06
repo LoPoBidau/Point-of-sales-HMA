@@ -1,25 +1,27 @@
-package com.example.pos_hma.ui.owner
+package com.example.pos_hma.ui.role.super_admin
 
 import android.os.Bundle
-import android.view.*
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
-import com.example.pos_hma.R
 import com.example.pos_hma.data.StockAdjustRequest
 import com.example.pos_hma.databinding.FragmentSuperAdminAdjustRequestBinding
-import com.example.pos_hma.databinding.FragmentSuperAdminDashboardBinding
 import com.example.pos_hma.databinding.ItemAdjustRequestBinding
+import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.Query
 
-class SuperAdminAdjustRequestFragment : Fragment() {
+class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentSuperAdminAdjustRequestBinding? = null
     private val binding get() = _binding!!
@@ -31,7 +33,9 @@ class SuperAdminAdjustRequestFragment : Fragment() {
         onReject = { reject(it) }
     )
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
+    override fun onCreateView(
+        inflater: LayoutInflater, container: ViewGroup?, s: Bundle?
+    ): View {
         _binding = FragmentSuperAdminAdjustRequestBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -44,18 +48,36 @@ class SuperAdminAdjustRequestFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        reg?.remove(); reg = null
+        disposeSnapshots()
         _binding = null
         super.onDestroyView()
     }
 
-    private fun listen() {
+    // === SnapshotDisposable (dipanggil juga oleh Activity saat logout) ===
+    override fun disposeSnapshots() {
         reg?.remove()
+        reg = null
+    }
+
+    private fun listen() {
+        disposeSnapshots()
         reg = db.collection("stock_adjust_requests")
             .whereEqualTo("status", "PENDING")
-            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
             .addSnapshotListener { snap, e ->
-                if (e != null) { Toast.makeText(requireContext(), e.message, Toast.LENGTH_SHORT).show(); return@addSnapshotListener }
+                if (e != null) {
+                    // kalau rules/index bermasalah, tampilkan reason
+                    val msg = when {
+                        e is FirebaseFirestoreException &&
+                                e.code == FirebaseFirestoreException.Code.FAILED_PRECONDITION ->
+                            "Index Firestore belum dibuat untuk permintaan. Buka link 'Create index' di logcat."
+                        e is FirebaseFirestoreException &&
+                                e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                            "Permission Firestore ditolak. Cek security rules untuk koleksi stock_adjust_requests."
+                        else -> e.message ?: "Gagal memuat."
+                    }
+                    toast(msg); return@addSnapshotListener
+                }
                 val list = snap!!.documents.map { d ->
                     StockAdjustRequest(
                         id = d.id,
@@ -74,8 +96,9 @@ class SuperAdminAdjustRequestFragment : Fragment() {
     }
 
     private fun refreshOnce() {
-        db.collection("stock_adjust_requests").whereEqualTo("status", "PENDING")
-            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+        db.collection("stock_adjust_requests")
+            .whereEqualTo("status", "PENDING")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
             .get()
             .addOnSuccessListener { qs ->
                 val list = qs.documents.map { d ->
@@ -102,13 +125,14 @@ class SuperAdminAdjustRequestFragment : Fragment() {
             .setMessage("${r.productName}\nDelta: ${r.requestedDelta}\nAlasan: ${r.reason}")
             .setNegativeButton("Batal", null)
             .setPositiveButton("Setujui") { _, _ ->
-                val pRef = db.collection("products").document(r.sku)
+                val pRef  = db.collection("products").document(r.sku)
                 val reqRef = db.collection("stock_adjust_requests").document(r.id)
                 val now = FieldValue.serverTimestamp()
                 db.runTransaction { trx ->
                     val p = trx.get(pRef)
                     if (!p.exists()) throw IllegalStateException("Produk tidak ditemukan")
                     if (!(p.getBoolean("trackStock") ?: true)) throw IllegalStateException("Jasa tidak pakai stok")
+
                     val old = p.getLong("stock") ?: 0L
                     val newStock = old + r.requestedDelta
                     if (newStock < 0) throw IllegalStateException("Stok tidak boleh negatif")
@@ -122,8 +146,8 @@ class SuperAdminAdjustRequestFragment : Fragment() {
                     ))
                     trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
                     null
-                }.addOnSuccessListener { Toast.makeText(requireContext(), "Disetujui", Toast.LENGTH_SHORT).show() }
-                    .addOnFailureListener { e -> Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show() }
+                }.addOnSuccessListener { toast("Disetujui") }
+                    .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
             }.show()
     }
 
@@ -135,41 +159,45 @@ class SuperAdminAdjustRequestFragment : Fragment() {
             .setPositiveButton("Tolak") { _, _ ->
                 db.collection("stock_adjust_requests").document(r.id)
                     .update(mapOf("status" to "REJECTED", "decidedAt" to FieldValue.serverTimestamp()))
-                    .addOnSuccessListener { Toast.makeText(requireContext(), "Ditolak", Toast.LENGTH_SHORT).show() }
-                    .addOnFailureListener { e -> Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show() }
+                    .addOnSuccessListener { toast("Ditolak") }
+                    .addOnFailureListener { e -> toast(e.message ?: "Gagal menolak") }
             }.show()
     }
 
-    private class ReqAdapter(
-        val onApprove: (StockAdjustRequest) -> Unit,
-        val onReject: (StockAdjustRequest) -> Unit
-    ) : ListAdapter<StockAdjustRequest, ReqVH>(DIFF) {
+    private fun toast(s: String) =
+        Toast.makeText(requireContext(), s, Toast.LENGTH_LONG).show()
+}
 
-        companion object {
-            val DIFF = object : DiffUtil.ItemCallback<StockAdjustRequest>() {
-                override fun areItemsTheSame(a: StockAdjustRequest, b: StockAdjustRequest) = a.id == b.id
-                override fun areContentsTheSame(a: StockAdjustRequest, b: StockAdjustRequest) = a == b
-            }
-        }
+/* ===== Adapter ===== */
+private class ReqAdapter(
+    val onApprove: (StockAdjustRequest) -> Unit,
+    val onReject: (StockAdjustRequest) -> Unit
+) : ListAdapter<StockAdjustRequest, ReqVH>(DIFF) {
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ReqVH {
-            val b = ItemAdjustRequestBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-            return ReqVH(b, onApprove, onReject)
+    companion object {
+        val DIFF = object : DiffUtil.ItemCallback<StockAdjustRequest>() {
+            override fun areItemsTheSame(a: StockAdjustRequest, b: StockAdjustRequest) = a.id == b.id
+            override fun areContentsTheSame(a: StockAdjustRequest, b: StockAdjustRequest) = a == b
         }
-        override fun onBindViewHolder(holder: ReqVH, position: Int) = holder.bind(getItem(position))
-        override fun getItemCount() = super.getItemCount()
     }
 
-    private class ReqVH(
-        private val b: ItemAdjustRequestBinding,
-        val onApprove: (StockAdjustRequest) -> Unit,
-        val onReject: (StockAdjustRequest) -> Unit
-    ) : RecyclerView.ViewHolder(b.root) {
-        fun bind(r: StockAdjustRequest) {
-            b.tvTitle.text = r.productName
-            b.tvSub.text = "SKU ${r.sku} • ${if (r.requestedDelta>=0) "+" else ""}${r.requestedDelta}\nAlasan: ${r.reason}"
-            b.btnApprove.setOnClickListener { onApprove(r) }
-            b.btnReject.setOnClickListener { onReject(r) }
-        }
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ReqVH {
+        val b = ItemAdjustRequestBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return ReqVH(b, onApprove, onReject)
+    }
+
+    override fun onBindViewHolder(holder: ReqVH, position: Int) = holder.bind(getItem(position))
+}
+
+private class ReqVH(
+    private val b: ItemAdjustRequestBinding,
+    val onApprove: (StockAdjustRequest) -> Unit,
+    val onReject: (StockAdjustRequest) -> Unit
+) : RecyclerView.ViewHolder(b.root) {
+    fun bind(r: StockAdjustRequest) {
+        b.tvTitle.text = r.productName
+        b.tvSub.text = "SKU ${r.sku} • ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}\nAlasan: ${r.reason}"
+        b.btnApprove.setOnClickListener { onApprove(r) }
+        b.btnReject.setOnClickListener { onReject(r) }
     }
 }

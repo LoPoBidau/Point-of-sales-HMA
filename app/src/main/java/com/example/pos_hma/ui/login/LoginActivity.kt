@@ -6,7 +6,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.pos_hma.databinding.ActivityLoginBinding
-import com.example.pos_hma.ui.role.admin.DashboardAdminActivity
+import com.example.pos_hma.ui.role.admin.AdminCashierMainActivity
 import com.example.pos_hma.ui.role.super_admin.SuperAdminMainActivity
 import com.example.pos_hma.utils.AppFlags
 import com.google.firebase.auth.FirebaseAuth
@@ -78,7 +78,7 @@ class LoginActivity : AppCompatActivity() {
         AppFlags.isLoggingOut = false   // penting: biar listener aktif lagi
         val intent = when (role) {
             "superadmin", "super-admin", "owner" -> Intent(this, SuperAdminMainActivity::class.java)
-            "admin" -> Intent(this, DashboardAdminActivity::class.java)
+            "admin" -> Intent(this, AdminCashierMainActivity::class.java)
             else -> { Toast.makeText(this, "Role tidak dikenali: $role", Toast.LENGTH_SHORT).show(); return }
         }
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)

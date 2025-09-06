@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.google.android.material.card.MaterialCardView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="3dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:id="@+id/tvTotalLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Total"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvTotal"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Rp 0"
+                android:textStyle="bold"
+                android:textSize="20sp"
+                android:gravity="end" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="8dp" />
+
+            <TextView
+                android:id="@+id/tvPaidLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Nominal Bayar" />
+
+            <TextView
+                android:id="@+id/tvPaid"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Rp 0"
+                android:textStyle="bold"
+                android:textSize="22sp"
+                android:gravity="end" />
+
+            <TextView
+                android:id="@+id/tvChange"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Kembalian: Rp 0"
+                android:textSize="14sp"
+                android:gravity="end" />
+
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+
+    <androidx.gridlayout.widget.GridLayout
+        android:id="@+id/keypad"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="16dp"
+        android:layout_weight="1"
+        app:alignmentMode="alignMargins"
+        app:columnCount="3"
+        app:rowCount="4"
+        app:rowOrderPreserved="false"
+        app:useDefaultMargins="true">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK1"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="1"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="0"
+            app:layout_column="0" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK2"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="2"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="0"
+            app:layout_column="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK3"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="3"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="0"
+            app:layout_column="2" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK4"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="4"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="1"
+            app:layout_column="0" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK5"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="5"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="1"
+            app:layout_column="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK6"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="6"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="1"
+            app:layout_column="2" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK7"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="7"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="2"
+            app:layout_column="0" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK8"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="8"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="2"
+            app:layout_column="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK9"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="9"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="2"
+            app:layout_column="2" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnClear"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="C"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="3"
+            app:layout_column="0" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnK0"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="0"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="3"
+            app:layout_column="1" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBackspace"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:minWidth="0dp"
+            android:minHeight="0dp"
+            android:text="DEL"
+            android:textSize="18sp"
+            app:layout_columnWeight="1"
+            app:layout_rowWeight="1"
+            app:layout_gravity="fill"
+            app:layout_row="3"
+            app:layout_column="2" />
+
+    </androidx.gridlayout.widget.GridLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnPayNow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Bayar"
+        android:enabled="false"
+        android:layout_marginBottom="8dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnCancel"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Batal Bayar" />
+
+</LinearLayout>

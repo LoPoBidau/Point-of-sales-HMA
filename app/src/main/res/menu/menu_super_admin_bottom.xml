@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/superAdminDashboardFragment"
+        android:title="Dashboard"
+        android:icon="@drawable/ic_home"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/superAdminInventoryFragment"
+        android:title="Inventori"
+        android:icon="@drawable/ic_inventory"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/superAdminReportFragment"
+        android:icon="@drawable/ic_report"
+        android:title="Laporan" />
+
+    <item
+        android:id="@+id/superAdminAdjustRequestFragment"
+        android:title="Permintaan"
+        android:icon="@drawable/ic_request"
+        app:showAsAction="never" />
+
+</menu>

@@ -77,7 +77,7 @@
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
                 android:paddingBottom="72dp"
-                tools:listitem="@layout/item_product_owner"/>
+                tools:listitem="@layout/item_product_super_admin"/>
         </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
     </LinearLayout>
 

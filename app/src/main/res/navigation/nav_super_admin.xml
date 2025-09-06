@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/nav_owner"
+    app:startDestination="@id/superAdminDashboardFragment">
+
+
+    <fragment
+        android:id="@+id/superAdminDashboardFragment"
+        android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminDashboardFragment"
+        android:label="Dashboard" />
+    <fragment
+        android:id="@+id/superAdminInventoryFragment"
+        android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminInventoryFragment"
+        android:label="Inventori"
+        tools:layout="@layout/fragment_super_admin_inventory" />
+    <fragment
+        android:id="@+id/superAdminAdjustRequestFragment"
+        android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminAdjustRequestFragment"
+        android:label="Persetujuan Stok" />
+    <fragment
+        android:id="@+id/superAdminReportFragment"
+        android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminReportFragment"
+        android:label="Laporan" />
+
+
+</navigation>

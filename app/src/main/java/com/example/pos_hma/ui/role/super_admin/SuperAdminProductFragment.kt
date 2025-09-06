@@ -1,6 +1,5 @@
 package com.example.pos_hma.ui.role.super_admin
 
-import android.content.DialogInterface
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
@@ -32,7 +31,7 @@ import com.google.firebase.storage.FirebaseStorage
 import java.text.NumberFormat
 import java.util.Locale
 
-// ===== formatter uang "10.000"=====
+// ===== formatter uang "10.000" =====
 private val ID_LOCALE = Locale("in", "ID")
 private fun rupiah(v: Long): String = NumberFormat.getInstance(ID_LOCALE).format(v)
 
@@ -50,8 +49,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         db.collection("users").document(uid).get()
             .addOnSuccessListener { currentRole = (it.getString("role") ?: "superadmin").lowercase() }
     }
-    private fun requiresApprovalForAdjustment() =
-        currentRole in listOf("admin")
+    private fun requiresApprovalForAdjustment() = currentRole in listOf("admin")
 
     // realtime products
     private var productsReg: ListenerRegistration? = null
@@ -69,6 +67,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private val catFilterList = mutableListOf<Category>()
     private val catFormList = mutableListOf<Category>()
     private var selectedFilterCategory: Category? = null
+    private var categoriesReg: ListenerRegistration? = null
+    private var activeCategoryIds: MutableSet<String> = mutableSetOf()
 
     private lateinit var adapter: ProductsAdapter
 
@@ -81,18 +81,20 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         setupUi()
         loadCurrentRole()
         listenProducts()
+        listenCategoriesForUi()
     }
 
     override fun onStop() { super.onStop(); disposeSnapshots() }
     override fun onDestroyView() {
         disposeSnapshots()
+        categoriesReg?.remove(); categoriesReg = null
         currentDialog?.dismiss(); currentDialog = null
         _binding = null
         super.onDestroyView()
     }
     override fun disposeSnapshots() { productsReg?.remove(); productsReg = null }
 
-    // ===== UI =====
+    // ================= UI utama =================
     private fun setupUi() {
         binding.rvProducts.layoutManager = GridLayoutManager(requireContext(), 2)
         adapter = ProductsAdapter(
@@ -110,7 +112,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { applyFilter() }
         })
 
-        // filter kategori (exposed)
+        // Filter kategori (exposed dropdown di layar utama)
         binding.actCategory.inputType = InputType.TYPE_NULL
         binding.actCategory.keyListener = null
         binding.actCategory.isCursorVisible = false
@@ -126,30 +128,97 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     }
 
     private fun loadCategoriesForFilter() {
-        db.collection("categories").whereEqualTo("isActive", true).get()
+        db.collection("categories").get()
             .addOnSuccessListener { qs ->
-                val list = qs.documents.map { d ->
+                val list = qs.documents.mapNotNull { d ->
+                    val isActive = d.getBoolean("isActive") ?: true
+                    if (!isActive) return@mapNotNull null
                     d.toObject(Category::class.java)?.copy(id = d.id) ?: Category(
                         id = d.id,
                         name = d.getString("name") ?: d.id,
                         slug = d.getString("slug") ?: d.id,
                         forType = d.getString("forType") ?: "both",
-                        isActive = d.getBoolean("isActive") ?: true,
+                        isActive = isActive,
                         sortOrder = d.getLong("sortOrder") ?: 0L,
                         order = d.getLong("order")
                     )
                 }.sortedWith(compareBy<Category> { it.effectiveOrder }.thenBy { it.name })
 
+                val prevId = selectedFilterCategory?.id
                 catFilterList.clear(); catFilterList.addAll(list)
+                activeCategoryIds = list.map { it.id }.toMutableSet()
                 val names = mutableListOf("Semua").apply { addAll(list.map { it.name }) }
                 binding.actCategory.setSimpleItems(names.toTypedArray())
-                binding.actCategory.setText(names.first(), false)
-                selectedFilterCategory = null
+                val idx = if (prevId != null) list.indexOfFirst { it.id == prevId } else -1
+                if (idx >= 0) {
+                    binding.actCategory.setText(names[idx + 1], false)
+                    selectedFilterCategory = list[idx]
+                } else {
+                    binding.actCategory.setText(names.first(), false)
+                    selectedFilterCategory = null
+                }
+                adapter.updateKnownCategoryIds(activeCategoryIds)
+                applyFilter()
             }
             .addOnFailureListener { e -> toast("Kategori gagal dimuat: ${e.message}") }
     }
 
-    // ===== realtime products → INCLUDE biar event local langsung muncul
+    private fun listenCategoriesForUi() {
+        categoriesReg?.remove()
+        categoriesReg = db.collection("categories").addSnapshotListener { snap, e ->
+            if (e != null) return@addSnapshotListener
+            if (snap == null) return@addSnapshotListener
+
+            val activeList = snap.documents.mapNotNull { d ->
+                val isActive = d.getBoolean("isActive") ?: true
+                if (!isActive) return@mapNotNull null
+                d.toObject(Category::class.java)?.copy(id = d.id) ?: Category(
+                    id = d.id,
+                    name = d.getString("name") ?: d.id,
+                    slug = d.getString("slug") ?: d.id,
+                    forType = d.getString("forType") ?: "both",
+                    isActive = isActive,
+                    sortOrder = d.getLong("sortOrder") ?: 0L,
+                    order = d.getLong("order")
+                )
+            }.sortedWith(compareBy<Category> { it.effectiveOrder }.thenBy { it.name })
+
+            val newIds = activeList.map { it.id }.toMutableSet()
+            val removedActive = (activeCategoryIds - newIds).toSet()
+            val removedDocs = snap.documentChanges.filter { it.type == DocumentChange.Type.REMOVED }.map { it.document.id }
+            val removedAll = (removedActive + removedDocs).toSet()
+
+            val prevId = selectedFilterCategory?.id
+            activeCategoryIds = newIds
+            catFilterList.clear(); catFilterList.addAll(activeList)
+            val names = mutableListOf("Semua").apply { addAll(activeList.map { it.name }) }
+            binding.actCategory.setSimpleItems(names.toTypedArray())
+            val idx = if (prevId != null) activeList.indexOfFirst { it.id == prevId } else -1
+            if (idx >= 0) {
+                binding.actCategory.setText(names[idx + 1], false)
+                selectedFilterCategory = activeList[idx]
+            } else {
+                binding.actCategory.setText(names.first(), false)
+                selectedFilterCategory = null
+            }
+            adapter.updateKnownCategoryIds(activeCategoryIds)
+            applyFilter()
+
+            removedAll.forEach { cid -> handleCategoryRemoved(cid) }
+        }
+    }
+
+    private fun handleCategoryRemoved(catId: String) {
+        db.collection("products").whereEqualTo("categoryId", catId).get()
+            .addOnSuccessListener { qs ->
+                if (qs.isEmpty) return@addOnSuccessListener
+                val batch = db.batch()
+                qs.documents.forEach { d -> batch.update(d.reference, mapOf("categoryId" to "", "categoryName" to "")) }
+                batch.commit()
+            }
+    }
+
+    // ===== realtime products =====
     private fun listenProducts() {
         disposeSnapshots()
         productsReg = db.collection("products")
@@ -202,112 +271,191 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private fun normalizeSku(s: String) = s.trim().uppercase().replace("\\s+".toRegex(), "-")
     private fun slugify(s: String) = s.trim().lowercase().replace("[^a-z0-9\\s-]".toRegex(), "").replace("\\s+".toRegex(), "-")
 
-    // ===== kategori utk form dialog =====
+    // ====== Normalisasi tipe kategori (ID/EN → key) ======
+    private fun toTypeKey(raw: String?): String {
+        val s = raw?.trim()?.lowercase().orEmpty()
+        return when (s) {
+            "both", "semua", "all", "barang & jasa", "barang dan jasa", "barang+jasa" -> "both"
+            "goods", "barang", "product", "produk" -> "goods"
+            "service", "services", "jasa" -> "service"
+            else -> if (s.isBlank()) "both" else s
+        }
+    }
+
+    // ====== MUAT KATEGORI AKTIF untuk FORM ======
     private fun loadCategoriesForForm(forType: String, onDone: (() -> Unit)? = null) {
-        db.collection("categories").whereEqualTo("isActive", true).get()
+        val want = toTypeKey(forType)
+        db.collection("categories")
+            .get()
             .addOnSuccessListener { qs ->
-                val all = qs.documents.map { d ->
-                    d.toObject(Category::class.java)?.copy(id = d.id) ?: Category(
+                val all = qs.documents.mapNotNull { d ->
+                    val active = d.getBoolean("isActive") ?: true
+                    if (!active) return@mapNotNull null
+                    val c = d.toObject(Category::class.java)?.copy(id = d.id) ?: Category(
                         id = d.id,
                         name = d.getString("name") ?: d.id,
                         slug = d.getString("slug") ?: d.id,
                         forType = d.getString("forType") ?: "both",
-                        isActive = d.getBoolean("isActive") ?: true,
+                        isActive = active,
                         sortOrder = d.getLong("sortOrder") ?: 0L,
                         order = d.getLong("order")
                     )
+                    c.copy(forType = toTypeKey(c.forType))
                 }
-                val filtered = all.filter { it.forType == "both" || it.forType == forType }
+
+                val filtered = all.filter { it.forType == "both" || it.forType == want }
                     .sortedWith(compareBy<Category> { it.effectiveOrder }.thenBy { it.name })
-                catFormList.clear(); catFormList.addAll(filtered)
+
+                catFormList.clear()
+                catFormList.addAll(filtered)
                 onDone?.invoke()
             }
             .addOnFailureListener { toast("Kategori gagal dimuat: ${it.message}") }
     }
 
-    // Versi builder (dipakai jika ingin kirim builder)
-    private fun showDialogOnce(builder: MaterialAlertDialogBuilder): AlertDialog {
-        if (currentDialog?.isShowing == true) return currentDialog!!
-        val dlg = builder.create()
-        currentDialog = dlg
-        dlg.setOnDismissListener { currentDialog = null }
-        dlg.show()
-        return dlg
-    }
-    // Overload: menerima AlertDialog langsung (dibutuhkan oleh catDlg)
-    private fun showDialogOnce(dlg: AlertDialog): AlertDialog {
-        if (currentDialog?.isShowing == true) return currentDialog!!
-        currentDialog = dlg
-        dlg.setOnDismissListener { currentDialog = null }
-        dlg.show()
-        return dlg
+    // ====== Dialog pemilih kategori (dipakai di FORM) ======
+    private fun openCategoryPickerDialog(
+        forType: String,
+        preselectedId: String?,
+        onPicked: (Category?) -> Unit
+    ) {
+        loadCategoriesForForm(forType) {
+            val names = catFormList.map { it.name }.toTypedArray()
+            if (names.isEmpty()) {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Pilih Kategori")
+                    .setMessage("Tidak ada kategori aktif untuk tipe ini")
+                    .setPositiveButton("Tutup", null)
+                    .show()
+                return@loadCategoriesForForm
+            }
+            var selectedIndex = if (preselectedId.isNullOrEmpty()) -1 else catFormList.indexOfFirst { it.id == preselectedId }
+            var chosen: Category? = if (selectedIndex >= 0) catFormList[selectedIndex] else null
+
+            val dlg = MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Pilih Kategori")
+                .setSingleChoiceItems(names, selectedIndex) { _, which ->
+                    selectedIndex = which
+                    chosen = catFormList.getOrNull(which)
+                }
+                .setNegativeButton("Batal", null)
+                .setPositiveButton("Pilih") { d, _ ->
+                    onPicked(chosen)
+                    d.dismiss()
+                }
+                .create()
+            dlg.show()
+        }
     }
 
-    // ===== FORM PRODUK (binding) =====
+    // ================= FORM PRODUK =================
     private fun openForm(p: Product?) {
         selectedImageUri = null
         val form = DialogProductFormBinding.inflate(layoutInflater)
         formImgPreview = form.imgPreview
 
-        (form.actCategory as MaterialAutoCompleteTextView).apply {
-            inputType = InputType.TYPE_NULL; keyListener = null
-            isCursorVisible = false; setOnClickListener { showDropDown() }
+        // Field kategori: non-keyboard, klik => buka dialog
+        val actCat = (form.actCategory as MaterialAutoCompleteTextView).apply {
+            inputType = InputType.TYPE_NULL
+            keyListener = null
+            isCursorVisible = false
+            isFocusable = true
+            isFocusableInTouchMode = true
+            setText("", false) // placeholder
         }
-        var selectedFormCategory: Category? = null
 
-        if (p != null) {
-            form.etName.setText(p.name)
-            form.etSKU.setText(p.sku); form.etSKU.isEnabled = false
-            form.etPrice.setText(p.salePrice.toString())
-            form.swService.isChecked = p.isService
+        var selectedFormCategory: Category? = null
+        val isEditing = p != null
+        val fixedIsService = p?.isService ?: false
+
+        // ===== Prefill non-kategori =====
+        if (isEditing) {
+            form.swService.visibility = View.GONE
             form.tilStock.visibility = View.GONE
             form.tilInitCost.visibility = View.GONE
+
+            form.etName.setText(p!!.name)
+            form.etSKU.setText(p.sku); form.etSKU.isEnabled = false
+            form.etPrice.setText(p.salePrice.toString())
+
+            if (fixedIsService) { form.tilPrice.hint = "Harga ditentukan kasir"; form.etPrice.isEnabled = false }
+            else { form.tilPrice.hint = "Harga jual (Rp)"; form.etPrice.isEnabled = true }
+
             if (p.images.firstOrNull().isNullOrBlank()) {
                 form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
             } else { form.imgPreview.alpha = 1f; form.imgPreview.load(p.images.first()) }
         } else {
+            form.swService.visibility = View.VISIBLE
             form.swService.isChecked = false
             form.tilStock.visibility = View.VISIBLE
             form.tilInitCost.visibility = View.VISIBLE
             form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
         }
 
-        fun renderFormCats() = form.actCategory.setSimpleItems(catFormList.map { it.name }.toTypedArray())
+        // Helper tipe saat ini (goods/service)
+        fun currentTypeKey(): String = if (isEditing) {
+            if (fixedIsService) "service" else "goods"
+        } else {
+            if (form.swService.isChecked) "service" else "goods"
+        }
 
-        val initialType = if (p?.isService == true) "service" else "goods"
-        loadCategoriesForForm(initialType) {
-            renderFormCats()
-            if (p != null && p.categoryId.isNotBlank()) {
+        // Muat awal + preselect untuk EDIT
+        loadCategoriesForForm(currentTypeKey()) {
+            if (isEditing && p!!.categoryId.isNotBlank()) {
                 val idx = catFormList.indexOfFirst { it.id == p.categoryId }
-                if (idx >= 0) { form.actCategory.setText(catFormList[idx].name, false); selectedFormCategory = catFormList[idx] }
-            }
-        }
-
-        form.swService.setOnCheckedChangeListener { _, isSvc ->
-            form.tilStock.visibility = if (isSvc) View.GONE else View.VISIBLE
-            form.tilInitCost.visibility = if (isSvc) View.GONE else View.VISIBLE
-            loadCategoriesForForm(if (isSvc) "service" else "goods") {
-                renderFormCats(); form.actCategory.setText("", false); selectedFormCategory = null
-            }
-        }
-        form.actCategory.setOnItemClickListener { _, _, pos, _ -> selectedFormCategory = catFormList.getOrNull(pos); form.tilCategory.error = null }
-
-        form.btnPickImage.setOnClickListener { pickImage.launch("image/*") }
-        form.btnRemoveImage.setOnClickListener { selectedImageUri = null; form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f }
-
-        form.btnAddCategory.setOnClickListener {
-            val t = if (form.swService.isChecked) "service" else "goods"
-            openAddCategoryDialog(t) { newCat ->
-                loadCategoriesForForm(t) {
-                    renderFormCats()
-                    val idx = catFormList.indexOfFirst { it.id == newCat.id }
-                    if (idx >= 0) { form.actCategory.setText(catFormList[idx].name, false); selectedFormCategory = catFormList[idx] }
+                if (idx >= 0) {
+                    selectedFormCategory = catFormList[idx]
+                    actCat.setText(selectedFormCategory!!.name, false)
                 }
             }
         }
 
+        // Tap di field/ikon => buka dialog pemilih kategori
+        fun openCatDialog() {
+            openCategoryPickerDialog(currentTypeKey(), selectedFormCategory?.id) { picked ->
+                selectedFormCategory = picked
+                if (picked != null) {
+                    actCat.setText(picked.name, false)
+                    form.tilCategory.error = null
+                } else {
+                    actCat.setText("", false)
+                }
+            }
+        }
+        actCat.setOnClickListener { openCatDialog() }
+        form.tilCategory.setEndIconOnClickListener { openCatDialog() }
+
+        // CREATE: ubah daftar saat switch jasa/barang berubah
+        if (!isEditing) {
+            form.swService.setOnCheckedChangeListener { _, isSvc ->
+                form.tilStock.visibility = if (isSvc) View.GONE else View.VISIBLE
+                form.tilInitCost.visibility = if (isSvc) View.GONE else View.VISIBLE
+                if (isSvc) {
+                    form.tilPrice.hint = "Harga ditentukan kasir"
+                    form.etPrice.setText("")
+                    form.etPrice.isEnabled = false
+                } else {
+                    form.tilPrice.hint = "Harga jual (Rp)"
+                    form.etPrice.isEnabled = true
+                }
+                // Muat kategori sesuai tipe baru dan reset pilihan
+                loadCategoriesForForm(currentTypeKey()) {
+                    actCat.setText("", false)
+                    selectedFormCategory = null
+                }
+            }
+        }
+
+        // Foto
+        form.btnPickImage.setOnClickListener { pickImage.launch("image/*") }
+        form.btnRemoveImage.setOnClickListener {
+            selectedImageUri = null
+            form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
+        }
+
+        // Build dialog & tombol SIMPAN
         val dlg = MaterialAlertDialogBuilder(requireContext())
-            .setTitle(if (p == null) "Produk Baru" else "Edit Produk")
+            .setTitle(if (isEditing) "Edit Produk" else "Produk Baru")
             .setView(form.root)
             .setNegativeButton("Batal", null)
             .setPositiveButton("Simpan", null)
@@ -325,11 +473,12 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
                 var ok = true
                 if (form.etName.text.isNullOrBlank()) { form.tilName.error = "Harus diisi"; ok = false }
-                if (p == null && form.etSKU.text.isNullOrBlank()) { form.tilSKU.error = "Harus diisi"; ok = false }
-                val salePrice = form.etPrice.text.toString().toLongOrNull() ?: 0L
-                if (salePrice <= 0) { form.tilPrice.error = "Harus diisi"; ok = false }
+                if (!isEditing && form.etSKU.text.isNullOrBlank()) { form.tilSKU.error = "Harus diisi"; ok = false }
 
-                val isService = form.swService.isChecked
+                val isService = if (isEditing) fixedIsService else form.swService.isChecked
+                val salePrice = if (isService) 0L else (form.etPrice.text.toString().toLongOrNull() ?: 0L)
+                if (!isService && salePrice <= 0) { form.tilPrice.error = "Harus diisi"; ok = false }
+
                 val initStock = if (isService) 0L else (form.etStock.text.toString().toLongOrNull() ?: 0L)
                 val initCost  = if (isService) 0L else (form.etInitCost.text?.toString()?.toLongOrNull() ?: 0L)
                 if (!isService) {
@@ -337,8 +486,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     if (initStock > 0 && initCost <= 0) { form.tilInitCost.error = "Harus diisi"; ok = false }
                 }
 
-                // pada CREATE, foto diwajibkan; pada EDIT tidak dipaksa
-                val needPhoto = p == null
+                val needPhoto = !isEditing
                 if (needPhoto && selectedImageUri == null) {
                     form.tvPhotoError.visibility = View.VISIBLE
                     val errColor = MaterialColors.getColor(form.cardImage, com.google.android.material.R.attr.colorError)
@@ -350,9 +498,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
                 val name = form.etName.text.toString().trim()
                 val cat = selectedFormCategory
-                val catId = cat?.id.orEmpty(); val catName = cat?.name.orEmpty()
+                val catId = cat?.id.orEmpty()
+                val catName = cat?.name.orEmpty()
 
-                if (p == null) {
+                if (!isEditing) {
                     val sku = normalizeSku(form.etSKU.text.toString())
                     val pRef = db.collection("products").document(sku)
                     db.runTransaction { trx ->
@@ -399,7 +548,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         } else toast("Gagal simpan: ${e.message}")
                     }
                 } else {
-                    val docId = p.sku.ifBlank { p.id }
+                    val docId = p!!.sku.ifBlank { p.id }
                     val updates = mutableMapOf<String, Any>(
                         "name" to name, "nameLowercase" to name.lowercase(),
                         "categoryId" to catId, "categoryName" to catName,
@@ -423,47 +572,76 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         dlg.show()
     }
 
-    // ===== Tambah kategori (binding) =====
-    private fun openAddCategoryDialog(defaultType: String, onAdded: (Category) -> Unit) {
+    // ===== Tambah kategori (tetap sesuai UI kamu) =====
+    private fun openAddCategoryDialog(
+        defaultType: String,
+        onAdded: (Category) -> Unit
+    ) {
         val cat = DialogCategoryFormBinding.inflate(layoutInflater)
+
         (cat.actCatType as MaterialAutoCompleteTextView).apply {
-            inputType = InputType.TYPE_NULL; keyListener = null
-            isCursorVisible = false; setOnClickListener { showDropDown() }
-            setSimpleItems(arrayOf("goods", "service", "both"))
-            setText(defaultType, false)
+            inputType = InputType.TYPE_NULL
+            keyListener = null
+            isCursorVisible = false
+            setOnClickListener { showDropDown() }
+            setSimpleItems(arrayOf("Barang", "Jasa", "Barang & Jasa"))
+            val def = when (defaultType.trim().lowercase()) {
+                "barang", "goods" -> "Barang"
+                "jasa", "service" -> "Jasa"
+                "barang & jasa", "both" -> "Barang & Jasa"
+                else -> "Barang & Jasa"
+            }
+            setText(def, false)
         }
 
-        val catDlg = MaterialAlertDialogBuilder(requireContext())
+        val dlg = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Kategori baru")
             .setView(cat.root)
             .setNegativeButton("Batal", null)
             .setPositiveButton("Simpan", null)
             .create()
 
-        showDialogOnce(catDlg)
-        catDlg.setOnShowListener {
-            val btn = catDlg.getButton(AlertDialog.BUTTON_POSITIVE)
+        dlg.setOnShowListener {
+            val btn = dlg.getButton(AlertDialog.BUTTON_POSITIVE)
             btn.setOnClickListener {
                 cat.tilCatName.error = null
-                val name = cat.etCatName.text?.toString()?.trim().orEmpty()
-                val forType = (cat.actCatType.text?.toString()?.trim()).ifNullOrEmpty { defaultType }
 
-                var ok = true
-                if (name.isEmpty()) { cat.tilCatName.error = "Harus diisi"; ok = false }
-                if (!ok) return@setOnClickListener
+                val name = cat.etCatName.text?.toString()?.trim().orEmpty()
+                val forType = (cat.actCatType.text?.toString()?.trim()).orEmpty().lowercase().let {
+                    when (it) {
+                        "barang" -> "barang"
+                        "jasa" -> "jasa"
+                        "barang & jasa" -> "barang & jasa"
+                        else -> "barang & jasa"
+                    }
+                }
+
+                if (name.isEmpty()) { cat.tilCatName.error = "Harus diisi"; return@setOnClickListener }
 
                 val slug = slugify(name)
                 val now = FieldValue.serverTimestamp()
                 val ref = db.collection("categories").document(slug)
-                ref.set(mapOf(
-                    "name" to name, "slug" to slug, "forType" to forType,
-                    "isActive" to true, "sortOrder" to 0L, "createdAt" to now, "updatedAt" to now
-                )).addOnSuccessListener {
+
+                ref.set(
+                    mapOf(
+                        "name" to name,
+                        "slug" to slug,
+                        "forType" to forType,
+                        "isActive" to true,
+                        "nameLowercase" to name.lowercase(),
+                        "sortOrder" to System.currentTimeMillis(),
+                        "createdAt" to now,
+                        "updatedAt" to now
+                    )
+                ).addOnSuccessListener {
                     onAdded(Category(id = slug, name = name, slug = slug, forType = forType, isActive = true))
-                    catDlg.dismiss()
-                }.addOnFailureListener { e -> toast("Gagal simpan kategori: ${e.message}") }
+                    dlg.dismiss()
+                }.addOnFailureListener { e ->
+                    cat.tilCatName.error = e.message ?: "Gagal menyimpan"
+                }
             }
         }
+        dlg.show()
     }
 
     // ===== Menu aksi produk (long press) =====
@@ -479,7 +657,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }.show()
     }
 
-    // ===== Riwayat stok (with index fallback) =====
+    // ===== Riwayat stok =====
     private fun openHistoryDialog(p: Product) {
         val h = DialogStockHistoryBinding.inflate(layoutInflater)
         val list = mutableListOf<InventoryMovement>()
@@ -523,7 +701,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }.addOnFailureListener { e ->
                 if (useOrder && e is FirebaseFirestoreException &&
                     e.code == FirebaseFirestoreException.Code.FAILED_PRECONDITION) {
-                    // fallback tanpa index
                     load(false)
                     toast("Index belum dibuat. Data disortir lokal.")
                 } else {
@@ -550,7 +727,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         }
     }
 
-    // ===== Penyesuaian stok (RBAC approval untuk kasir) =====
+    // ===== Penyesuaian stok =====
     private fun openAdjustStockDialog(p: Product) {
         val a = DialogStockAdjustBinding.inflate(layoutInflater)
         a.rgMode.check(R.id.rbAdd)
@@ -657,7 +834,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 if (qty <= 0) { toast("Qty wajib"); return@setOnClickListener }
                 qtyDlg.dismiss()
 
-                // Tawarkan update harga
                 MaterialAlertDialogBuilder(requireContext())
                     .setMessage("Update harga beli & harga jual sekalian?")
                     .setNegativeButton("Tidak") { _, _ ->
@@ -738,6 +914,22 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }.show()
     }
 
+    private fun showDialogOnce(builder: MaterialAlertDialogBuilder): AlertDialog {
+        if (currentDialog?.isShowing == true) return currentDialog!!
+        val dlg = builder.create()
+        currentDialog = dlg
+        dlg.setOnDismissListener { currentDialog = null }
+        dlg.show()
+        return dlg
+    }
+    private fun showDialogOnce(dlg: AlertDialog): AlertDialog {
+        if (currentDialog?.isShowing == true) return currentDialog!!
+        currentDialog = dlg
+        dlg.setOnDismissListener { currentDialog = null }
+        dlg.show()
+        return dlg
+    }
+
     private inline fun String?.ifNullOrEmpty(block: () -> String): String =
         if (this.isNullOrEmpty()) block() else this
 }
@@ -757,6 +949,14 @@ private class ProductsAdapter(
         }
     }
 
+    private var knownCategoryIds: Set<String> = emptySet()
+    private var defaultCategoryColor: Int? = null
+
+    fun updateKnownCategoryIds(ids: Set<String>) {
+        knownCategoryIds = ids
+        notifyDataSetChanged()
+    }
+
     inner class VH(v: View) : RecyclerView.ViewHolder(v) {
         val img: ImageView = v.findViewById(R.id.img)
         val tvBadge: TextView = v.findViewById(R.id.tvBadge)
@@ -773,7 +973,7 @@ private class ProductsAdapter(
     }
 
     override fun onCreateViewHolder(p: ViewGroup, vt: Int): VH {
-        val v = LayoutInflater.from(p.context).inflate(R.layout.item_product_owner, p, false)
+        val v = LayoutInflater.from(p.context).inflate(R.layout.item_product_super_admin, p, false)
         return VH(v)
     }
 
@@ -788,7 +988,16 @@ private class ProductsAdapter(
         )
         h.tvName.text = product.name
         h.tvStock.text = if (product.isService) "Jasa (tanpa stok)" else "Stock      : ${product.stock}"
-        h.tvCategory.text = if (product.categoryName.isNotBlank()) "Kategori : ${product.categoryName}" else ""
+        if (defaultCategoryColor == null) defaultCategoryColor = h.tvCategory.currentTextColor
+        val missingCat = product.categoryId.isBlank() || (knownCategoryIds.isNotEmpty() && !knownCategoryIds.contains(product.categoryId))
+        if (missingCat) {
+            val errColor = MaterialColors.getColor(h.tvCategory, com.google.android.material.R.attr.colorError)
+            h.tvCategory.setTextColor(errColor)
+            h.tvCategory.text = "Kategori: wajib diisi"
+        } else {
+            h.tvCategory.setTextColor(defaultCategoryColor!!)
+            h.tvCategory.text = if (product.categoryName.isNotBlank()) "Kategori : ${product.categoryName}" else "Kategori: -"
+        }
         h.tvPrice.text = if (product.isService) "Harga: input kasir" else "Rp ${rupiah(product.salePrice)}"
         h.btnPrimary.text = if (product.isService) "Non-Stok" else "Terima Stok"
         h.btnPrimary.isEnabled = !product.isService
