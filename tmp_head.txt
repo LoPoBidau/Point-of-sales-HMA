@@ -1,0 +1,582 @@
+package com.example.pos_hma.ui.role.super_admin
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.view.KeyEvent
+import android.view.inputmethod.EditorInfo
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.example.pos_hma.databinding.FragmentSuperAdminReportBinding
+import com.example.pos_hma.databinding.ItemReportTabBinding
+import com.example.pos_hma.databinding.ItemSaleRowBinding
+import com.google.android.material.tabs.TabLayoutMediator
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.datepicker.MaterialDatePicker
+import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
+import android.widget.ScrollView
+import android.widget.TextView
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
+import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.*
+
+class SuperAdminReportFragment : Fragment() {
+
+    private var _binding: FragmentSuperAdminReportBinding? = null
+    private val binding get() = _binding!!
+
+    private val tabs = listOf("Penjualan", "Pembelian", "Stok & Valuasi")
+
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
+        _binding = FragmentSuperAdminReportBinding.inflate(inflater, container, false)
+        return binding.root
+    }
+
+    override fun onViewCreated(v: View, s: Bundle?) {
+        binding.pager.adapter = ReportPagerAdapter(tabs)
+        TabLayoutMediator(binding.tabs, binding.pager) { tab, pos ->
+            tab.text = tabs[pos]
+        }.attach()
+    }
+
+    override fun onDestroyView() {
+        _binding = null
+        super.onDestroyView()
+    }
+
+    private class ReportPagerAdapter(private val titles: List<String>) :
+        RecyclerView.Adapter<ReportPagerAdapter.VH>() {
+
+        inner class VH(val b: ItemReportTabBinding) : RecyclerView.ViewHolder(b.root)
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
+            val b = ItemReportTabBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+            return VH(b)
+        }
+
+        override fun getItemCount() = titles.size
+
+        override fun onBindViewHolder(holder: VH, position: Int) {
+            val title = titles[position]
+            holder.b.tvTitle.text = title
+            when (title) {
+                "Penjualan" -> bindSales(holder)
+                "Pembelian" -> bindPurchases(holder)
+                else -> {
+                    holder.b.tvDesc.visibility = View.VISIBLE
+                    holder.b.tvSummary.visibility = View.GONE
+                    holder.b.rvSales.visibility = View.GONE
+                    holder.b.searchRow.visibility = View.GONE
+                    holder.b.chipGroupRange.visibility = View.GONE
+                    holder.b.filterCard.visibility = View.GONE
+                    holder.b.tvDesc.text = "Nilai persediaan, pergerakan stok, valuasi FIFO. (coming soon)"
+                }
+            }
+        }
+
+        private fun bindSales(holder: VH) {
+            val ctx = holder.itemView.context
+            val db = FirebaseFirestore.getInstance()
+            val nf = NumberFormat.getInstance(Locale("in","ID"))
+            val df = SimpleDateFormat("dd MMM yy HH:mm", Locale("in","ID"))
+            val dfMonth = SimpleDateFormat("MMMM yyyy", Locale("in","ID"))
+            val dfDay = SimpleDateFormat("dd MMM yy", Locale("in","ID"))
+
+            holder.b.tvDesc.visibility = View.GONE
+            holder.b.tvTitle.visibility = View.GONE
+            holder.b.tvSummary.visibility = View.GONE
+            holder.b.rvSales.visibility = View.VISIBLE
+            holder.b.chipGroupRange.visibility = View.VISIBLE
+            holder.b.searchRow.visibility = View.VISIBLE
+            holder.b.filterCard.visibility = View.VISIBLE
+
+            fun fetchAndShow(saleId: String) {
+                db.collection("sales").document(saleId).get().addOnSuccessListener { doc ->
+                    val itemsAny = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
+                    val items = itemsAny.map { m ->
+                        ReceiptFormatter.Item(
+                            name = (m["name"] as? String).orEmpty(),
+                            qty = (m["qty"] as? Number)?.toLong() ?: 0L,
+                            unitPrice = (m["unitPrice"] as? Number)?.toLong() ?: 0L,
+                            isService = (m["isService"] as? Boolean) ?: false
+                        )
+                    }
+                    // Hitung total harga modal & unit cost (jika hanya 1 jenis barang)
+                    var totalCost = 0L
+                    var totalQty = 0L
+                    var unitCostSingle: Long? = null
+                    val goods = itemsAny.filter { !(it["isService"] as? Boolean ?: false) }
+                    goods.forEach { m ->
+                        val qty = (m["qty"] as? Number)?.toLong() ?: 0L
+                        val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
+                        totalCost += qty * unitCost
+                        totalQty += qty
+                    }
+                    if (goods.size == 1) {
+                        val g = goods.first()
+                        unitCostSingle = (g["unitCost"] as? Number)?.toLong()
+                    }
+
+                    val store = ReceiptFormatter.StoreInfo(
+                        name = "HAGWY MULYA AGUNG BENGKEL",
+                        address1 = "JL. APT PRANOTO",
+                        address2 = "KOTA SAMARINDA SEBERANG",
+                        phone = "0341-8686715"
+                    )
+                    val noNota = doc.getString("noNota") ?: saleId
+                    val saleInfo = ReceiptFormatter.SaleInfo(
+                        saleId = noNota,
+                        date = doc.getTimestamp("createdAt")?.toDate() ?: Date(),
+                        total = doc.getLong("total") ?: 0L,
+                        paid = doc.getLong("paid") ?: (doc.getLong("total") ?: 0L)
+                    )
+                    val svc = doc.getLong("serviceFee") ?: 0L
+                    val withCost = ReceiptFormatter.buildForScreen(
+                        store,
+                        saleInfo,
+                        items,
+                        serviceFee = svc,
+                        totalCost = if (goods.isNotEmpty() && totalQty > 1L) totalCost else null,
+                        unitCost = unitCostSingle
+                    )
+
+                    val content = TextView(ctx).apply {
+                        text = withCost
+                        // Rapihkan tampilan struk agar rapi kiri-kanan-atas-bawah
+                        typeface = android.graphics.Typeface.MONOSPACE
+                        textAlignment = View.TEXT_ALIGNMENT_VIEW_START
+                        gravity = android.view.Gravity.START
+                        setPadding(24, 24, 24, 24)
+                        setLineSpacing(4f, 1.0f)
+                        setTextIsSelectable(true)
+                        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
+                    }
+                    val scroll = ScrollView(ctx).apply { addView(content) }
+                    MaterialAlertDialogBuilder(ctx)
+                        .setView(scroll)
+                        .setPositiveButton("Tutup", null)
+                        .show()
+                }
+            }
+
+            // Search No. Nota
+            holder.b.btnSearchSaleId.setOnClickListener {
+                val id = holder.b.etSearchSaleId.text?.toString()?.trim().orEmpty()
+                if (id.isEmpty()) {
+                    holder.b.tilSearchSaleId.error = "Masukkan No. Nota"
+                } else {
+                    holder.b.tilSearchSaleId.error = null
+                    db.collection("sales").whereEqualTo("noNota", id).limit(1).get().addOnSuccessListener { snap ->
+                        val d = snap.documents.firstOrNull()
+                        if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(ctx, "No. Nota tidak ditemukan", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            holder.b.etSearchSaleId.setOnEditorActionListener { _, actionId, event ->
+                val isSearch = actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                if (isSearch) {
+                    val id = holder.b.etSearchSaleId.text?.toString()?.trim().orEmpty()
+                    if (id.isEmpty()) {
+                        holder.b.tilSearchSaleId.error = "Masukkan No. Nota"
+                    } else {
+                        holder.b.tilSearchSaleId.error = null
+                        db.collection("sales").whereEqualTo("noNota", id).limit(1).get().addOnSuccessListener { snap ->
+                            val d = snap.documents.firstOrNull()
+                            if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(ctx, "No. Nota tidak ditemukan", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    true
+                } else false
+            }
+
+            holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
+            val data = mutableListOf<SaleRow>()
+            val adapter = object : RecyclerView.Adapter<SaleVH>() {
+                override fun onCreateViewHolder(p: ViewGroup, vt: Int): SaleVH =
+                    SaleVH(ItemSaleRowBinding.inflate(LayoutInflater.from(ctx), p, false))
+                override fun getItemCount() = data.size
+                override fun onBindViewHolder(h: SaleVH, i: Int) {
+                    val row = data[i]
+                    h.v.tvSaleId.text = "No. Nota: ${row.noNota ?: row.id}"
+                    h.v.tvDate.text = row.date?.let { df.format(it) } ?: "-"
+                    val info = if (row.hasGoods) {
+                        "Total: Rp ${nf.format(row.total)}"
+                    } else {
+                        "Transaksi Jasa - Total: Rp ${nf.format(row.total)}"
+                    }
+                    h.v.tvTotal.text = info
+                    h.v.root.setOnClickListener { fetchAndShow(row.id) }
+                }
+            }
+            holder.b.rvSales.adapter = adapter
+
+            fun computeRange(which: Int): Pair<Date, Date> {
+                val cal = Calendar.getInstance()
+                val end = Date(System.currentTimeMillis() + 1) // exclusive end
+                when (which) {
+                    holder.b.chipWeek.id -> {
+                        cal.firstDayOfWeek = Calendar.MONDAY
+                        cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                    }
+                    holder.b.chipMonth.id -> cal.set(Calendar.DAY_OF_MONTH, 1)
+                    else -> { /* today */ }
+                }
+                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+                return cal.time to end
+            }
+
+            fun load(rangeChipId: Int) {
+                val (start, end) = computeRange(rangeChipId)
+                db.collection("sales")
+                    .whereGreaterThanOrEqualTo("createdAt", start)
+                    .whereLessThan("createdAt", end)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(200)
+                    .get()
+                    .addOnSuccessListener { snap ->
+                        data.clear()
+                        var sumOmzet = 0L
+                        var sumCost = 0L
+                        for (doc in snap.documents) {
+                            val ts = doc.getTimestamp("createdAt")?.toDate()
+                            val total = doc.getLong("total") ?: 0L
+                            val noNota = doc.getString("noNota")
+                            val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
+                        var cost = 0L
+                        var qtySum = 0L
+                        var hasGoods = false
+                        items.forEach { m ->
+                            val qty = (m["qty"] as? Number)?.toLong() ?: 0L
+                            val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
+                            val isService = (m["isService"] as? Boolean) ?: false
+                            if (!isService) hasGoods = true
+                            if (!isService) {
+                                cost += qty * unitCost
+                                qtySum += qty
+                            }
+                        }
+                        val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
+                        data += SaleRow(doc.id, ts, total, cost, unitCostAvg, hasGoods, noNota)
+                        sumOmzet += total
+                        sumCost += cost
+                    }
+                        holder.b.tvKeterangan.visibility = View.VISIBLE
+                        holder.b.tvKeterangan.text = when (rangeChipId) {
+                            holder.b.chipWeek.id -> "Transaksi Minggu Ini : ${data.size}"
+                            holder.b.chipMonth.id -> "Transaksi Pada Bulan (${dfMonth.format(start)}) : ${data.size}"
+                            else -> "Transaksi Hari Ini : ${data.size}"
+                        }
+                        adapter.notifyDataSetChanged()
+                    }
+            }
+
+            fun manualLoad(start: Date, end: Date) {
+                db.collection("sales")
+                    .whereGreaterThanOrEqualTo("createdAt", start)
+                    .whereLessThan("createdAt", end)
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(200)
+                    .get()
+                    .addOnSuccessListener { snap ->
+                        data.clear()
+                        var sumOmzet = 0L
+                        var sumCost = 0L
+                        for (doc in snap.documents) {
+                            val ts = doc.getTimestamp("createdAt")?.toDate()
+                            val total = doc.getLong("total") ?: 0L
+                            val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
+                        val noNota = doc.getString("noNota")
+                        var cost = 0L
+                        var qtySum = 0L
+                        var hasGoods = false
+                        items.forEach { m ->
+                            val qty = (m["qty"] as? Number)?.toLong() ?: 0L
+                            val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
+                            val isService = (m["isService"] as? Boolean) ?: false
+                            if (!isService) hasGoods = true
+                            if (!isService) {
+                                cost += qty * unitCost
+                                qtySum += qty
+                            }
+                        }
+                        val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
+                        data += SaleRow(doc.id, ts, total, cost, unitCostAvg, hasGoods, noNota)
+                        sumOmzet += total
+                        sumCost += cost
+                    }
+                        holder.b.tvKeterangan.visibility = View.VISIBLE
+                        val endIncl = Date(end.time - 1L)
+                        val sameDay = dfDay.format(start) == dfDay.format(endIncl)
+                        val rangeLabel = if (sameDay) dfDay.format(start) else "${dfDay.format(start)} - ${dfDay.format(endIncl)}"
+                        holder.b.tvKeterangan.text = "Transaksi Pada Tanggal (${rangeLabel}) : ${data.size}"
+                        adapter.notifyDataSetChanged()
+                    }
+            }
+
+            holder.b.chipToday.isChecked = true
+            holder.b.chipGroupRange.setOnCheckedStateChangeListener { _, checkedIds ->
+                val id = checkedIds.firstOrNull() ?: holder.b.chipToday.id
+                when (id) {
+                    holder.b.chipToday.id, holder.b.chipWeek.id -> load(id)
+                    holder.b.chipMonth.id -> pickMonth(holder) { start, end -> manualLoad(start, end) }
+                    holder.b.chipCustom.id -> pickDateRange(holder) { start, end -> manualLoad(start, end) }
+                }
+            }
+            load(holder.b.chipToday.id)
+        }
+
+        data class SaleRow(
+            val id: String,
+            val date: Date?,
+            val total: Long,
+            val cost: Long,           // total biaya modal (untuk laba)
+            val unitCost: Long,       // biaya modal per unit (rata-rata)
+            val hasGoods: Boolean,
+            val noNota: String?
+        )
+        inner class SaleVH(val v: ItemSaleRowBinding) : RecyclerView.ViewHolder(v.root)
+
+        private fun pickDateRange(holder: VH, onPicked: (Date, Date) -> Unit) {
+            val picker = MaterialDatePicker.Builder.dateRangePicker().build()
+            picker.addOnPositiveButtonClickListener { range ->
+                val start = Date(range.first ?: return@addOnPositiveButtonClickListener)
+                val endExclusive = Date((range.second ?: return@addOnPositiveButtonClickListener) + 24L*60*60*1000)
+                onPicked(start, endExclusive)
+            }
+            val fm = (holder.itemView.context as FragmentActivity).supportFragmentManager
+            picker.show(fm, "dateRangeSuper")
+        }
+
+        private fun pickMonth(holder: VH, onPicked: (Date, Date) -> Unit) {
+            val cal = Calendar.getInstance()
+            val labels = (0 until 12).map { i ->
+                val c = (cal.clone() as Calendar).apply {
+                    add(Calendar.MONTH, -i)
+                    set(Calendar.DAY_OF_MONTH, 1)
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                val label = SimpleDateFormat("MMMM yyyy", Locale("in","ID")).format(c.time)
+                label to c.time
+            }
+            val items = labels.map { it.first }.toTypedArray()
+            MaterialAlertDialogBuilder(holder.itemView.context)
+                .setTitle("Pilih Bulan")
+                .setItems(items) { _, which ->
+                    val start = labels[which].second
+                    val c2 = Calendar.getInstance().apply { time = start; add(Calendar.MONTH, 1) }
+                    val endExclusive = c2.time
+                    onPicked(start, endExclusive)
+                }
+                .setNegativeButton("Batal", null)
+                .show()
+        }
+
+        private fun bindPurchases(holder: VH) {
+            val ctx = holder.itemView.context
+            val db = FirebaseFirestore.getInstance()
+            val nf = NumberFormat.getInstance(Locale("in","ID"))
+            val df = SimpleDateFormat("dd MMM yy HH:mm", Locale("in","ID"))
+            val dfDay = SimpleDateFormat("dd MMM yy", Locale("in","ID"))
+
+            holder.b.tvDesc.visibility = View.GONE
+            holder.b.tvTitle.visibility = View.GONE
+            holder.b.tvSummary.visibility = View.GONE
+            holder.b.rvSales.visibility = View.VISIBLE
+            holder.b.chipGroupRange.visibility = View.VISIBLE
+            holder.b.searchRow.visibility = View.GONE
+            holder.b.filterCard.visibility = View.VISIBLE
+            holder.b.exportRow.visibility = View.VISIBLE
+
+            data class Row(
+                val id: String,
+                val invoiceNo: String,
+                val totalCost: Long,
+                val date: java.util.Date?,
+                val due: java.util.Date?,
+                val supplier: String
+            )
+
+            val list = mutableListOf<Row>()
+            holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
+            val adapter = object : RecyclerView.Adapter<PurchaseVH>() {
+                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PurchaseVH {
+                    val row = com.example.pos_hma.databinding.ItemPurchaseRowBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+                    return PurchaseVH(row)
+                }
+                override fun getItemCount() = list.size
+                override fun onBindViewHolder(h: PurchaseVH, position: Int) {
+                    val r = list[position]
+                    h.bind(r.invoiceNo, r.totalCost, r.date, r.due, nf, dfDay, r.supplier)
+                }
+            }
+            holder.b.rvSales.adapter = adapter
+
+            fun fetchRange(start: java.util.Date, end: java.util.Date) {
+                db.collection("purchases")
+                    .whereGreaterThanOrEqualTo("date", com.google.firebase.Timestamp(start))
+                    .whereLessThan("date", com.google.firebase.Timestamp(end))
+                    .orderBy("date", Query.Direction.DESCENDING)
+                    .limit(500)
+                    .get()
+                    .addOnSuccessListener { snap ->
+                        list.clear()
+                        list.addAll(snap.documents.map { d ->
+                            Row(
+                                id = d.id,
+                                invoiceNo = d.getString("invoiceNo") ?: d.id,
+                                totalCost = d.getLong("totalCost") ?: ((d.get("items") as? List<Map<String, Any?>>)?.sumOf { ((it["qty"] as? Number)?.toLong() ?: 0L) * ((it["unitCost"] as? Number)?.toLong() ?: 0L) } ?: 0L),
+                                date = d.getTimestamp("date")?.toDate(),
+                                due = d.getTimestamp("dueDate")?.toDate(),
+                                supplier = d.getString("supplierName") ?: ""
+                            )
+                        })
+                        adapter.notifyDataSetChanged()
+                    }
+            }
+
+            // helper set default range: today
+            fun startOfDay(d: java.util.Date): java.util.Date {
+                val c = java.util.Calendar.getInstance(); c.time = d
+                c.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                c.set(java.util.Calendar.MINUTE, 0)
+                c.set(java.util.Calendar.SECOND, 0)
+                c.set(java.util.Calendar.MILLISECOND, 0)
+                return c.time
+            }
+            fun endOfDay(d: java.util.Date): java.util.Date {
+                val c = java.util.Calendar.getInstance(); c.time = d
+                c.set(java.util.Calendar.HOUR_OF_DAY, 23)
+                c.set(java.util.Calendar.MINUTE, 59)
+                c.set(java.util.Calendar.SECOND, 59)
+                c.set(java.util.Calendar.MILLISECOND, 0)
+                return c.time
+            }
+
+            var curStart = startOfDay(java.util.Date())
+            var curEnd = endOfDay(java.util.Date())
+            fetchRange(curStart, curEnd)
+
+            // Chip listeners
+            holder.b.chipToday.setOnClickListener {
+                curStart = startOfDay(java.util.Date())
+                curEnd = endOfDay(java.util.Date())
+                fetchRange(curStart, curEnd)
+            }
+            holder.b.chipWeek.setOnClickListener {
+                val cal = java.util.Calendar.getInstance()
+                cal.time = java.util.Date()
+                cal.add(java.util.Calendar.DAY_OF_YEAR, -6)
+                curStart = startOfDay(cal.time)
+                curEnd = endOfDay(java.util.Date())
+                fetchRange(curStart, curEnd)
+            }
+            holder.b.chipMonth.setOnClickListener {
+                val cal = java.util.Calendar.getInstance()
+                cal.time = java.util.Date()
+                cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+                curStart = startOfDay(cal.time)
+                curEnd = endOfDay(java.util.Date())
+                fetchRange(curStart, curEnd)
+            }
+            holder.b.chipCustom.setOnClickListener {
+                val picker = MaterialDatePicker.Builder.dateRangePicker().build()
+                picker.addOnPositiveButtonClickListener { range ->
+                    val start = java.util.Date(range.first ?: System.currentTimeMillis())
+                    val end = java.util.Date(range.second ?: System.currentTimeMillis())
+                    curStart = startOfDay(start)
+                    curEnd = endOfDay(end)
+                    fetchRange(curStart, curEnd)
+                }
+                (holder.itemView.context as? FragmentActivity)?.let { picker.show(it.supportFragmentManager, "pick_range") }
+            }
+
+            // Export CSV quick share
+            holder.b.btnExport.setOnClickListener {
+                val sb = StringBuilder()
+                sb.append("Invoice,Date,Due,Supplier,Total\n")
+                val dff = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale("in","ID"))
+                list.forEach { r ->
+                    val dt = r.date?.let { dff.format(it) } ?: ""
+                    val du = r.due?.let { dff.format(it) } ?: ""
+                    val row = listOf(r.invoiceNo, dt, du, r.supplier, r.totalCost.toString()).joinToString(",")
+                    sb.append(row).append("\n")
+                }
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Export Pembelian")
+                    putExtra(android.content.Intent.EXTRA_TEXT, sb.toString())
+                }
+                try { ctx.startActivity(android.content.Intent.createChooser(send, "Export Pembelian")) } catch (_: Throwable) { }
+            }
+
+            // Migrate missing batches for products with stock
+            holder.b.btnMigrateBatches.setOnClickListener {
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle("Migrasi Batch Awal?")
+                    .setMessage("Buat batch FIFO untuk produk yang memiliki stok tetapi belum punya batch. Tidak memodifikasi riwayat.")
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Mulai") { _, _ ->
+                        val productsCol = db.collection("products")
+                        productsCol.whereGreaterThan("stock", 0).limit(300)
+                            .get()
+                            .addOnSuccessListener { snap ->
+                                migrateBatchesSequential(ctx, snap.documents.iterator())
+                            }
+                    }
+                    .show()
+            }
+        }
+
+        private fun migrateBatchesSequential(ctx: android.content.Context, it: Iterator<com.google.firebase.firestore.DocumentSnapshot>) {
+            val db = FirebaseFirestore.getInstance()
+            if (!it.hasNext()) { android.widget.Toast.makeText(ctx, "Migrasi selesai", android.widget.Toast.LENGTH_LONG).show(); return }
+            val d = it.next()
+            val sku = d.getString("sku") ?: d.id
+            val track = d.getBoolean("trackStock") ?: true
+            val stock = d.getLong("stock") ?: 0L
+            if (!track || stock <= 0L) { migrateBatchesSequential(ctx, it); return }
+            db.collection("stock_batches").whereEqualTo("sku", sku).limit(1).get()
+                .addOnSuccessListener { b ->
+                    if (!b.isEmpty) { migrateBatchesSequential(ctx, it); return@addOnSuccessListener }
+                    val lastCost = d.getLong("lastCost") ?: 0L
+                    val nowTs = com.google.firebase.Timestamp.now()
+                    val doc = db.collection("stock_batches").document()
+                    doc.set(mapOf(
+                        "sku" to sku,
+                        "unitCost" to lastCost,
+                        "remainingQty" to stock,
+                        "receivedAt" to nowTs,
+                        "purchaseId" to "",
+                        "invoiceNo" to "",
+                        "supplierName" to "",
+                        "dueDate" to nowTs
+                    )).addOnCompleteListener { migrateBatchesSequential(ctx, it) }
+                }
+                .addOnFailureListener { migrateBatchesSequential(ctx, it) }
+        }
+
+        private class PurchaseVH(private val b: com.example.pos_hma.databinding.ItemPurchaseRowBinding) : RecyclerView.ViewHolder(b.root) {
+            fun bind(invoiceNo: String, totalCost: Long, date: java.util.Date?, due: java.util.Date?, nf: NumberFormat, df: SimpleDateFormat, supplier: String = "") {
+                val title = "$invoiceNo — Rp ${nf.format(totalCost)}"
+                val sub = buildString {
+                    append(if (date != null) df.format(date) else "-")
+                    append(" • Jatuh Tempo: ")
+                    append(if (due != null) df.format(due) else "-")
+                    if (supplier.isNotBlank()) {
+                        append(" • ")
+                        append(supplier)
+                    }
+                }
+                b.tvTitle.text = title
+                b.tvSubtitle.text = sub
+            }
+        }
+    }
+}
+
+

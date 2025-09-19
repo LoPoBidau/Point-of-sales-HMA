@@ -29,7 +29,10 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.*
 import com.google.firebase.storage.FirebaseStorage
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.Date
+import java.util.Calendar
 
 // ===== formatter uang "10.000" =====
 private val ID_LOCALE = Locale("in", "ID")
@@ -71,6 +74,14 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private var activeCategoryIds: MutableSet<String> = mutableSetOf()
 
     private lateinit var adapter: ProductsAdapter
+    private var forTypeTab: String = "goods" // "goods" or "service"
+
+    companion object {
+        private const val ARG_FOR_TYPE = "for_type"
+        fun newInstance(forType: String): SuperAdminProductFragment = SuperAdminProductFragment().apply {
+            arguments = Bundle().apply { putString(ARG_FOR_TYPE, forType) }
+        }
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
         _binding = FragmentSuperAdminProductBinding.inflate(inflater, container, false)
@@ -78,6 +89,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     }
 
     override fun onViewCreated(v: View, s: Bundle?) {
+        forTypeTab = when (arguments?.getString(ARG_FOR_TYPE)?.lowercase()) {
+            "service", "jasa" -> "service"
+            else -> "goods"
+        }
         setupUi()
         loadCurrentRole()
         listenProducts()
@@ -97,11 +112,13 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     // ================= UI utama =================
     private fun setupUi() {
         binding.rvProducts.layoutManager = GridLayoutManager(requireContext(), 2)
+        val allowLongPress = forTypeTab != "service"
         adapter = ProductsAdapter(
             onReceive = { openReceiveFlow(it) },
             onEdit    = { openForm(it) },
             onDelete  = { confirmDelete(it) },
-            onMore    = { showProductActions(it) }  // long press
+            onMore    = { showProductActions(it) },  // long press
+            allowLongPress = allowLongPress
         )
         binding.rvProducts.adapter = adapter
         binding.fabAdd.setOnClickListener { openForm(null) }
@@ -130,6 +147,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private fun loadCategoriesForFilter() {
         db.collection("categories").get()
             .addOnSuccessListener { qs ->
+                if (!isAdded || view == null) return@addOnSuccessListener
+                if (!viewLifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@addOnSuccessListener
+                val b = _binding ?: return@addOnSuccessListener
                 val list = qs.documents.mapNotNull { d ->
                     val isActive = d.getBoolean("isActive") ?: true
                     if (!isActive) return@mapNotNull null
@@ -148,24 +168,25 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 catFilterList.clear(); catFilterList.addAll(list)
                 activeCategoryIds = list.map { it.id }.toMutableSet()
                 val names = mutableListOf("Semua").apply { addAll(list.map { it.name }) }
-                binding.actCategory.setSimpleItems(names.toTypedArray())
+                b.actCategory.setSimpleItems(names.toTypedArray())
                 val idx = if (prevId != null) list.indexOfFirst { it.id == prevId } else -1
                 if (idx >= 0) {
-                    binding.actCategory.setText(names[idx + 1], false)
+                    b.actCategory.setText(names[idx + 1], false)
                     selectedFilterCategory = list[idx]
                 } else {
-                    binding.actCategory.setText(names.first(), false)
+                    b.actCategory.setText(names.first(), false)
                     selectedFilterCategory = null
                 }
                 adapter.updateKnownCategoryIds(activeCategoryIds)
                 applyFilter()
             }
-            .addOnFailureListener { e -> toast("Kategori gagal dimuat: ${e.message}") }
+            .addOnFailureListener { e -> context?.let { Toast.makeText(it, "Kategori gagal dimuat: ${e.message}", Toast.LENGTH_LONG).show() } }
     }
 
     private fun listenCategoriesForUi() {
         categoriesReg?.remove()
         categoriesReg = db.collection("categories").addSnapshotListener { snap, e ->
+            if (_binding == null) return@addSnapshotListener
             if (e != null) return@addSnapshotListener
             if (snap == null) return@addSnapshotListener
 
@@ -192,13 +213,14 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             activeCategoryIds = newIds
             catFilterList.clear(); catFilterList.addAll(activeList)
             val names = mutableListOf("Semua").apply { addAll(activeList.map { it.name }) }
-            binding.actCategory.setSimpleItems(names.toTypedArray())
+            val b = _binding ?: return@addSnapshotListener
+            b.actCategory.setSimpleItems(names.toTypedArray())
             val idx = if (prevId != null) activeList.indexOfFirst { it.id == prevId } else -1
             if (idx >= 0) {
-                binding.actCategory.setText(names[idx + 1], false)
+                b.actCategory.setText(names[idx + 1], false)
                 selectedFilterCategory = activeList[idx]
             } else {
-                binding.actCategory.setText(names.first(), false)
+                b.actCategory.setText(names.first(), false)
                 selectedFilterCategory = null
             }
             adapter.updateKnownCategoryIds(activeCategoryIds)
@@ -224,6 +246,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         productsReg = db.collection("products")
             .orderBy("nameLowercase")
             .addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
+                if (_binding == null) return@addSnapshotListener
                 if (e != null) {
                     if (e is FirebaseFirestoreException &&
                         e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED &&
@@ -252,19 +275,25 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 applyFilter()
             }
             .addOnFailureListener { e -> toast("Refresh gagal: ${e.message}") }
-            .addOnCompleteListener { binding.swipeRefresh.isRefreshing = false }
+            .addOnCompleteListener { _binding?.swipeRefresh?.isRefreshing = false }
     }
 
     private fun applyFilter() {
-        val q = binding.etSearch.text?.toString()?.trim()?.lowercase().orEmpty()
+        val b = _binding ?: return
+        val q = b.etSearch.text?.toString()?.trim()?.lowercase().orEmpty()
         val catId = selectedFilterCategory?.id.orEmpty()
         val filtered = allProducts.filter { p ->
             val okName = q.isEmpty() || p.nameLowercase.contains(q)
             val okCat  = selectedFilterCategory == null || p.categoryId == catId
-            okName && okCat
+            val okType = if (forTypeTab == "service") p.isService else !p.isService
+            okName && okCat && okType
         }
-        adapter.submitList(filtered.toList())
-        binding.tvCount.text = "Total: ${filtered.size}"
+        val sorted = filtered.sortedWith(compareBy<Product> { p ->
+            val trackable = p.trackStock && !p.isService
+            if (trackable && p.stock <= 0L) 1 else 0
+        }.thenBy { it.nameLowercase })
+        adapter.submitList(sorted)
+        b.tvCount.text = "Total: ${sorted.size}"
     }
 
     private fun toast(s: String) = Toast.makeText(requireContext(), s, Toast.LENGTH_LONG).show()
@@ -354,6 +383,27 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         val form = DialogProductFormBinding.inflate(layoutInflater)
         formImgPreview = form.imgPreview
 
+        // Format rupiah saat mengetik untuk harga dan modal awal
+        fun attachRupiahFormatter(et: android.widget.EditText) {
+            var selfChange = false
+            et.addTextChangedListener(object: TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(e: android.text.Editable?) {
+                    if (selfChange) return
+                    val raw = e?.toString().orEmpty()
+                    val digits = raw.filter { it.isDigit() }
+                    if (digits.isEmpty()) return
+                    val v = digits.toLongOrNull() ?: return
+                    val formatted = rupiah(v)
+                    selfChange = true
+                    et.setText(formatted)
+                    et.setSelection(formatted.length)
+                    selfChange = false
+                }
+            })
+        }
+
         // Field kategori: non-keyboard, klik => buka dialog
         val actCat = (form.actCategory as MaterialAutoCompleteTextView).apply {
             inputType = InputType.TYPE_NULL
@@ -366,7 +416,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
         var selectedFormCategory: Category? = null
         val isEditing = p != null
-        val fixedIsService = p?.isService ?: false
+        val fixedIsService = p?.isService ?: (forTypeTab == "service")
 
         // ===== Prefill non-kategori =====
         if (isEditing) {
@@ -376,7 +426,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
             form.etName.setText(p!!.name)
             form.etSKU.setText(p.sku); form.etSKU.isEnabled = false
-            form.etPrice.setText(p.salePrice.toString())
+            form.etPrice.setText(rupiah(p.salePrice))
 
             if (fixedIsService) { form.tilPrice.hint = "Harga ditentukan kasir"; form.etPrice.isEnabled = false }
             else { form.tilPrice.hint = "Harga jual (Rp)"; form.etPrice.isEnabled = true }
@@ -385,19 +435,28 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
             } else { form.imgPreview.alpha = 1f; form.imgPreview.load(p.images.first()) }
         } else {
-            form.swService.visibility = View.VISIBLE
-            form.swService.isChecked = false
-            form.tilStock.visibility = View.VISIBLE
-            form.tilInitCost.visibility = View.VISIBLE
+            // Non-editing: lock to current tab type
             form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
+            if (forTypeTab == "service") {
+                // Service tab: create service only
+                form.swService.visibility = View.GONE
+                form.tilStock.visibility = View.GONE
+                form.tilInitCost.visibility = View.GONE
+                form.tilPrice.hint = "Harga ditentukan kasir"
+                form.etPrice.setText("")
+                form.etPrice.isEnabled = false
+            } else {
+                // Goods tab: create goods only
+                form.swService.visibility = View.GONE
+                form.tilStock.visibility = View.VISIBLE
+                form.tilInitCost.visibility = View.VISIBLE
+                form.tilPrice.hint = "Harga jual (Rp)"
+                form.etPrice.isEnabled = true
+            }
         }
 
         // Helper tipe saat ini (goods/service)
-        fun currentTypeKey(): String = if (isEditing) {
-            if (fixedIsService) "service" else "goods"
-        } else {
-            if (form.swService.isChecked) "service" else "goods"
-        }
+        fun currentTypeKey(): String = if (isEditing) { if (fixedIsService) "service" else "goods" } else { forTypeTab }
 
         // Muat awal + preselect untuk EDIT
         loadCategoriesForForm(currentTypeKey()) {
@@ -446,6 +505,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }
         }
 
+        // Pasang formatter rupiah
+        attachRupiahFormatter(form.etPrice)
+        attachRupiahFormatter(form.etInitCost)
+
         // Foto
         form.btnPickImage.setOnClickListener { pickImage.launch("image/*") }
         form.btnRemoveImage.setOnClickListener {
@@ -476,11 +539,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 if (!isEditing && form.etSKU.text.isNullOrBlank()) { form.tilSKU.error = "Harus diisi"; ok = false }
 
                 val isService = if (isEditing) fixedIsService else form.swService.isChecked
-                val salePrice = if (isService) 0L else (form.etPrice.text.toString().toLongOrNull() ?: 0L)
+                val salePrice = if (isService) 0L else (form.etPrice.text.toString().filter { it.isDigit() }.toLongOrNull() ?: 0L)
                 if (!isService && salePrice <= 0) { form.tilPrice.error = "Harus diisi"; ok = false }
 
                 val initStock = if (isService) 0L else (form.etStock.text.toString().toLongOrNull() ?: 0L)
-                val initCost  = if (isService) 0L else (form.etInitCost.text?.toString()?.toLongOrNull() ?: 0L)
+                val initCost  = if (isService) 0L else (form.etInitCost.text?.toString()?.filter { it.isDigit() }?.toLongOrNull() ?: 0L)
                 if (!isService) {
                     if (initStock < 0) { form.tilStock.error = "Tidak boleh negatif"; ok = false }
                     if (initStock > 0 && initCost <= 0) { form.tilInitCost.error = "Harus diisi"; ok = false }
@@ -519,18 +582,34 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         ))
                         if (!isService && initStock > 0) {
                             val now2 = FieldValue.serverTimestamp()
+                            // Log movement for initial stock
                             val mv = db.collection("inventory_movements").document()
                             trx.set(mv, mapOf(
                                 "sku" to sku, "type" to "PURCHASE",
                                 "qtyDelta" to initStock, "unitCost" to initCost,
                                 "createdAt" to now2, "refId" to "INIT"
                             ))
+                            // Create a minimal purchase record
                             val po = db.collection("purchases").document()
                             trx.set(po, mapOf(
                                 "date" to now2, "createdBy" to FirebaseAuth.getInstance().currentUser?.uid,
                                 "items" to listOf(mapOf("sku" to sku, "name" to name, "qty" to initStock,
                                     "unitCost" to initCost, "lineCost" to initStock * initCost)),
-                                "note" to "Initial stock"))
+                                "note" to "Initial stock"
+                            ))
+                            // Ensure there is a corresponding stock batch so sales (FIFO) can consume it
+                            val batchRef = db.collection("stock_batches").document()
+                            trx.set(batchRef, mapOf(
+                                "sku" to sku,
+                                "unitCost" to initCost,
+                                "remainingQty" to initStock,
+                                "receivedAt" to now2,
+                                "purchaseId" to po.id,
+                                "invoiceNo" to "",
+                                "supplierName" to "",
+                                "supplierId" to "",
+                                "dueDate" to com.google.firebase.Timestamp.now()
+                            ))
                         }
                         null
                     }.addOnSuccessListener {
@@ -646,15 +725,44 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
     // ===== Menu aksi produk (long press) =====
     private fun showProductActions(p: Product) {
-        val items = arrayOf("Riwayat Stok", "Penyesuaian Stok")
+        val items = arrayOf("Riwayat Stok", "Penyesuaian Stok", "Ubah Harga")
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(p.name)
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> openHistoryDialog(p)
                     1 -> openAdjustStockDialog(p)
+                    2 -> openQuickUpdatePriceDialog(p)
                 }
             }.show()
+    }
+
+    private fun openQuickUpdatePriceDialog(p: Product) {
+        val priceBinding = DialogUpdatePricesBinding.inflate(layoutInflater)
+        if (p.lastCost > 0) priceBinding.etUnitCost.setText(p.lastCost.toString())
+        if (p.salePrice > 0) priceBinding.etNewSalePrice.setText(p.salePrice.toString())
+        val dlg = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Ubah Harga ${p.name}")
+            .setView(priceBinding.root)
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Simpan", null)
+            .create()
+        showDialogOnce(dlg)
+        dlg.setOnShowListener {
+            val save = dlg.getButton(AlertDialog.BUTTON_POSITIVE)
+            save.setOnClickListener {
+                val unitCost = priceBinding.etUnitCost.text?.toString()?.toLongOrNull() ?: 0L
+                val newSale = priceBinding.etNewSalePrice.text?.toString()?.toLongOrNull() ?: 0L
+                if (unitCost <= 0 || newSale <= 0) { toast("Harga beli & jual wajib"); return@setOnClickListener }
+                val now = FieldValue.serverTimestamp()
+                val sku = p.sku.ifBlank { p.id }
+                db.collection("products").document(sku)
+                    .update(mapOf("lastCost" to unitCost, "salePrice" to newSale, "updatedAt" to now))
+                    .addOnSuccessListener { toast("Harga diperbarui") }
+                    .addOnFailureListener { e -> toast("Gagal: ${e.message}") }
+                dlg.dismiss()
+            }
+        }
     }
 
     // ===== Riwayat stok =====
@@ -731,6 +839,16 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private fun openAdjustStockDialog(p: Product) {
         val a = DialogStockAdjustBinding.inflate(layoutInflater)
         a.rgMode.check(R.id.rbAdd)
+        // Tampilkan field harga modal hanya saat mode Tambah
+        fun refreshAdjUi() {
+            val add = a.rgMode.checkedRadioButtonId == R.id.rbAdd
+            a.tilAdjUnitCost.visibility = if (add) View.VISIBLE else View.GONE
+            if (add && (a.etAdjUnitCost.text.isNullOrBlank()) && p.lastCost > 0) {
+                a.etAdjUnitCost.setText(p.lastCost.toString())
+            }
+        }
+        a.rgMode.setOnCheckedChangeListener { _, _ -> refreshAdjUi() }
+        refreshAdjUi()
 
         val dlg = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Penyesuaian Stok — ${p.name}")
@@ -760,11 +878,14 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
                 if (requiresApprovalForAdjustment()) {
                     val now = FieldValue.serverTimestamp()
+                    val unitCostAdj = if (add) (a.etAdjUnitCost.text?.toString()?.toLongOrNull() ?: (p.lastCost)) else 0L
                     val req = mapOf(
                         "sku" to sku,
                         "productName" to p.name,
                         "requestedDelta" to delta,
                         "reason" to reason,
+                        "unitCost" to unitCostAdj,
+                        "mode" to if (add) "ADD" else "SUB",
                         "status" to "PENDING",
                         "requestedBy" to (FirebaseAuth.getInstance().currentUser?.uid ?: ""),
                         "createdAt" to now
@@ -788,24 +909,116 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 } else {
                     val pRef = db.collection("products").document(sku)
                     val now = FieldValue.serverTimestamp()
-                    db.runTransaction { trx ->
-                        val snap = trx.get(pRef)
-                        require(snap.exists()) { "Produk tidak ditemukan" }
-                        require((snap.getBoolean("trackStock") ?: true)) { "Jasa tidak pakai stok" }
-                        val old = snap.getLong("stock") ?: 0L
-                        val newStock = old + delta
-                        require(newStock >= 0) { "Stok tidak boleh negatif" }
+                    if (add) {
+                        // Tambah stok: butuh harga modal; merge ke batch terakhir jika unitCost >= last.unitCost, else batch baru
+                        val unitCostAdj = a.etAdjUnitCost.text?.toString()?.toLongOrNull() ?: p.lastCost
+                        if (unitCostAdj <= 0L) { a.tilAdjUnitCost.error = "Harga modal wajib"; return@setOnClickListener }
+                        db.collection("stock_batches")
+                            .whereEqualTo("sku", sku)
+                            .orderBy("receivedAt", Query.Direction.DESCENDING)
+                            .limit(1)
+                            .get()
+                            .addOnSuccessListener { snapLast ->
+                                val lastDoc = snapLast.documents.firstOrNull()
+                                db.runTransaction { trx ->
+                                    val ps = trx.get(pRef)
+                                    require(ps.exists()) { "Produk tidak ditemukan" }
+                                    require((ps.getBoolean("trackStock") ?: true)) { "Jasa tidak pakai stok" }
+                                    val old = ps.getLong("stock") ?: 0L
+                                    val newStock = old + qty
+                                    trx.update(pRef, mapOf("stock" to newStock, "lastCost" to unitCostAdj, "updatedAt" to now))
 
-                        trx.update(pRef, mapOf("stock" to newStock, "updatedAt" to now))
-                        val mv = db.collection("inventory_movements").document()
-                        trx.set(mv, mapOf(
-                            "sku" to sku, "type" to "ADJUSTMENT",
-                            "qtyDelta" to delta, "unitCost" to 0L,
-                            "createdAt" to now, "refId" to "ADJ", "note" to reason
-                        ))
-                        null
-                    }.addOnSuccessListener { toast("Penyesuaian tersimpan"); dlg.dismiss() }
-                        .addOnFailureListener { e -> toast("Gagal: ${e.message}") }
+                                    var merged = false
+                                    if (lastDoc != null) {
+                                        val bRef = lastDoc.reference
+                                        val bs = trx.get(bRef)
+                                        val lastCost = bs.getLong("unitCost") ?: 0L
+                                        if (unitCostAdj >= lastCost) {
+                                            val remain = bs.getLong("remainingQty") ?: 0L
+                                            val newRemain = remain + qty
+                                            val weighted = if (newRemain > 0) ((lastCost * remain + unitCostAdj * qty) / newRemain) else unitCostAdj
+                                            trx.update(bRef, mapOf("remainingQty" to newRemain, "unitCost" to weighted, "receivedAt" to now))
+                                            merged = true
+                                        }
+                                    }
+                                    if (!merged) {
+                                        val nb = db.collection("stock_batches").document()
+                                        trx.set(nb, mapOf(
+                                            "sku" to sku,
+                                            "unitCost" to unitCostAdj,
+                                            "remainingQty" to qty,
+                                            "receivedAt" to now,
+                                            "purchaseId" to "",
+                                            "invoiceNo" to "",
+                                            "dueDate" to com.google.firebase.Timestamp.now()
+                                        ))
+                                    }
+                                    val mv = db.collection("inventory_movements").document()
+                                    trx.set(mv, mapOf(
+                                        "sku" to sku, "type" to "ADJUSTMENT",
+                                        "qtyDelta" to qty, "unitCost" to unitCostAdj,
+                                        "createdAt" to now, "refId" to "ADJ", "note" to reason
+                                    ))
+                                    null
+                                }.addOnSuccessListener { toast("Stok ditambah"); dlg.dismiss() }
+                                    .addOnFailureListener { e -> toast("Gagal: ${e.message}") }
+                            }
+                            .addOnFailureListener { e -> toast("Gagal muat batch: ${e.message}") }
+                    } else {
+                        // Kurangi stok: konsumsi FIFO dari batch tertua
+                        val need = qty
+                        // prefetch batches ascending until cukup
+                        fun fetchEnough(acc: MutableList<DocumentSnapshot> = mutableListOf(), startAfter: DocumentSnapshot? = null) {
+                            var q = db.collection("stock_batches")
+                                .whereEqualTo("sku", sku)
+                                .orderBy("receivedAt", Query.Direction.ASCENDING)
+                                .limit(50)
+                            if (startAfter != null) q = q.startAfter(startAfter)
+                            q.get().addOnSuccessListener { snap ->
+                                val docs = snap.documents
+                                acc.addAll(docs)
+                                val total = acc.sumOf { it.getLong("remainingQty") ?: 0L }
+                                if (total < need && docs.isNotEmpty()) fetchEnough(acc, docs.last())
+                                else consume(acc)
+                            }.addOnFailureListener { e -> toast("Gagal muat batch: ${e.message}") }
+                        }
+                        fun consume(batches: List<DocumentSnapshot>) {
+                            val avail = batches.sumOf { it.getLong("remainingQty") ?: 0L }
+                            if (avail < need) { toast("Batch stok tidak cukup"); return }
+                            db.runTransaction { trx ->
+                                val ps = trx.get(pRef)
+                                require(ps.exists()) { "Produk tidak ditemukan" }
+                                val track = ps.getBoolean("trackStock") ?: true
+                                require(track) { "Jasa tidak pakai stok" }
+                                val old = ps.getLong("stock") ?: 0L
+                                val newStock = old - need
+                                require(newStock >= 0) { "Stok tidak cukup" }
+                                trx.update(pRef, mapOf("stock" to newStock, "updatedAt" to now))
+                                var remainNeed = need
+                                for (d in batches) {
+                                    if (remainNeed <= 0) break
+                                    val bRef = d.reference
+                                    val bs = trx.get(bRef)
+                                    val rem = bs.getLong("remainingQty") ?: 0L
+                                    if (rem <= 0L) continue
+                                    val unit = bs.getLong("unitCost") ?: 0L
+                                    val take = kotlin.math.min(remainNeed, rem)
+                                    trx.update(bRef, mapOf("remainingQty" to (rem - take)))
+                                    val mv = db.collection("inventory_movements").document()
+                                    trx.set(mv, mapOf(
+                                        "sku" to sku, "type" to "ADJUSTMENT",
+                                        "qtyDelta" to -take, "unitCost" to unit,
+                                        "createdAt" to now, "refId" to "ADJ", "note" to reason
+                                    ))
+                                    remainNeed -= take
+                                }
+                                require(remainNeed == 0L) { "Batch stok tidak cukup" }
+                                null
+                            }.addOnSuccessListener { toast("Stok dikurangi"); dlg.dismiss() }
+                                .addOnFailureListener { e -> toast("Gagal: ${e.message}") }
+                        }
+                        fetchEnough()
+                    }
                 }
             }
         }
@@ -837,7 +1050,13 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 MaterialAlertDialogBuilder(requireContext())
                     .setMessage("Update harga beli & harga jual sekalian?")
                     .setNegativeButton("Tidak") { _, _ ->
-                        receiveStockAndUpdatePrice(p.sku.ifBlank { p.id }, qty, p.lastCost, p.salePrice)
+                        promptInvoiceAndCommit(
+                            sku = p.sku.ifBlank { p.id },
+                            productName = p.name,
+                            qty = qty,
+                            unitCost = p.lastCost,
+                            newSalePrice = p.salePrice
+                        )
                     }
                     .setPositiveButton("Ya") { _, _ ->
                         val priceBinding = DialogUpdatePricesBinding.inflate(layoutInflater)
@@ -858,7 +1077,13 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                                 val unitCost = priceBinding.etUnitCost.text?.toString()?.toLongOrNull() ?: 0L
                                 val newSale  = priceBinding.etNewSalePrice.text?.toString()?.toLongOrNull() ?: 0L
                                 if (unitCost <= 0 || newSale <= 0) { toast("Harga beli & jual wajib"); return@setOnClickListener }
-                                receiveStockAndUpdatePrice(p.sku.ifBlank { p.id }, qty, unitCost, newSale)
+                                promptInvoiceAndCommit(
+                                    sku = p.sku.ifBlank { p.id },
+                                    productName = p.name,
+                                    qty = qty,
+                                    unitCost = unitCost,
+                                    newSalePrice = newSale
+                                )
                                 priceDlg.dismiss()
                             }
                         }
@@ -869,27 +1094,210 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         qtyDlg.show()
     }
 
-    private fun receiveStockAndUpdatePrice(sku: String, qty: Long, unitCost: Long, newSalePrice: Long) {
+    private fun promptInvoiceAndCommit(
+        sku: String,
+        productName: String,
+        qty: Long,
+        unitCost: Long,
+        newSalePrice: Long
+    ) {
+        val inv = DialogPurchaseInvoiceBinding.inflate(layoutInflater)
+        // Load suppliers for selection and default term
+        data class SupplierRow(val id: String, val name: String, val term: Long)
+        val suppliers = mutableListOf<SupplierRow>()
+        db.collection("suppliers").get().addOnSuccessListener { snap ->
+            suppliers.clear()
+            suppliers.addAll(snap.documents.map { d ->
+                SupplierRow(
+                    id = d.id,
+                    name = d.getString("name") ?: d.id,
+                    term = d.getLong("paymentTermDays") ?: 0L
+                )
+            }.sortedBy { it.name.lowercase() })
+            val names = suppliers.map { it.name }.toTypedArray()
+            (inv.actSupplier).setSimpleItems(names)
+        }
+        val invDlg = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Data Pembelian")
+            .setView(inv.root)
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Simpan", null)
+            .create()
+        showDialogOnce(invDlg)
+        invDlg.setOnShowListener {
+            val save = invDlg.getButton(AlertDialog.BUTTON_POSITIVE)
+            save.setOnClickListener {
+                inv.tilInvoice.error = null
+                inv.tilDueDate.error = null
+                val invoiceNo = inv.etInvoiceNo.text?.toString()?.trim().orEmpty()
+                val supplierNameInput = inv.actSupplier.text?.toString()?.trim().orEmpty()
+                val sel = suppliers.firstOrNull { it.name.equals(supplierNameInput, ignoreCase = true) }
+                val supplierId = sel?.id
+                val supplierName = sel?.name ?: supplierNameInput
+                val dueStr = inv.etDueDate.text?.toString()?.trim().orEmpty()
+                if (invoiceNo.isEmpty()) { inv.tilInvoice.error = "Wajib"; return@setOnClickListener }
+                var dueTs: com.google.firebase.Timestamp? = null
+                if (dueStr.isNotEmpty()) {
+                    try {
+                        val df = SimpleDateFormat("yyyy-MM-dd", Locale("in","ID"))
+                        df.isLenient = false
+                        val d: Date = df.parse(dueStr)!!
+                        val cal = Calendar.getInstance()
+                        cal.time = d
+                        cal.set(Calendar.HOUR_OF_DAY, 23)
+                        cal.set(Calendar.MINUTE, 59)
+                        cal.set(Calendar.SECOND, 59)
+                        cal.set(Calendar.MILLISECOND, 0)
+                        dueTs = com.google.firebase.Timestamp(cal.time)
+                    } catch (e: Exception) {
+                        inv.tilDueDate.error = "Format tanggal salah (yyyy-MM-dd)"; return@setOnClickListener
+                    }
+                } else if (sel != null && sel.term > 0L) {
+                    val cal = Calendar.getInstance()
+                    cal.time = Date()
+                    cal.add(Calendar.DAY_OF_YEAR, sel.term.toInt())
+                    cal.set(Calendar.HOUR_OF_DAY, 23)
+                    cal.set(Calendar.MINUTE, 59)
+                    cal.set(Calendar.SECOND, 59)
+                    cal.set(Calendar.MILLISECOND, 0)
+                    dueTs = com.google.firebase.Timestamp(cal.time)
+                }
+                invDlg.dismiss()
+                receiveStockAndUpdatePrice(sku, productName, qty, unitCost, newSalePrice, invoiceNo, dueTs, supplierName, supplierId)
+            }
+        }
+    }
+
+    private fun receiveStockAndUpdatePrice(
+        sku: String,
+        productName: String,
+        qty: Long,
+        unitCost: Long,
+        newSalePrice: Long,
+        invoiceNo: String?,
+        dueDate: com.google.firebase.Timestamp?,
+        supplierName: String?,
+        supplierId: String?
+    ) {
         val pRef = db.collection("products").document(sku)
         val now = FieldValue.serverTimestamp()
         val uid = FirebaseAuth.getInstance().currentUser?.uid
-        db.runTransaction { trx ->
-            val p = trx.get(pRef)
-            require(p.exists()) { "Produk tidak ditemukan" }
-            require((p.getBoolean("trackStock") ?: true)) { "Jasa tidak pakai stok" }
-            val stockOld = p.getLong("stock") ?: 0L
-            val newStock = stockOld + qty
-            trx.update(pRef, mapOf("stock" to newStock, "lastCost" to unitCost, "salePrice" to newSalePrice, "updatedAt" to now))
-            val mvRef = db.collection("inventory_movements").document()
-            trx.set(mvRef, mapOf("sku" to sku, "type" to "PURCHASE", "qtyDelta" to qty, "unitCost" to unitCost, "createdAt" to now, "refId" to ""))
-            val poRef = db.collection("purchases").document()
-            trx.set(poRef, mapOf(
-                "date" to now, "createdBy" to uid,
-                "items" to listOf(mapOf("sku" to sku, "name" to (p.getString("name") ?: sku), "qty" to qty, "unitCost" to unitCost, "lineCost" to qty * unitCost))
-            ))
-            null
-        }.addOnSuccessListener { toast("Stok ditambah."); currentDialog?.dismiss() }
-            .addOnFailureListener { e -> toast("Gagal terima stok: ${e.message}") }
+        // Prefetch last batch to decide merge vs new, and find existing purchase doc (same supplier + invoice)
+        fun commitReceive(lastDoc: com.google.firebase.firestore.DocumentSnapshot?, existingPurchaseId: String?) {
+            db.collection("stock_batches")
+            // continue in transaction
+            db.runTransaction { trx ->
+                    val p = trx.get(pRef)
+                    require(p.exists()) { "Produk tidak ditemukan" }
+                    require((p.getBoolean("trackStock") ?: true)) { "Jasa tidak pakai stok" }
+                    val stockOld = p.getLong("stock") ?: 0L
+                    val newStock = stockOld + qty
+                    trx.update(pRef, mapOf("stock" to newStock, "lastCost" to unitCost, "salePrice" to newSalePrice, "updatedAt" to now))
+
+                    val poRef = if (existingPurchaseId != null) db.collection("purchases").document(existingPurchaseId) else db.collection("purchases").document()
+                    val items = listOf(
+                        mapOf(
+                            "sku" to sku,
+                            "name" to (p.getString("name") ?: productName),
+                            "qty" to qty,
+                            "unitCost" to unitCost,
+                            "lineCost" to qty * unitCost
+                        )
+                    )
+                    if (existingPurchaseId != null) {
+                        val oldPo = trx.get(poRef)
+                        val oldItems = (oldPo.get("items") as? List<Map<String, Any?>>).orEmpty()
+                        val newItems = oldItems + items
+                        val newTotal = (oldPo.getLong("totalCost") ?: 0L) + (qty * unitCost)
+                        // Keep earliest due date
+                        val oldDue = oldPo.getTimestamp("dueDate")?.toDate()
+                        val newDue = dueDate?.toDate()
+                        val keepDue = when {
+                            oldDue == null -> newDue
+                            newDue == null -> oldDue
+                            else -> if (newDue.before(oldDue)) newDue else oldDue
+                        }
+                        trx.update(poRef, mapOf(
+                            "items" to newItems,
+                            "totalCost" to newTotal,
+                            "updatedAt" to now,
+                            "dueDate" to (keepDue?.let { com.google.firebase.Timestamp(it) } ?: oldPo.getTimestamp("dueDate"))
+                        ))
+                    } else {
+                        trx.set(poRef, mapOf(
+                            "date" to now,
+                            "createdBy" to uid,
+                            "invoiceNo" to (invoiceNo ?: ""),
+                            "dueDate" to (dueDate ?: com.google.firebase.Timestamp.now()),
+                            "supplierName" to (supplierName ?: ""),
+                            "supplierId" to (supplierId ?: ""),
+                            "items" to items,
+                            "totalCost" to (qty * unitCost)
+                        ))
+                    }
+
+                    var merged = false
+                    if (lastDoc != null) {
+                        val bRef = lastDoc.reference
+                        val bs = trx.get(bRef)
+                        val lastCost = bs.getLong("unitCost") ?: 0L
+                        if (unitCost >= lastCost) {
+                            val remain = bs.getLong("remainingQty") ?: 0L
+                            val newRemain = remain + qty
+                            val weighted = if (newRemain > 0) ((lastCost * remain + unitCost * qty) / newRemain) else unitCost
+                            trx.update(bRef, mapOf(
+                                "remainingQty" to newRemain,
+                                "unitCost" to weighted,
+                                "receivedAt" to now
+                            ))
+                            merged = true
+                        }
+                    }
+                    if (!merged) {
+                        val batchRef = db.collection("stock_batches").document()
+                        trx.set(batchRef, mapOf(
+                            "sku" to sku,
+                            "unitCost" to unitCost,
+                            "remainingQty" to qty,
+                            "receivedAt" to now,
+                            "purchaseId" to poRef.id,
+                            "invoiceNo" to (invoiceNo ?: ""),
+                            "supplierName" to (supplierName ?: ""),
+                            "supplierId" to (supplierId ?: ""),
+                            "dueDate" to (dueDate ?: com.google.firebase.Timestamp.now())
+                        ))
+                    }
+
+                    val mvRef = db.collection("inventory_movements").document()
+                    trx.set(mvRef, mapOf(
+                        "sku" to sku,
+                        "type" to "PURCHASE",
+                        "qtyDelta" to qty,
+                        "unitCost" to unitCost,
+                        "createdAt" to now,
+                        "refId" to poRef.id
+                    ))
+                    null
+                }.addOnSuccessListener { toast("Stok ditambah."); currentDialog?.dismiss() }
+                    .addOnFailureListener { e -> toast("Gagal terima stok: ${e.message}") }
+        }
+        fun onGotLastBatch(lastDoc: com.google.firebase.firestore.DocumentSnapshot?) {
+            if (!invoiceNo.isNullOrBlank() && !supplierName.isNullOrBlank()) {
+                var q: com.google.firebase.firestore.Query = db.collection("purchases").whereEqualTo("invoiceNo", invoiceNo)
+                if (!supplierId.isNullOrBlank()) q = q.whereEqualTo("supplierId", supplierId) else q = q.whereEqualTo("supplierName", supplierName)
+                q.limit(1).get().addOnSuccessListener { snap ->
+                    val existing = snap.documents.firstOrNull()
+                    commitReceive(lastDoc, existing?.id)
+                }.addOnFailureListener { commitReceive(lastDoc, null) }
+            } else commitReceive(lastDoc, null)
+        }
+        db.collection("stock_batches")
+            .whereEqualTo("sku", sku)
+            .orderBy("receivedAt", Query.Direction.DESCENDING)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { snapLast -> onGotLastBatch(snapLast.documents.firstOrNull()) }
+            .addOnFailureListener { onGotLastBatch(null) }
     }
 
     private fun uploadImageThen(productId: String, uri: Uri, onOk: (String) -> Unit) {
@@ -934,12 +1342,15 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         if (this.isNullOrEmpty()) block() else this
 }
 
+internal fun SuperAdminProductFragment.consume(snapshots: MutableList<DocumentSnapshot>) {}
+
 /* ===== Adapter grid ===== */
 private class ProductsAdapter(
     val onReceive: (Product) -> Unit,
     val onEdit: (Product) -> Unit,
     val onDelete: (Product) -> Unit,
-    val onMore: (Product) -> Unit
+    val onMore: (Product) -> Unit,
+    val allowLongPress: Boolean = true
 ) : ListAdapter<Product, ProductsAdapter.VH>(DIFF) {
 
     companion object {
@@ -964,11 +1375,16 @@ private class ProductsAdapter(
         val tvStock: TextView = v.findViewById(R.id.tvStock)
         val tvCategory: TextView = v.findViewById(R.id.tvCategory)
         val tvPrice: TextView = v.findViewById(R.id.tvPrice)
+        val tvCost: TextView = v.findViewById(R.id.tvCost)
         val btnPrimary: com.google.android.material.button.MaterialButton = v.findViewById(R.id.btnAdd)
         val btnDelete: ImageButton = v.findViewById(R.id.btnDelete)
         init {
             v.setOnClickListener { onEdit(getItem(bindingAdapterPosition)) }
-            v.setOnLongClickListener { onMore(getItem(bindingAdapterPosition)); true }
+            if (allowLongPress) {
+                v.setOnLongClickListener { onMore(getItem(bindingAdapterPosition)); true }
+            } else {
+                v.setOnLongClickListener(null)
+            }
         }
     }
 
@@ -999,9 +1415,11 @@ private class ProductsAdapter(
             h.tvCategory.text = if (product.categoryName.isNotBlank()) "Kategori : ${product.categoryName}" else "Kategori: -"
         }
         h.tvPrice.text = if (product.isService) "Harga: input kasir" else "Rp ${rupiah(product.salePrice)}"
+        h.tvCost.text = if (product.isService) "Modal/Unit  : -" else "Modal/Unit  : Rp ${rupiah(product.lastCost)}"
         h.btnPrimary.text = if (product.isService) "Non-Stok" else "Terima Stok"
         h.btnPrimary.isEnabled = !product.isService
         h.btnPrimary.setOnClickListener { onReceive(product) }
         h.btnDelete.setOnClickListener { onDelete(product) }
     }
 }
+

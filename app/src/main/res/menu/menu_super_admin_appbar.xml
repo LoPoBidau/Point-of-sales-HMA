@@ -3,6 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/action_notifications"
+        android:title="Notifikasi"
+        app:showAsAction="always"
+        app:actionLayout="@layout/view_toolbar_notif_badge"/>
+
+    <item
         android:id="@+id/action_profile"
         android:title="Profil"
         app:showAsAction="always"

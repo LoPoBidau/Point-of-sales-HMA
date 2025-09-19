@@ -1,0 +1,19 @@
+private class PurchaseVH(private val b: com.example.pos_hma.databinding.ItemPurchaseRowBinding) : RecyclerView.ViewHolder(b.root) {
+            fun bind(invoiceNo: String, totalCost: Long, date: java.util.Date?, due: java.util.Date?, nf: NumberFormat, df: SimpleDateFormat, supplier: String = "") {
+                val title = "$invoiceNo — Rp ${nf.format(totalCost)}"
+                val sub = buildString {
+                    append(if (date != null) df.format(date) else "-")
+                    append(" • Jatuh Tempo: ")
+                    append(if (due != null) df.format(due) else "-")
+                    if (supplier.isNotBlank()) {
+                        append(" • ")
+                        append(supplier)
+                    }
+                }
+                b.tvTitle.text = title
+                b.tvSubtitle.text = sub
+            }
+        }
+    }
+}
+

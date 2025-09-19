@@ -21,14 +21,15 @@ class SuperAdminInventoryFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         b.pager.adapter = object : FragmentStateAdapter(this) {
-            override fun getItemCount() = 2
+            override fun getItemCount() = 3
             override fun createFragment(position: Int): Fragment = when (position) {
-                0 -> SuperAdminProductFragment()    // Barang
-                else -> SuperAdminCategoryFragment()// Kategori
+                0 -> SuperAdminProductFragment.newInstance("goods")    // Barang
+                1 -> SuperAdminCategoryFragment()                       // Kategori
+                else -> SuperAdminSupplierFragment()                    // Supplier
             }
         }
         TabLayoutMediator(b.tabLayout, b.pager) { tab, pos ->
-            tab.text = arrayOf("Barang", "Kategori")[pos]
+            tab.text = arrayOf("Barang", "Kategori", "Supplier")[pos]
         }.attach()
     }
 

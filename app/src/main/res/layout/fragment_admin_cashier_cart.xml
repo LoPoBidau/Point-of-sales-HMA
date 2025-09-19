@@ -8,7 +8,7 @@
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginBottom="88dp">
+        android:layout_marginBottom="144dp">
 
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/rv"
@@ -26,43 +26,86 @@
             android:visibility="gone"/>
     </FrameLayout>
 
-    <com.google.android.material.card.MaterialCardView
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="72dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="bottom"
-        android:layout_margin="12dp"
-        app:cardCornerRadius="16dp"
-        app:cardElevation="8dp">
+        android:orientation="vertical">
 
+        <com.google.android.material.card.MaterialCardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="12dp"
+            app:cardCornerRadius="16dp"
+            app:cardElevation="8dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <TextView
+                    android:id="@+id/tvTotalLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sub Total" />
+
+                <TextView
+                    android:id="@+id/tvTotal"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Rp 0"
+                    android:textStyle="bold"
+                    android:textSize="18sp"/>
+
+                <TextView
+                    android:id="@+id/tvServiceFee"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Biaya Service: Rp 0"
+                    android:visibility="gone"/>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <!-- Row 1: two outlined actions -->
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:padding="12dp">
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
 
-            <TextView
-                android:id="@+id/tvTotal"
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnServiceFee"
+                style="?attr/materialButtonOutlinedStyle"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Rp 0"
-                android:textStyle="bold"
-                android:textSize="18sp"/>
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnClear"
-                android:layout_height="wrap_content"
-                android:layout_width="wrap_content"
-                style="?attr/materialButtonOutlinedStyle"
-                android:text="Kosongkan"/>
+                android:text="Tambah Service"/>
 
             <Space android:layout_width="8dp" android:layout_height="1dp"/>
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnCheckout"
-                android:text="Bayar" android:layout_height="wrap_content"
-                android:layout_width="wrap_content"/>
+                android:id="@+id/btnClear"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Kosongkan Keranjang"/>
         </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+
+        <!-- Row 2: primary action full width -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCheckout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="12dp"
+            android:text="Bayar"/>
+    </LinearLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

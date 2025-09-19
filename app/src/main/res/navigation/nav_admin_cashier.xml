@@ -19,6 +19,21 @@
         android:name="com.example.pos_hma.ui.role.admin.AdminCashierPaymentFragment"
         android:label="Pembayaran" />
 
+    <fragment
+        android:id="@+id/adminCashierReceiptFragment"
+        android:name="com.example.pos_hma.ui.role.admin.AdminCashierReceiptFragment"
+        android:label="Struk" />
+
+    <fragment
+        android:id="@+id/adminCashierReportFragment"
+        android:name="com.example.pos_hma.ui.role.admin.AdminCashierReportFragment"
+        android:label="Riwayat Transaksi" />
+
+    <fragment
+        android:id="@+id/adminCashierGoodsFragment"
+        android:name="com.example.pos_hma.ui.role.admin.AdminCashierGoodsFragment"
+        android:label="Barang" />
+
     <action
         android:id="@+id/action_adminCashierCatalogFragment_to_adminCartFragment"
         app:destination="@id/adminCartFragment"

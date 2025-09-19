@@ -2,6 +2,7 @@ package com.example.pos_hma.ui.role.admin
 
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.map
 import com.example.pos_hma.data.Product
@@ -17,20 +18,37 @@ class CartViewModel : ViewModel() {
     val totalItems: LiveData<Int> =
         _lines.map { it.values.sumOf { line -> line.qty } }
 
-    val totalAmount: LiveData<Long> =
+    // Subtotal barang (tidak termasuk service)
+    val goodsSubTotal: LiveData<Long> =
         _lines.map { it.values.filter { l -> !l.product.isService }
             .sumOf { l -> l.product.salePrice * l.qty } }
+
+    // Biaya service opsional (ditentukan kasir di keranjang)
+    private val _serviceFee = MutableLiveData<Long>(0L)
+    val serviceFee: LiveData<Long> = _serviceFee
+
+    // Total akhir = subtotal barang + biaya service
+    val grandTotal: LiveData<Long> = MediatorLiveData<Long>().apply {
+        fun recalc() {
+            val goods = goodsSubTotal.value ?: 0L
+            val svc = serviceFee.value ?: 0L
+            value = goods + svc
+        }
+        addSource(goodsSubTotal) { recalc() }
+        addSource(serviceFee) { recalc() }
+    }
+
+    fun setServiceFee(amount: Long) {
+        _serviceFee.value = amount.coerceAtLeast(0L)
+    }
+    fun clearServiceFee() { _serviceFee.value = 0L }
 
     fun plus(p: Product) {
         val key = p.sku.ifBlank { p.id }
         // Gunakan LinkedHashMap agar urutan stabil
         val map = LinkedHashMap(_lines.value ?: linkedMapOf())
         val current = map[key]?.qty ?: 0
-        if (p.isService) {
-            if (current >= 1) return
-        } else {
-            if (current >= p.stock) return
-        }
+        if (p.trackStock && current >= p.stock) return
         map[key] = CartLine(p, current + 1)
         _lines.value = map        // OK: LinkedHashMap adalah Map
     }
@@ -43,5 +61,5 @@ class CartViewModel : ViewModel() {
         _lines.value = map
     }
 
-    fun clear() { _lines.value = linkedMapOf() }
+    fun clear() { _lines.value = linkedMapOf(); _serviceFee.value = 0L }
 }

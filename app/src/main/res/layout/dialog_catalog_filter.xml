@@ -13,26 +13,6 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Tipe Produk"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp"/>
-
-        <com.google.android.material.checkbox.MaterialCheckBox
-            android:id="@+id/cbServices"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Jasa"/>
-
-        <com.google.android.material.checkbox.MaterialCheckBox
-            android:id="@+id/cbGoods"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Barang dan Spare Part"
-            android:layout_marginBottom="12dp"/>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
             android:text="Kategori"
             android:textStyle="bold"
             android:layout_marginBottom="8dp"/>
@@ -45,4 +25,3 @@
 
     </LinearLayout>
 </ScrollView>
-

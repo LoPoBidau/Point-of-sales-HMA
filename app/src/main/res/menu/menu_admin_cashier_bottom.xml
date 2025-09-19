@@ -4,4 +4,14 @@
         android:id="@+id/adminCashierCatalogFragment"
         android:title="Katalog"
         android:icon="@drawable/ic_catalog" />
+
+    <item
+        android:id="@+id/adminCashierGoodsFragment"
+        android:title="Barang"
+        android:icon="@drawable/ic_inventory" />
+
+    <item
+        android:id="@+id/adminCashierReportFragment"
+        android:title="Riwayat Transaksi"
+        android:icon="@drawable/ic_report" />
 </menu>

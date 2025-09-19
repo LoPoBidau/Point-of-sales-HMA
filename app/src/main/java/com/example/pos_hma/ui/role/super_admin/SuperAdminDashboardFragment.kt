@@ -24,7 +24,10 @@ class SuperAdminDashboardFragment : Fragment() {
 
     override fun onViewCreated(v: View, s: Bundle?) {
         ensureRoleAllowedOrExit(setOf("owner","super-admin","superadmin")) {
-            binding.tvSummary.text = "Halo Owner! Nanti kita taruh chart & KPI penjualan di sini."
+            // Guard against rapid navigation where view might be destroyed
+            _binding?.let { b ->
+                b.tvSummary.text = "Halo Owner! Nanti kita taruh chart & KPI penjualan di sini."
+            }
         }
     }
 
@@ -43,7 +46,11 @@ class SuperAdminDashboardFragment : Fragment() {
     }
 
     private fun normalize(r: String?) = r?.trim()?.lowercase()?.replace('_','-')?.replace(' ','-')
-    private fun goLogin() { startActivity(Intent(requireContext(), LoginActivity::class.java)); requireActivity().finish() }
+    private fun goLogin() {
+        val ctx = context ?: return
+        ctx.startActivity(Intent(ctx, LoginActivity::class.java))
+        activity?.finish()
+    }
 
     override fun onDestroyView() { _binding = null; super.onDestroyView() }
 }

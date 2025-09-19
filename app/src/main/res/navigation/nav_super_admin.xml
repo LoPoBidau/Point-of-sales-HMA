@@ -16,6 +16,11 @@
         android:label="Inventori"
         tools:layout="@layout/fragment_super_admin_inventory" />
     <fragment
+        android:id="@+id/superAdminNotificationFragment"
+        android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminNotificationFragment"
+        android:label="Notifikasi"
+        tools:layout="@layout/fragment_super_admin_notification" />
+    <fragment
         android:id="@+id/superAdminAdjustRequestFragment"
         android:name="com.example.pos_hma.ui.role.super_admin.SuperAdminAdjustRequestFragment"
         android:label="Persetujuan Stok" />

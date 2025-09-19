@@ -8,7 +8,7 @@
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="50dp"
         app:title="@string/app_name" />
 
     <androidx.fragment.app.FragmentContainerView
@@ -24,6 +24,10 @@
         android:id="@+id/bottomNav"
         android:layout_width="match_parent"
         android:layout_height="66dp"
-        app:menu="@menu/menu_admin_cashier_bottom" />
+        app:menu="@menu/menu_admin_cashier_bottom"
+        app:itemActiveIndicatorStyle="@style/BottomNav.ActiveIndicator.None"
+        app:itemIconTint="@color/bnv_tint"
+        app:itemTextColor="@color/bnv_tint"
+        app:labelVisibilityMode="labeled" />
 
 </LinearLayout>

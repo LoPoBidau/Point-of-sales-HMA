@@ -38,43 +38,6 @@
                     android:layout_height="wrap_content"/>
             </com.google.android.material.textfield.TextInputLayout>
 
-            <LinearLayout
-                android:id="@+id/tvSectionService"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="8dp">
-
-                <TextView
-                    android:id="@+id/tvSectionServiceTitle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Jasa"
-                    android:textStyle="bold"
-                    android:textSize="18sp" />
-
-                <ImageView
-                    android:layout_width="16dp"
-                    android:layout_height="16dp"
-                    android:layout_marginStart="6dp"
-                    android:tint="@color/md_theme_onSurfaceVariant"
-                    android:src="@drawable/ic_catalog" />
-            </LinearLayout>
-
-            <androidx.recyclerview.widget.RecyclerView
-                android:id="@+id/rvServices"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:nestedScrollingEnabled="false"
-                android:overScrollMode="never" />
-
-            <com.google.android.material.divider.MaterialDivider
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"/>
 
             <LinearLayout
                 android:id="@+id/tvSectionGoods"
@@ -140,7 +103,7 @@
 
                 <TextView
                     android:id="@+id/tvCartItems"
-                    android:text="Total Items: 0"
+                    android:text="Sub Total"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"/>
 
@@ -164,4 +127,5 @@
                 android:layout_height="wrap_content"/>
         </LinearLayout>
     </com.google.android.material.card.MaterialCardView>
+
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

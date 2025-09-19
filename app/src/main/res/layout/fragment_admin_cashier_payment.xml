@@ -1,57 +1,102 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:layout_height="match_parent">
 
-    <com.google.android.material.card.MaterialCardView
+    <!-- Main content -->
+    <LinearLayout
+        android:id="@+id/paymentContent"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        app:cardCornerRadius="12dp"
-        app:cardElevation="3dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <LinearLayout
+        <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="16dp">
+            app:cardCornerRadius="12dp"
+            app:cardElevation="3dp">
 
-            <TextView
-                android:id="@+id/tvTotalLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Total"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tvTotal"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Rp 0"
-                android:textStyle="bold"
-                android:textSize="20sp"
-                android:gravity="end" />
+                android:orientation="vertical"
+                android:padding="16dp">
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="8dp" />
+                <TextView
+                    android:id="@+id/tvTotalLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sub Total"
+                    android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/tvPaidLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Nominal Bayar" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <TextView
+                        android:id="@+id/tvServiceFeeLabel"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Biaya Service"
+                        android:visibility="gone"/>
+                    <TextView
+                        android:id="@+id/tvServiceFeeValue"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Rp 0"
+                        android:visibility="gone"/>
+                </LinearLayout>
 
-            <TextView
-                android:id="@+id/tvPaid"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Rp 0"
-                android:textStyle="bold"
-                android:textSize="22sp"
-                android:gravity="end" />
+                <TextView
+                    android:id="@+id/tvTotal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Rp 0"
+                    android:textStyle="bold"
+                    android:textSize="18sp"
+                    android:gravity="end" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp" />
+
+                <TextView
+                    android:id="@+id/tvGrandLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Yang Harus Dibayar"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvGrand"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Rp 0"
+                    android:textStyle="bold"
+                    android:textSize="22sp"
+                    android:gravity="end" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="8dp" />
+
+                <TextView
+                    android:id="@+id/tvPaidLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Nominal Bayar" />
+
+                <TextView
+                    android:id="@+id/tvPaid"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Rp 0"
+                    android:textStyle="bold"
+                    android:textSize="22sp"
+                    android:gravity="end" />
 
             <TextView
                 android:id="@+id/tvChange"
@@ -61,80 +106,82 @@
                 android:textSize="14sp"
                 android:gravity="end" />
 
-        </LinearLayout>
-    </com.google.android.material.card.MaterialCardView>
+            
 
-    <androidx.gridlayout.widget.GridLayout
-        android:id="@+id/keypad"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="16dp"
-        android:layout_weight="1"
-        app:alignmentMode="alignMargins"
-        app:columnCount="3"
-        app:rowCount="4"
-        app:rowOrderPreserved="false"
-        app:useDefaultMargins="true">
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnK1"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="0dp"
+        <androidx.gridlayout.widget.GridLayout
+            android:id="@+id/keypad"
+            android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:text="1"
-            android:textSize="18sp"
-            app:layout_columnWeight="1"
-            app:layout_rowWeight="1"
-            app:layout_gravity="fill"
-            app:layout_row="0"
-            app:layout_column="0" />
+            android:layout_marginTop="16dp"
+            android:layout_weight="1"
+            app:alignmentMode="alignMargins"
+            app:columnCount="3"
+            app:rowCount="4"
+            app:rowOrderPreserved="false"
+            app:useDefaultMargins="true">
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnK2"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:text="2"
-            android:textSize="18sp"
-            app:layout_columnWeight="1"
-            app:layout_rowWeight="1"
-            app:layout_gravity="fill"
-            app:layout_row="0"
-            app:layout_column="1" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnK1"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:text="1"
+                android:textSize="18sp"
+                app:layout_columnWeight="1"
+                app:layout_rowWeight="1"
+                app:layout_gravity="fill"
+                app:layout_row="0"
+                app:layout_column="0" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnK3"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:text="3"
-            android:textSize="18sp"
-            app:layout_columnWeight="1"
-            app:layout_rowWeight="1"
-            app:layout_gravity="fill"
-            app:layout_row="0"
-            app:layout_column="2" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnK2"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:text="2"
+                android:textSize="18sp"
+                app:layout_columnWeight="1"
+                app:layout_rowWeight="1"
+                app:layout_gravity="fill"
+                app:layout_row="0"
+                app:layout_column="1" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btnK4"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="0dp"
-            android:layout_height="0dp"
-            android:minWidth="0dp"
-            android:minHeight="0dp"
-            android:text="4"
-            android:textSize="18sp"
-            app:layout_columnWeight="1"
-            app:layout_rowWeight="1"
-            app:layout_gravity="fill"
-            app:layout_row="1"
-            app:layout_column="0" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnK3"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:text="3"
+                android:textSize="18sp"
+                app:layout_columnWeight="1"
+                app:layout_rowWeight="1"
+                app:layout_gravity="fill"
+                app:layout_row="0"
+                app:layout_column="2" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnK4"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:text="4"
+                android:textSize="18sp"
+                app:layout_columnWeight="1"
+                app:layout_rowWeight="1"
+                app:layout_gravity="fill"
+                app:layout_row="1"
+                app:layout_column="0" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnK5"
@@ -258,19 +305,50 @@
 
     </androidx.gridlayout.widget.GridLayout>
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnPayNow"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Bayar"
-        android:enabled="false"
-        android:layout_marginBottom="8dp" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnPayNow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Bayar"
+            android:enabled="false"
+            android:layout_marginBottom="8dp" />
 
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnCancel"
-        style="?attr/materialButtonOutlinedStyle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Batal Bayar" />
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCancel"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Batal Bayar" />
 
-</LinearLayout>
+    </LinearLayout>
+
+    <!-- Overlay untuk loading dan sukses -->
+    <LinearLayout
+        android:id="@+id/paymentOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:clickable="true"
+        android:focusable="true">
+
+        <ProgressBar
+            android:id="@+id/progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:indeterminate="true"
+            android:layout_marginBottom="16dp" />
+
+
+        <com.lottiefiles.dotlottie.core.widget.DotLottieAnimation
+            android:id="@+id/successCheck"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:visibility="gone" />
+
+
+    </LinearLayout>
+
+</FrameLayout>

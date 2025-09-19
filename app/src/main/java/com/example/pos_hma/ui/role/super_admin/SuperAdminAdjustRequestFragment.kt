@@ -20,6 +20,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.DocumentSnapshot
 
 class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
 
@@ -33,6 +34,9 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
         onReject = { reject(it) }
     )
 
+    private enum class StatusFilter { PENDING, APPROVED, REJECTED, ALL }
+    private var currentStatus: StatusFilter = StatusFilter.ALL
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, s: Bundle?
     ): View {
@@ -43,6 +47,18 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
     override fun onViewCreated(v: View, s: Bundle?) {
         binding.rv.layoutManager = LinearLayoutManager(requireContext())
         binding.rv.adapter = adapter
+
+        // Setup chips for status filter (default: Semua)
+        binding.chipPending.isChecked = false
+        binding.chipApproved.isChecked = false
+        binding.chipRejected.isChecked = false
+        binding.chipAll.isChecked = true
+
+        binding.chipPending.setOnClickListener { setStatus(StatusFilter.PENDING) }
+        binding.chipApproved.setOnClickListener { setStatus(StatusFilter.APPROVED) }
+        binding.chipRejected.setOnClickListener { setStatus(StatusFilter.REJECTED) }
+        binding.chipAll.setOnClickListener { setStatus(StatusFilter.ALL) }
+
         listen()
         binding.swipeRefresh.setOnRefreshListener { refreshOnce() }
     }
@@ -59,49 +75,61 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
         reg = null
     }
 
+    private fun setStatus(s: StatusFilter) {
+        if (currentStatus == s) return
+        currentStatus = s
+        listen()
+    }
+
     private fun listen() {
         disposeSnapshots()
-        reg = db.collection("stock_adjust_requests")
-            .whereEqualTo("status", "PENDING")
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .addSnapshotListener { snap, e ->
-                if (e != null) {
-                    // kalau rules/index bermasalah, tampilkan reason
-                    val msg = when {
-                        e is FirebaseFirestoreException &&
-                                e.code == FirebaseFirestoreException.Code.FAILED_PRECONDITION ->
-                            "Index Firestore belum dibuat untuk permintaan. Buka link 'Create index' di logcat."
-                        e is FirebaseFirestoreException &&
-                                e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ->
-                            "Permission Firestore ditolak. Cek security rules untuk koleksi stock_adjust_requests."
-                        else -> e.message ?: "Gagal memuat."
-                    }
-                    toast(msg); return@addSnapshotListener
+        var q = db.collection("stock_adjust_requests") as com.google.firebase.firestore.Query
+        if (currentStatus != StatusFilter.ALL) q = q.whereEqualTo("status", currentStatus.name)
+        q = q.orderBy("createdAt", Query.Direction.DESCENDING)
+        reg = q.addSnapshotListener { snap, e ->
+            if (e != null) {
+                // kalau rules/index bermasalah, tampilkan reason
+                val msg = when {
+                    e is FirebaseFirestoreException &&
+                            e.code == FirebaseFirestoreException.Code.FAILED_PRECONDITION ->
+                        "Index Firestore belum dibuat untuk permintaan. Buka link 'Create index' di logcat."
+                    e is FirebaseFirestoreException &&
+                            e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+                        "Permission Firestore ditolak. Cek security rules untuk koleksi stock_adjust_requests."
+                    else -> e.message ?: "Gagal memuat."
                 }
-                val list = snap!!.documents.map { d ->
-                    StockAdjustRequest(
-                        id = d.id,
-                        sku = d.getString("sku") ?: "",
-                        productName = d.getString("productName") ?: "",
-                        requestedDelta = d.getLong("requestedDelta") ?: 0L,
-                        reason = d.getString("reason") ?: "",
-                        status = d.getString("status") ?: "PENDING",
-                        requestedBy = d.getString("requestedBy") ?: "",
-                        createdAt = d.getTimestamp("createdAt")
-                    )
-                }
-                adapter.submitList(list)
-                binding.empty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+                toast(msg); return@addSnapshotListener
             }
+            var list = snap!!.documents.map { d ->
+                StockAdjustRequest(
+                    id = d.id,
+                    sku = d.getString("sku") ?: "",
+                    productName = d.getString("productName") ?: "",
+                    requestedDelta = d.getLong("requestedDelta") ?: 0L,
+                    reason = d.getString("reason") ?: "",
+                    status = d.getString("status") ?: "PENDING",
+                    requestedBy = d.getString("requestedBy") ?: "",
+                    createdAt = d.getTimestamp("createdAt")
+                )
+            }
+            if (currentStatus == StatusFilter.ALL) {
+                list = list.sortedWith(compareBy(
+                    { statusOrderWeight(it.status) },
+                    { -(it.createdAt?.toDate()?.time ?: 0L) }
+                ))
+            }
+            adapter.submitList(list)
+            binding.empty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+        }
     }
 
     private fun refreshOnce() {
-        db.collection("stock_adjust_requests")
-            .whereEqualTo("status", "PENDING")
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .get()
+        var q = db.collection("stock_adjust_requests") as com.google.firebase.firestore.Query
+        if (currentStatus != StatusFilter.ALL) q = q.whereEqualTo("status", currentStatus.name)
+        q = q.orderBy("createdAt", Query.Direction.DESCENDING)
+        q.get()
             .addOnSuccessListener { qs ->
-                val list = qs.documents.map { d ->
+                var list = qs.documents.map { d ->
                     StockAdjustRequest(
                         id = d.id,
                         sku = d.getString("sku") ?: "",
@@ -112,11 +140,24 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                         requestedBy = d.getString("requestedBy") ?: "",
                         createdAt = d.getTimestamp("createdAt")
                     )
+                }
+                if (currentStatus == StatusFilter.ALL) {
+                    list = list.sortedWith(compareBy(
+                        { statusOrderWeight(it.status) },
+                        { -(it.createdAt?.toDate()?.time ?: 0L) }
+                    ))
                 }
                 adapter.submitList(list)
                 binding.empty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
             }
             .addOnCompleteListener { binding.swipeRefresh.isRefreshing = false }
+    }
+
+    private fun statusOrderWeight(status: String): Int = when (status.uppercase()) {
+        "PENDING" -> 0
+        "APPROVED" -> 1
+        "REJECTED" -> 2
+        else -> 3
     }
 
     private fun approve(r: StockAdjustRequest) {
@@ -128,26 +169,122 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                 val pRef  = db.collection("products").document(r.sku)
                 val reqRef = db.collection("stock_adjust_requests").document(r.id)
                 val now = FieldValue.serverTimestamp()
-                db.runTransaction { trx ->
-                    val p = trx.get(pRef)
-                    if (!p.exists()) throw IllegalStateException("Produk tidak ditemukan")
-                    if (!(p.getBoolean("trackStock") ?: true)) throw IllegalStateException("Jasa tidak pakai stok")
 
-                    val old = p.getLong("stock") ?: 0L
-                    val newStock = old + r.requestedDelta
-                    if (newStock < 0) throw IllegalStateException("Stok tidak boleh negatif")
+                // Jika ADD: perlu last batch (DESC 1). Jika SUB: perlu batch ascending cukup qty
+                if (r.requestedDelta >= 0) {
+                    // ADD: prefetch last batch
+                    db.collection("stock_batches").whereEqualTo("sku", r.sku)
+                        .orderBy("receivedAt", Query.Direction.DESCENDING)
+                        .limit(1)
+                        .get()
+                        .addOnSuccessListener { snapLast ->
+                            val lastDoc = snapLast.documents.firstOrNull()
+                            db.runTransaction { trx ->
+                                val p = trx.get(pRef)
+                                if (!p.exists()) throw IllegalStateException("Produk tidak ditemukan")
+                                if (!(p.getBoolean("trackStock") ?: true)) throw IllegalStateException("Jasa tidak pakai stok")
+                                // Ambil unitCost dari request; fallback ke lastCost produk
+                                val reqSnap = trx.get(reqRef)
+                                val unitCostAdj = (reqSnap.getLong("unitCost")
+                                    ?: p.getLong("lastCost") ?: 0L)
+                                if (unitCostAdj <= 0L) throw IllegalStateException("Harga modal tidak valid")
 
-                    trx.update(pRef, mapOf("stock" to newStock, "updatedAt" to now))
-                    val mv = db.collection("inventory_movements").document()
-                    trx.set(mv, mapOf(
-                        "sku" to r.sku, "type" to "ADJUSTMENT",
-                        "qtyDelta" to r.requestedDelta, "unitCost" to 0L,
-                        "createdAt" to now, "refId" to "REQ", "note" to r.reason
-                    ))
-                    trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
-                    null
-                }.addOnSuccessListener { toast("Disetujui") }
-                    .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
+                                val qty = r.requestedDelta
+                                val old = p.getLong("stock") ?: 0L
+                                val newStock = old + qty
+                                trx.update(pRef, mapOf("stock" to newStock, "lastCost" to unitCostAdj, "updatedAt" to now))
+
+                                var merged = false
+                                if (lastDoc != null) {
+                                    val bRef = lastDoc.reference
+                                    val bs = trx.get(bRef)
+                                    val lastCost = bs.getLong("unitCost") ?: 0L
+                                    if (unitCostAdj >= lastCost) {
+                                        val remain = bs.getLong("remainingQty") ?: 0L
+                                        val newRemain = remain + qty
+                                        val weighted = if (newRemain > 0) ((lastCost * remain + unitCostAdj * qty) / newRemain) else unitCostAdj
+                                        trx.update(bRef, mapOf("remainingQty" to newRemain, "unitCost" to weighted, "receivedAt" to now))
+                                        merged = true
+                                    }
+                                }
+                                if (!merged) {
+                                    val nb = db.collection("stock_batches").document()
+                                    trx.set(nb, mapOf(
+                                        "sku" to r.sku,
+                                        "unitCost" to unitCostAdj,
+                                        "remainingQty" to qty,
+                                        "receivedAt" to now,
+                                        "purchaseId" to "",
+                                        "invoiceNo" to "",
+                                        "dueDate" to com.google.firebase.Timestamp.now()
+                                    ))
+                                }
+
+                                val mv = db.collection("inventory_movements").document()
+                                trx.set(mv, mapOf(
+                                    "sku" to r.sku, "type" to "ADJUSTMENT",
+                                    "qtyDelta" to qty, "unitCost" to unitCostAdj,
+                                    "createdAt" to now, "refId" to r.id, "note" to r.reason
+                                ))
+                                trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
+                                null
+                            }.addOnSuccessListener { toast("Disetujui") }
+                                .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
+                        }
+                        .addOnFailureListener { e -> toast(e.message ?: "Gagal memuat batch") }
+                } else {
+                    // SUB: prefetch ascending until cukup
+                    val need = -r.requestedDelta
+                    fun fetchEnough(acc: MutableList<DocumentSnapshot> = mutableListOf(), startAfter: DocumentSnapshot? = null) {
+                        var q = db.collection("stock_batches")
+                            .whereEqualTo("sku", r.sku)
+                            .orderBy("receivedAt", Query.Direction.ASCENDING)
+                            .limit(50)
+                        if (startAfter != null) q = q.startAfter(startAfter)
+                        q.get().addOnSuccessListener { snap ->
+                            val docs = snap.documents
+                            acc.addAll(docs)
+                            val total = acc.sumOf { it.getLong("remainingQty") ?: 0L }
+                            if (total < need && docs.isNotEmpty()) fetchEnough(acc, docs.last()) else consume(acc)
+                        }.addOnFailureListener { e -> toast(e.message ?: "Gagal memuat batch") }
+                    }
+                    fun consume(batches: List<DocumentSnapshot>) {
+                        val avail = batches.sumOf { it.getLong("remainingQty") ?: 0L }
+                        if (avail < need) { toast("Batch stok tidak cukup"); return }
+                        db.runTransaction { trx ->
+                            val p = trx.get(pRef)
+                            if (!p.exists()) throw IllegalStateException("Produk tidak ditemukan")
+                            if (!(p.getBoolean("trackStock") ?: true)) throw IllegalStateException("Jasa tidak pakai stok")
+                            val old = p.getLong("stock") ?: 0L
+                            val newStock = old - need
+                            if (newStock < 0) throw IllegalStateException("Stok tidak cukup")
+                            trx.update(pRef, mapOf("stock" to newStock, "updatedAt" to now))
+                            var remainNeed = need
+                            for (d in batches) {
+                                if (remainNeed <= 0) break
+                                val bRef = d.reference
+                                val bs = trx.get(bRef)
+                                val rem = bs.getLong("remainingQty") ?: 0L
+                                if (rem <= 0L) continue
+                                val unit = bs.getLong("unitCost") ?: 0L
+                                val take = kotlin.math.min(remainNeed, rem)
+                                trx.update(bRef, mapOf("remainingQty" to (rem - take)))
+                                val mv = db.collection("inventory_movements").document()
+                                trx.set(mv, mapOf(
+                                    "sku" to r.sku, "type" to "ADJUSTMENT",
+                                    "qtyDelta" to -take, "unitCost" to unit,
+                                    "createdAt" to now, "refId" to r.id, "note" to r.reason
+                                ))
+                                remainNeed -= take
+                            }
+                            if (remainNeed != 0L) throw IllegalStateException("Batch stok tidak cukup")
+                            trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
+                            null
+                        }.addOnSuccessListener { toast("Disetujui") }
+                            .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
+                    }
+                    fetchEnough()
+                }
             }.show()
     }
 
@@ -167,6 +304,8 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
     private fun toast(s: String) =
         Toast.makeText(requireContext(), s, Toast.LENGTH_LONG).show()
 }
+
+private fun SuperAdminAdjustRequestFragment.consume(snapshots: kotlin.collections.MutableList<com.google.firebase.firestore.DocumentSnapshot>) {}
 
 /* ===== Adapter ===== */
 private class ReqAdapter(
@@ -199,5 +338,42 @@ private class ReqVH(
         b.tvSub.text = "SKU ${r.sku} • ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}\nAlasan: ${r.reason}"
         b.btnApprove.setOnClickListener { onApprove(r) }
         b.btnReject.setOnClickListener { onReject(r) }
+        // Localize status text + badge color, and control action button visibility
+        run {
+            val (statusLabel, badgeBg) = when (r.status.uppercase()) {
+                "PENDING" -> "Pending" to com.example.pos_hma.R.drawable.bg_badge_blue
+                "APPROVED" -> "Disetujui" to com.example.pos_hma.R.drawable.bg_badge_green
+                "REJECTED" -> "Ditolak" to com.example.pos_hma.R.drawable.bg_badge_red
+                else -> r.status to com.example.pos_hma.R.drawable.bg_badge_gray
+            }
+            try {
+                b.tvStatusBadge.text = statusLabel
+                b.tvStatusBadge.setBackgroundResource(badgeBg)
+            } catch (_: Throwable) { }
+
+            val isPending = r.status.equals("PENDING", ignoreCase = true)
+            b.btnApprove.visibility = if (isPending) View.VISIBLE else View.GONE
+            b.btnReject.visibility = if (isPending) View.VISIBLE else View.GONE
+            // Update subtitle with localized label
+            val deltaPrefix = if (r.requestedDelta >= 0) "+" else ""
+            b.tvSub.text = "SKU ${r.sku} • ${deltaPrefix}${r.requestedDelta}  |  Status: ${statusLabel}\nAlasan: ${r.reason}"
+        }
+        // Override subtitle to include status label for clarity
+        b.tvSub.text = "SKU ${r.sku} • ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}  |  Status: ${r.status}\nAlasan: ${r.reason}"
+        // Force localized status and badge to be the last applied state
+        run {
+            val (statusLabel2, badgeBg2) = when (r.status.uppercase()) {
+                "PENDING" -> "Pending" to com.example.pos_hma.R.drawable.bg_badge_blue
+                "APPROVED" -> "Disetujui" to com.example.pos_hma.R.drawable.bg_badge_green
+                "REJECTED" -> "Ditolak" to com.example.pos_hma.R.drawable.bg_badge_red
+                else -> r.status to com.example.pos_hma.R.drawable.bg_badge_gray
+            }
+            try {
+                b.tvStatusBadge.text = statusLabel2
+                b.tvStatusBadge.setBackgroundResource(badgeBg2)
+            } catch (_: Throwable) { }
+            val deltaPrefix2 = if (r.requestedDelta >= 0) "+" else ""
+            b.tvSub.text = "SKU ${r.sku} • ${deltaPrefix2}${r.requestedDelta}  |  Status: ${statusLabel2}\nAlasan: ${r.reason}"
+        }
     }
 }

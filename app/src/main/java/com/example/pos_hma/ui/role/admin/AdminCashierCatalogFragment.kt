@@ -11,7 +11,6 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
-import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
@@ -19,7 +18,6 @@ import com.example.pos_hma.R
 import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.FragmentAdminCashierCatalogBinding
 import com.example.pos_hma.databinding.ItemProductCatalogGoodsBinding
-import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -39,12 +37,9 @@ class AdminCashierCatalogFragment : Fragment() {
 
     private val cartVm: CartViewModel by activityViewModels()
 
-    private lateinit var svcAdapter: CashierItemAdapter
     private lateinit var goodsAdapter: CashierGoodsRowAdapter
 
     // Filter state
-    private var filterShowServices: Boolean = true
-    private var filterShowGoods: Boolean = true
     private val filterCategories = linkedSetOf<String>()
     private var availableCategories: List<String> = emptyList()
 
@@ -61,21 +56,12 @@ class AdminCashierCatalogFragment : Fragment() {
     }
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        svcAdapter = CashierItemAdapter(
-            getQty = { key -> cartVm.lines.value?.get(key)?.qty ?: 0 },
-            onPlus = { p -> cartVm.plus(p); animateCartIcon() },
-            onMinus = { cartVm.minus(it) },
-            layoutRes = R.layout.item_product_service
-        )
         goodsAdapter = CashierGoodsRowAdapter(
             getQty = { key -> cartVm.lines.value?.get(key)?.qty ?: 0 },
             onPlus = { p -> cartVm.plus(p); animateCartIcon() },
             onMinus = { cartVm.minus(it) }
         )
 
-        // Services: horizontal swipe-only list
-        binding.rvServices.layoutManager = GridLayoutManager(requireContext(), 1, LinearLayoutManager.HORIZONTAL, false)
-        binding.rvServices.adapter = svcAdapter
         // Goods/spare parts: use compact cart-row layout vertically
         binding.rvGoods.layoutManager = LinearLayoutManager(requireContext())
         binding.rvGoods.adapter = goodsAdapter
@@ -99,29 +85,32 @@ class AdminCashierCatalogFragment : Fragment() {
         }
 
         // observe cart: update cart bar + refresh steppers
-        cartVm.lines.observe(viewLifecycleOwner) {
-            svcAdapter.notifyDataSetChanged()
-            goodsAdapter.notifyDataSetChanged()
+        cartVm.lines.observe(viewLifecycleOwner) { goodsAdapter.notifyDataSetChanged(); updateCartBarState() }
+        cartVm.totalItems.observe(viewLifecycleOwner) { _ ->
+            // Label tetap "Sub Total"; hanya refresh state
+            binding.tvCartItems.text = "Sub Total"
+            updateCartBarState()
         }
-        cartVm.totalItems.observe(viewLifecycleOwner) { n ->
-            binding.cartBar.isVisible = n > 0
-            binding.btnPay.isEnabled = n > 0
-            binding.tvCartItems.text = "Total Items: $n"
+        cartVm.serviceFee.observe(viewLifecycleOwner) { _ ->
+            // Update cart bar visibility when service fee changes
+            updateCartBarState()
         }
-        cartVm.totalAmount.observe(viewLifecycleOwner) { amt ->
+        cartVm.grandTotal.observe(viewLifecycleOwner) { amt ->
             binding.tvCartTotal.text = "Rp ${rupiah(amt)}"
         }
 
         // Ensure initial cart bar state is correct (won't disappear on refresh)
-        val initItems = cartVm.totalItems.value ?: 0
-        binding.cartBar.isVisible = initItems > 0
-        binding.btnPay.isEnabled = initItems > 0
-        binding.tvCartItems.text = "Total Items: $initItems"
-        binding.tvCartTotal.text = "Rp ${rupiah(cartVm.totalAmount.value ?: 0)}"
+        val initItems = cartVm.totalItems.value ?: 0 // kept for state only
+        binding.tvCartItems.text = "Sub Total"
+        binding.tvCartTotal.text = "Rp ${rupiah(cartVm.grandTotal.value ?: 0)}"
+        updateCartBarState()
 
         binding.btnPay.setOnClickListener {
+            // Selalu ke keranjang saat ada barang
             findNavController().navigate(R.id.adminCartFragment)
         }
+
+        // No service action in catalog
     }
 
     override fun onDestroyView() {
@@ -137,8 +126,15 @@ class AdminCashierCatalogFragment : Fragment() {
         cartIcon = cartActionView?.findViewById(R.id.ivCart)
         tvCartBadge = cartActionView?.findViewById(R.id.tvBadgeCount)
 
-        updateBadge(cartVm.totalItems.value ?: 0)
-        cartVm.totalItems.observe(viewLifecycleOwner) { n -> updateBadge(n) }
+        fun badge(): Int {
+            val items = cartVm.totalItems.value ?: 0
+            val svc = (cartVm.serviceFee.value ?: 0L) > 0L
+            return items + if (svc) 1 else 0
+        }
+
+        updateBadge(badge())
+        cartVm.totalItems.observe(viewLifecycleOwner) { _ -> updateBadge(badge()) }
+        cartVm.serviceFee.observe(viewLifecycleOwner) { _ -> updateBadge(badge()) }
 
         cartActionView?.setOnClickListener {
             findNavController().navigate(R.id.adminCartFragment)
@@ -206,23 +202,32 @@ class AdminCashierCatalogFragment : Fragment() {
         fun nameOk(p: Product) = q.isEmpty() || p.nameLowercase.contains(q)
         fun catOk(p: Product) = filterCategories.isEmpty() || filterCategories.contains(p.categoryName)
 
-        val svc = all.filter { it.isService && filterShowServices && nameOk(it) && catOk(it) }
-        val goods = all.filter { !it.isService && filterShowGoods && nameOk(it) && catOk(it) }
-        svcAdapter.submit(svc)
+        val goods = all
+            .filter { !it.isService && nameOk(it) && catOk(it) }
+            .sortedWith(compareBy<Product> { p ->
+                val trackable = p.trackStock && !p.isService
+                if (trackable && p.stock <= 0L) 1 else 0
+            }.thenBy { it.nameLowercase })
         goodsAdapter.submit(goods)
-        binding.tvSectionService.isVisible = svc.isNotEmpty()
         binding.tvSectionGoods.isVisible = goods.isNotEmpty()
+    }
+
+    private fun updateCartBarState() {
+        val n = cartVm.totalItems.value ?: 0
+        val hasService = (cartVm.serviceFee.value ?: 0L) > 0L
+        val showBar = (n > 0) || hasService
+        binding.cartBar.isVisible = showBar
+        val canPay = (n > 0) || hasService
+        // Tombol selalu terlihat; aktif jika ada barang atau service
+        binding.btnPay.visibility = View.VISIBLE
+        binding.btnPay.isEnabled = canPay
+        binding.btnPay.alpha = if (canPay) 1f else 0.5f
     }
 
     private fun showFilterDialog() {
         val ctx = requireContext()
         val view = LayoutInflater.from(ctx).inflate(R.layout.dialog_catalog_filter, null)
-        val cbSvc = view.findViewById<MaterialCheckBox>(R.id.cbServices)
-        val cbGoods = view.findViewById<MaterialCheckBox>(R.id.cbGoods)
         val chipGroup = view.findViewById<ChipGroup>(R.id.chipGroupCategories)
-
-        cbSvc.isChecked = filterShowServices
-        cbGoods.isChecked = filterShowGoods
 
         chipGroup.removeAllViews()
         val anyChip = Chip(ctx).apply {
@@ -257,14 +262,10 @@ class AdminCashierCatalogFragment : Fragment() {
             .setView(view)
             .setNegativeButton("Batal", null)
             .setNeutralButton("Reset") { _, _ ->
-                filterShowServices = true
-                filterShowGoods = true
                 filterCategories.clear()
                 applyFilter()
             }
             .setPositiveButton("Terapkan") { _, _ ->
-                filterShowServices = cbSvc.isChecked
-                filterShowGoods = cbGoods.isChecked
                 val selected = linkedSetOf<String>()
                 for (i in 0 until chipGroup.childCount) {
                     val c = chipGroup.getChildAt(i)
@@ -290,78 +291,54 @@ class AdminCashierCatalogFragment : Fragment() {
                 requireActivity().finish()
             }.show()
     }
-}
 
-/* ===== Adapter item katalog (no multi-select) ===== */
-private class CashierItemAdapter(
-    private val getQty: (key: String) -> Int,
-    private val onPlus: (Product) -> Unit,
-    private val onMinus: (Product) -> Unit,
-    private val layoutRes: Int = R.layout.item_product_cashier
-) : RecyclerView.Adapter<CashierItemAdapter.VH>() {
+    private fun showServiceFeeDialog() {
+        val ctx = requireContext()
+        val view = layoutInflater.inflate(R.layout.dialog_service_fee, null, false)
+        val et = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etServiceFee)
+        val current = cartVm.serviceFee.value ?: 0L
+        if (current > 0) et.setText(java.text.NumberFormat.getInstance(ID_LOCALE).format(current))
 
-    private val items = mutableListOf<Product>()
-    fun submit(list: List<Product>) { items.clear(); items.addAll(list); notifyDataSetChanged() }
-
-    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
-        val v = LayoutInflater.from(parent.context).inflate(layoutRes, parent, false)
-        return VH(v, getQty, onPlus, onMinus)
-    }
-    override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(items[position])
-    override fun getItemCount(): Int = items.size
-
-    class VH(
-        v: View,
-        val getQty: (String) -> Int,
-        val onPlus: (Product) -> Unit,
-        val onMinus: (Product) -> Unit
-    ) : RecyclerView.ViewHolder(v) {
-
-        private val img: android.widget.ImageView = v.findViewById(R.id.img)
-        private val overlay: View = v.findViewById(R.id.overlayOutOfStock)
-        private val tvBadge: android.widget.TextView = v.findViewById(R.id.tvBadge)
-        private val tvName: android.widget.TextView = v.findViewById(R.id.tvName)
-        private val tvStock: android.widget.TextView = v.findViewById(R.id.tvStock)
-        private val tvCategory: android.widget.TextView = v.findViewById(R.id.tvCategory)
-        private val tvPrice: android.widget.TextView = v.findViewById(R.id.tvPrice)
-        private val btnMinus: com.google.android.material.button.MaterialButton = v.findViewById(R.id.btnMinus)
-        private val btnPlus: com.google.android.material.button.MaterialButton = v.findViewById(R.id.btnPlus)
-        private val tvQty: android.widget.TextView = v.findViewById(R.id.tvQtyInCart)
-        private val card: com.google.android.material.card.MaterialCardView = v.findViewById(R.id.cardRoot)
-
-        fun bind(p: Product) {
-            val key = p.sku.ifBlank { p.id }
-
-            img.load(p.images.firstOrNull() ?: R.drawable.store)
-            val inStock = p.isService || p.stock > 0
-            tvBadge.text = if (p.isService) "Jasa" else if (inStock) "Stock Tersedia" else "Stock Habis"
-            tvBadge.setBackgroundResource(
-                if (p.isService) R.drawable.bg_badge_green
-                else if (inStock) R.drawable.bg_badge_green else R.drawable.bg_badge_red
-            )
-
-            tvName.text = p.name
-            tvStock.text = if (p.isService) "Jasa (tanpa stok)" else "Stock      : ${p.stock}"
-            tvCategory.text = if (p.categoryName.isNotBlank()) "Kategori : ${p.categoryName}" else "Kategori : -"
-            tvPrice.text = if (p.isService) "Harga: input kasir" else "Rp ${rupiah(p.salePrice)}"
-
-            val out = !p.isService && p.stock <= 0
-            overlay.visibility = if (out) View.VISIBLE else View.GONE
-            card.alpha = if (out) .6f else 1f
-
-            val qty = getQty(key)
-            tvQty.text = qty.toString()
-            btnMinus.isEnabled = qty > 0
-            btnPlus.isEnabled = if (p.isService) qty < 1 else qty < p.stock
-
-            btnMinus.setOnClickListener { onMinus(p) }
-            btnPlus.setOnClickListener {
-                if (!p.isService && qty >= p.stock) return@setOnClickListener
-                onPlus(p)
+        // Format ribuan saat mengetik
+        var editing = false
+        et.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (editing) return
+                editing = true
+                val raw = s?.toString().orEmpty()
+                val digits = raw.replace("[^\\d]".toRegex(), "")
+                if (digits.isEmpty()) {
+                    et.setText("")
+                    editing = false
+                    return
+                }
+                val v = digits.toLongOrNull() ?: 0L
+                val formatted = java.text.NumberFormat.getInstance(ID_LOCALE).format(v)
+                if (formatted != raw) {
+                    et.setText(formatted)
+                    et.setSelection(formatted.length)
+                }
+                editing = false
             }
+        })
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle("Biaya Service")
+            .setView(view)
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Simpan") { _, _ ->
+            val s = et.text?.toString()?.trim().orEmpty()
+            val digits = s.replace("[^\\d]".toRegex(), "")
+            val v = digits.toLongOrNull() ?: 0L
+            cartVm.setServiceFee(v)
         }
+        .show()
     }
 }
+
+/* (Adapter item katalog jasa sebelumnya dihapus karena katalog hanya untuk barang) */
 
 /* ===== Adapter barang di katalog menggunakan item_cart_line_cashier ===== */
 private class CashierGoodsRowAdapter(
@@ -397,26 +374,24 @@ private class CashierGoodsRowAdapter(
             val qty = getQty(key)
             b.tvQty.text = qty.toString()
 
-            val out = p.stock <= 0
+            val out = p.trackStock && p.stock <= 0
             b.tvBadge.visibility = View.VISIBLE
-            b.tvBadge.text = if (out) "Stok Habis" else "Stok Tersedia"
-            b.tvBadge.setBackgroundResource(if (out) R.drawable.bg_badge_red else R.drawable.bg_badge_green)
+            b.tvBadge.text = if (!p.trackStock) "Tidak Lacak Stok" else if (out) "Stok Habis" else "Stok Tersedia"
+            b.tvBadge.setBackgroundResource(if (!p.trackStock) R.drawable.bg_badge_green else if (out) R.drawable.bg_badge_red else R.drawable.bg_badge_green)
             val normalColor = androidx.core.content.ContextCompat.getColor(b.root.context, R.color.md_theme_onSurface)
             val errorColor = androidx.core.content.ContextCompat.getColor(b.root.context, R.color.md_theme_error)
             b.tvStock.setTextColor(if (out) errorColor else normalColor)
 
             // Enablement according to stock rule
             b.btnMinus.isEnabled = qty > 0
-            val canPlus = !out && qty < p.stock
+            val canPlus = if (p.trackStock) (!out && qty < p.stock) else true
             b.btnPlus.isEnabled = canPlus
             b.btnPlus.alpha = if (canPlus) 1f else 0.4f
             b.btnMinus.alpha = if (qty > 0) 1f else 0.4f
 
             b.btnMinus.setOnClickListener { onMinus(p) }
-            b.btnPlus.setOnClickListener {
-                if (!p.isService && qty >= p.stock) return@setOnClickListener
-                onPlus(p)
-            }
+            b.btnPlus.setOnClickListener { if (!p.trackStock || qty < p.stock) onPlus(p) }
         }
     }
 }
+

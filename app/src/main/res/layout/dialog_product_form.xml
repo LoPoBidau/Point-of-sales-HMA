@@ -17,8 +17,8 @@
             <ImageView
                 android:id="@+id/imgPreview"
                 android:layout_width="match_parent" android:layout_height="match_parent"
-                android:scaleType="fitCenter" android:src="@drawable/store"
-                android:alpha=".25"
+                android:scaleType="fitCenter"
+                android:src="@drawable/store"
                 android:contentDescription="@null"/>
         </com.google.android.material.card.MaterialCardView>
 

@@ -21,14 +21,14 @@
         android:layout_gravity="end|top"
         android:minWidth="18dp"
         android:gravity="center"
-        android:paddingLeft="6dp"
-        android:paddingRight="6dp"
+        android:paddingLeft="5dp"
+        android:paddingRight="5dp"
         android:textColor="@android:color/white"
         android:textSize="11sp"
         android:textStyle="bold"
         android:background="@drawable/bg_badge_red"
         android:visibility="gone"
-        android:translationX="-2dp"
-        android:translationY="2dp"/>
+        android:translationX="0dp"
+        android:translationY="-2dp"/>
 
 </FrameLayout>

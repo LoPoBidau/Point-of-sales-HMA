@@ -9,6 +9,7 @@ import com.example.pos_hma.databinding.ActivityLoginBinding
 import com.example.pos_hma.ui.role.admin.AdminCashierMainActivity
 import com.example.pos_hma.ui.role.super_admin.SuperAdminMainActivity
 import com.example.pos_hma.utils.AppFlags
+import com.example.pos_hma.utils.NetworkUtil
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
@@ -17,6 +18,7 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var auth: FirebaseAuth
     private lateinit var db: FirebaseFirestore
     private lateinit var binding: ActivityLoginBinding
+    private var netCb: android.net.ConnectivityManager.NetworkCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,10 +33,34 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        auth.currentUser?.let { routeByRole(it, false) }
+        // Jika online, langsung route; jika offline, matikan tombol login
+        if (NetworkUtil.isOnline(this)) {
+            setLoginOnlineUi(true)
+            auth.currentUser?.let { routeByRole(it, false) }
+        } else {
+            setLoginOnlineUi(false)
+        }
+
+        // Observasi perubahan konektivitas untuk mengaktifkan/menonaktifkan tombol
+        netCb = NetworkUtil.registerNetworkCallback(
+            context = this,
+            onAvailable = { runOnUiThread { setLoginOnlineUi(true) } },
+            onLost = { runOnUiThread { setLoginOnlineUi(false) } }
+        )
+    }
+
+    override fun onStop() {
+        super.onStop()
+        NetworkUtil.unregisterNetworkCallback(this, netCb)
+        netCb = null
     }
 
     private fun doLogin() {
+        if (!NetworkUtil.isOnline(this)) {
+            Toast.makeText(this, "Tidak ada akses internet", Toast.LENGTH_SHORT).show()
+            setLoginOnlineUi(false)
+            return
+        }
         val email = binding.etEmail.text?.toString()?.trim().orEmpty()
         val pass = binding.etPassword.text?.toString()?.trim().orEmpty()
         if (email.isEmpty() || pass.isEmpty()) {
@@ -89,5 +115,16 @@ class LoginActivity : AppCompatActivity() {
     private fun setLoading(b: Boolean) {
         binding.progress.visibility = if (b) View.VISIBLE else View.GONE
         binding.btnLogin.isEnabled = !b
+    }
+
+    private fun setLoginOnlineUi(online: Boolean) {
+        if (online) {
+            binding.btnLogin.isEnabled = true
+            // Kembalikan teks default tombol jika sebelumnya berubah
+            binding.btnLogin.text = "Masuk"
+        } else {
+            binding.btnLogin.isEnabled = false
+            binding.btnLogin.text = "Tidak ada akses internet"
+        }
     }
 }
