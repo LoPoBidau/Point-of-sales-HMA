@@ -8,6 +8,7 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -30,6 +31,7 @@ class SuperAdminCategoryFragment : Fragment() {
 
     private val db by lazy { FirebaseFirestore.getInstance() }
     private var catsReg: ListenerRegistration? = null
+    private var requiredAlert: AlertDialog? = null
 
     private lateinit var adapter: CategoryAdapter
 
@@ -46,6 +48,7 @@ class SuperAdminCategoryFragment : Fragment() {
     override fun onStop() { super.onStop(); catsReg?.remove(); catsReg = null }
     override fun onDestroyView() {
         catsReg?.remove(); catsReg = null
+        requiredAlert?.dismiss(); requiredAlert = null
         _binding = null
         super.onDestroyView()
     }
@@ -111,9 +114,17 @@ class SuperAdminCategoryFragment : Fragment() {
 
                 val name = cat.etCatName.text?.toString()?.trim().orEmpty()
                 val type = cat.actCatType.text?.toString()?.trim()?.lowercase().orEmpty().ifBlank { "barang & jasa" }
-                if (name.isBlank()) { cat.tilCatName.error = "Harus diisi"; return@setOnClickListener }
+                if (name.isBlank()) {
+                    cat.tilCatName.error = "Harus diisi"
+                    showRequiredAlert()
+                    return@setOnClickListener
+                }
                 val slug = slugify(name)
-                if (slug.isBlank()) { cat.tilCatName.error = "Nama tidak valid"; return@setOnClickListener }
+                if (slug.isBlank()) {
+                    cat.tilCatName.error = "Nama tidak valid"
+                    showRequiredAlert()
+                    return@setOnClickListener
+                }
 
                 val data = mapOf(
                     "name" to name,
@@ -162,6 +173,17 @@ class SuperAdminCategoryFragment : Fragment() {
         .replace("[^a-z0-9\\s-]".toRegex(), "")
         .replace("\\s+".toRegex(), "-")
 
+    private fun showRequiredAlert() {
+        if (requiredAlert?.isShowing == true) return
+        requiredAlert = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Data belum lengkap")
+            .setMessage("Harap isi semua kolom yang wajib diisi.")
+            .setPositiveButton("OK", null)
+            .create().apply {
+                setOnDismissListener { requiredAlert = null }
+                show()
+            }
+    }
     private fun toast(s: String) = Toast.makeText(requireContext(), s, Toast.LENGTH_SHORT).show()
 
     private fun refreshOnce() {
@@ -217,3 +239,4 @@ private class CategoryAdapter(
         h.btnDelete.setOnClickListener { onDelete(c) }
     }
 }
+

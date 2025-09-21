@@ -19,6 +19,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.DocumentReference
+import com.example.pos_hma.data.BatchState
 import java.util.Locale
 import java.text.NumberFormat
 import java.util.Date
@@ -201,7 +202,11 @@ class AdminCashierPaymentFragment : Fragment() {
                                 val unitCost = bSnap.getLong("unitCost") ?: 0L
                                 val take = kotlin.math.min(need, remain)
                                 val newRemain = remain - take
-                                trx.update(bRef, mapOf("remainingQty" to newRemain))
+                                val batchUpdates = mutableMapOf<String, Any>("remainingQty" to newRemain)
+                                if (newRemain <= 0L) {
+                                    batchUpdates["state"] = BatchState.CLEARED.name
+                                }
+                                trx.update(bRef, batchUpdates)
                                 costSum += take * unitCost
                                 // movement per-batch
                                 val mv = db.collection("inventory_movements").document()
@@ -232,17 +237,23 @@ class AdminCashierPaymentFragment : Fragment() {
                                 val remainingAfterSale = newStock
                                 if (remainingAfterSale > 0) {
                                     val autoBatch = db.collection("stock_batches").document()
-                                    trx.set(autoBatch, mapOf(
-                                        "sku" to sku,
-                                        "unitCost" to fallbackCost,
-                                        "remainingQty" to remainingAfterSale,
-                                        "receivedAt" to now,
-                                        "purchaseId" to "AUTO_FILL",
-                                        "invoiceNo" to "",
-                                        "supplierName" to "",
-                                        "supplierId" to "",
-                                        "dueDate" to com.google.firebase.Timestamp.now()
-                                    ))
+                                    trx.set(
+                                        autoBatch,
+                                        mapOf(
+                                            "sku" to sku,
+                                            "productName" to p.name,
+                                            "unitCost" to fallbackCost,
+                                            "receivedQty" to remainingAfterSale,
+                                            "remainingQty" to remainingAfterSale,
+                                            "receivedAt" to now,
+                                            "purchaseId" to "AUTO_FILL",
+                                            "invoiceNo" to "",
+                                            "supplierName" to "",
+                                            "supplierId" to "",
+                                            "state" to BatchState.OPEN.name,
+                                            "termDays" to 0L
+                                        )
+                                    )
                                 }
                                 need = 0L
                             }

@@ -1,19 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical" android:padding="16dp"
-    android:layout_width="match_parent" android:layout_height="wrap_content">
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
 
     <com.google.android.material.textfield.TextInputLayout
-        android:hint="Harga beli per unit" android:layout_width="match_parent" android:layout_height="wrap_content">
+        android:id="@+id/tilUnitCost"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="Harga beli per unit">
+
         <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etUnitCost" android:inputType="number"
-            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            android:id="@+id/etUnitCost"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
-        android:hint="Harga jual baru" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="8dp">
+        android:id="@+id/tilNewSalePrice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="Harga jual baru">
+
         <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/etNewSalePrice" android:inputType="number"
-            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+            android:id="@+id/etNewSalePrice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number" />
     </com.google.android.material.textfield.TextInputLayout>
+
 </LinearLayout>

@@ -1,4 +1,4 @@
-package com.example.pos_hma.ui.role.super_admin
+﻿package com.example.pos_hma.ui.role.super_admin
 
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -6,10 +6,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.data.StockAdjustRequest
 import com.example.pos_hma.databinding.FragmentSuperAdminAdjustRequestBinding
 import com.example.pos_hma.databinding.ItemAdjustRequestBinding
@@ -27,6 +29,8 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
     private var _binding: FragmentSuperAdminAdjustRequestBinding? = null
     private val binding get() = _binding!!
     private val db by lazy { FirebaseFirestore.getInstance() }
+
+    private val stockEventVm by activityViewModels<StockEventViewModel>()
 
     private var reg: ListenerRegistration? = null
     private val adapter = ReqAdapter(
@@ -172,66 +176,59 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
 
                 // Jika ADD: perlu last batch (DESC 1). Jika SUB: perlu batch ascending cukup qty
                 if (r.requestedDelta >= 0) {
-                    // ADD: prefetch last batch
-                    db.collection("stock_batches").whereEqualTo("sku", r.sku)
-                        .orderBy("receivedAt", Query.Direction.DESCENDING)
-                        .limit(1)
-                        .get()
-                        .addOnSuccessListener { snapLast ->
-                            val lastDoc = snapLast.documents.firstOrNull()
-                            db.runTransaction { trx ->
-                                val p = trx.get(pRef)
-                                if (!p.exists()) throw IllegalStateException("Produk tidak ditemukan")
-                                if (!(p.getBoolean("trackStock") ?: true)) throw IllegalStateException("Jasa tidak pakai stok")
-                                // Ambil unitCost dari request; fallback ke lastCost produk
-                                val reqSnap = trx.get(reqRef)
-                                val unitCostAdj = (reqSnap.getLong("unitCost")
-                                    ?: p.getLong("lastCost") ?: 0L)
-                                if (unitCostAdj <= 0L) throw IllegalStateException("Harga modal tidak valid")
+                    db.runTransaction { trx ->
+                        val p = trx.get(pRef)
+                        if (!p.exists()) throw IllegalStateException("Produk tidak ditemukan")
+                        if (!(p.getBoolean("trackStock") ?: true)) throw IllegalStateException("Jasa tidak pakai stok")
 
-                                val qty = r.requestedDelta
-                                val old = p.getLong("stock") ?: 0L
-                                val newStock = old + qty
-                                trx.update(pRef, mapOf("stock" to newStock, "lastCost" to unitCostAdj, "updatedAt" to now))
+                        val reqSnap = trx.get(reqRef)
+                        val unitCostAdj = (reqSnap.getLong("unitCost") ?: p.getLong("lastCost") ?: 0L)
+                        if (unitCostAdj <= 0L) throw IllegalStateException("Harga modal tidak valid")
 
-                                var merged = false
-                                if (lastDoc != null) {
-                                    val bRef = lastDoc.reference
-                                    val bs = trx.get(bRef)
-                                    val lastCost = bs.getLong("unitCost") ?: 0L
-                                    if (unitCostAdj >= lastCost) {
-                                        val remain = bs.getLong("remainingQty") ?: 0L
-                                        val newRemain = remain + qty
-                                        val weighted = if (newRemain > 0) ((lastCost * remain + unitCostAdj * qty) / newRemain) else unitCostAdj
-                                        trx.update(bRef, mapOf("remainingQty" to newRemain, "unitCost" to weighted, "receivedAt" to now))
-                                        merged = true
-                                    }
-                                }
-                                if (!merged) {
-                                    val nb = db.collection("stock_batches").document()
-                                    trx.set(nb, mapOf(
-                                        "sku" to r.sku,
-                                        "unitCost" to unitCostAdj,
-                                        "remainingQty" to qty,
-                                        "receivedAt" to now,
-                                        "purchaseId" to "",
-                                        "invoiceNo" to "",
-                                        "dueDate" to com.google.firebase.Timestamp.now()
-                                    ))
-                                }
+                        val qty = r.requestedDelta
+                        val old = p.getLong("stock") ?: 0L
+                        val newStock = old + qty
+                        trx.update(pRef, mapOf("stock" to newStock, "lastCost" to unitCostAdj, "updatedAt" to now))
 
-                                val mv = db.collection("inventory_movements").document()
-                                trx.set(mv, mapOf(
-                                    "sku" to r.sku, "type" to "ADJUSTMENT",
-                                    "qtyDelta" to qty, "unitCost" to unitCostAdj,
-                                    "createdAt" to now, "refId" to r.id, "note" to r.reason
-                                ))
-                                trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
-                                null
-                            }.addOnSuccessListener { toast("Disetujui") }
-                                .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
-                        }
-                        .addOnFailureListener { e -> toast(e.message ?: "Gagal memuat batch") }
+                        val batchRef = db.collection("stock_batches").document()
+                        trx.set(
+                            batchRef,
+                            mapOf(
+                                "sku" to r.sku,
+                                "productName" to (p.getString("name") ?: r.productName),
+                                "unitCost" to unitCostAdj,
+                                "receivedQty" to qty,
+                                "remainingQty" to qty,
+                                "receivedAt" to now,
+                                "purchaseId" to "ADJUSTMENT:${'$'}{r.id}",
+                                "invoiceNo" to "",
+                                "supplierName" to "",
+                                "supplierId" to "",
+                                "state" to BatchState.OPEN.name,
+                                "termDays" to 0L
+                            )
+                        )
+
+                        val mv = db.collection("inventory_movements").document()
+                        trx.set(
+                            mv,
+                            mapOf(
+                                "sku" to r.sku,
+                                "type" to "ADJUSTMENT",
+                                "qtyDelta" to qty,
+                                "unitCost" to unitCostAdj,
+                                "createdAt" to now,
+                                "refId" to r.id,
+                                "note" to r.reason
+                            )
+                        )
+                        trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
+                        null
+                    }.addOnSuccessListener {
+                        toast("Disetujui")
+                        stockEventVm.emitAdjustmentEvent()
+                    }
+                        .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
                 } else {
                     // SUB: prefetch ascending until cukup
                     val need = -r.requestedDelta
@@ -268,7 +265,12 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                                 if (rem <= 0L) continue
                                 val unit = bs.getLong("unitCost") ?: 0L
                                 val take = kotlin.math.min(remainNeed, rem)
-                                trx.update(bRef, mapOf("remainingQty" to (rem - take)))
+                                val remainingAfter = rem - take
+                                val batchUpdates = mutableMapOf<String, Any>("remainingQty" to remainingAfter)
+                                if (remainingAfter <= 0L) {
+                                    batchUpdates["state"] = BatchState.CLEARED.name
+                                }
+                                trx.update(bRef, batchUpdates)
                                 val mv = db.collection("inventory_movements").document()
                                 trx.set(mv, mapOf(
                                     "sku" to r.sku, "type" to "ADJUSTMENT",
@@ -280,7 +282,10 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                             if (remainNeed != 0L) throw IllegalStateException("Batch stok tidak cukup")
                             trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
                             null
-                        }.addOnSuccessListener { toast("Disetujui") }
+                        }.addOnSuccessListener {
+                            toast("Disetujui")
+                            stockEventVm.emitAdjustmentEvent()
+                        }
                             .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
                     }
                     fetchEnough()
@@ -335,7 +340,7 @@ private class ReqVH(
 ) : RecyclerView.ViewHolder(b.root) {
     fun bind(r: StockAdjustRequest) {
         b.tvTitle.text = r.productName
-        b.tvSub.text = "SKU ${r.sku} • ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}\nAlasan: ${r.reason}"
+        b.tvSub.text = "SKU ${r.sku} â€¢ ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}\nAlasan: ${r.reason}"
         b.btnApprove.setOnClickListener { onApprove(r) }
         b.btnReject.setOnClickListener { onReject(r) }
         // Localize status text + badge color, and control action button visibility
@@ -356,10 +361,10 @@ private class ReqVH(
             b.btnReject.visibility = if (isPending) View.VISIBLE else View.GONE
             // Update subtitle with localized label
             val deltaPrefix = if (r.requestedDelta >= 0) "+" else ""
-            b.tvSub.text = "SKU ${r.sku} • ${deltaPrefix}${r.requestedDelta}  |  Status: ${statusLabel}\nAlasan: ${r.reason}"
+            b.tvSub.text = "SKU ${r.sku} â€¢ ${deltaPrefix}${r.requestedDelta}  |  Status: ${statusLabel}\nAlasan: ${r.reason}"
         }
         // Override subtitle to include status label for clarity
-        b.tvSub.text = "SKU ${r.sku} • ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}  |  Status: ${r.status}\nAlasan: ${r.reason}"
+        b.tvSub.text = "SKU ${r.sku} â€¢ ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}  |  Status: ${r.status}\nAlasan: ${r.reason}"
         // Force localized status and badge to be the last applied state
         run {
             val (statusLabel2, badgeBg2) = when (r.status.uppercase()) {
@@ -373,7 +378,9 @@ private class ReqVH(
                 b.tvStatusBadge.setBackgroundResource(badgeBg2)
             } catch (_: Throwable) { }
             val deltaPrefix2 = if (r.requestedDelta >= 0) "+" else ""
-            b.tvSub.text = "SKU ${r.sku} • ${deltaPrefix2}${r.requestedDelta}  |  Status: ${statusLabel2}\nAlasan: ${r.reason}"
+            b.tvSub.text = "SKU ${r.sku} â€¢ ${deltaPrefix2}${r.requestedDelta}  |  Status: ${statusLabel2}\nAlasan: ${r.reason}"
         }
     }
 }
+
+

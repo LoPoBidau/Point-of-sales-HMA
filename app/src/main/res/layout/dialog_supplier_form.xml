@@ -20,6 +20,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilPhone"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="No. Telepon"
@@ -32,6 +33,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilAddress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Alamat"
@@ -43,6 +45,7 @@
         </com.google.android.material.textfield.TextInputLayout>
 
         <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/tilTerm"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="Termin (hari)"
@@ -63,4 +66,3 @@
 
     </LinearLayout>
 </ScrollView>
-

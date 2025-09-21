@@ -1,0 +1,279 @@
+diff --git a/app/src/main/java/com/example/pos_hma/ui/role/super_admin/SuperAdminReportFragment.kt b/app/src/main/java/com/example/pos_hma/ui/role/super_admin/SuperAdminReportFragment.kt
+index e51e2bf..9c6f8b2 100644
+--- a/app/src/main/java/com/example/pos_hma/ui/role/super_admin/SuperAdminReportFragment.kt
++++ b/app/src/main/java/com/example/pos_hma/ui/role/super_admin/SuperAdminReportFragment.kt
+@@
+-        private fun bindPurchases(holder: VH) {
+-            val ctx = holder.itemView.context
+-            val db = FirebaseFirestore.getInstance()
+-            val nf = NumberFormat.getInstance(Locale("in", "ID"))
+-            val dfDate = SimpleDateFormat("dd MMM yy", Locale("in", "ID"))
+-            val dfDateTime = SimpleDateFormat("dd MMM yy HH:mm", Locale("in", "ID"))
+-
+-            holder.b.tvTitle.visibility = View.GONE
+-            holder.b.tvDesc.visibility = View.GONE
+-            holder.b.filterCard.visibility = View.VISIBLE
+-            holder.b.searchRow.visibility = View.GONE
+-            holder.b.chipGroupRange.visibility = View.VISIBLE
+-            holder.b.rvSales.visibility = View.VISIBLE
+-            holder.b.tvSummary.visibility = View.GONE
++        private fun bindPurchases(holder: VH) {
++            val ctx = holder.itemView.context
++            val db = FirebaseFirestore.getInstance()
++            val localeId = Locale("in", "ID")
++            val nf = NumberFormat.getInstance(localeId)
++            val dfDate = SimpleDateFormat("dd MMM yy", localeId)
++            val dfDateTime = SimpleDateFormat("dd MMM yy HH:mm", localeId)
++
++            holder.b.tvTitle.visibility = View.GONE
++            holder.b.tvDesc.visibility = View.GONE
++            holder.b.tvKeterangan.visibility = View.GONE
++            holder.b.filterCard.visibility = View.VISIBLE
++            holder.b.searchRow.visibility = View.VISIBLE
++            holder.b.chipGroupRange.visibility = View.VISIBLE
++            holder.b.rvSales.visibility = View.VISIBLE
++            holder.b.tvSummary.visibility = View.GONE
++            holder.b.tilSearchSaleId.error = null
++            holder.b.tilSearchSaleId.hint = "Cari No. Invoice"
++            holder.b.etSearchSaleId.hint = "Masukkan No. Invoice"
++            holder.b.btnSearchSaleId.text = "Cari"
+@@
+-            class PurchaseBatchVH(private val b: ItemFifoBatchBinding) :
+-                RecyclerView.ViewHolder(b.root) {
+-                private val defaultStatusColor = b.tvStatus.currentTextColor
+-                fun bind(batch: StockBatch) {
+-                    val invoice = batch.invoiceNo?.takeIf { it.isNotBlank() } ?: "Tanpa Invoice"
+-                    val productLabel = batch.productName.ifBlank { batch.sku }
+-                    b.tvPrimary.text = " | "
+-                    val supplier = batch.supplierName?.takeIf { it.isNotBlank() } ?: "-"
+-                    val receivedAtText =
+-                        batch.receivedAt?.toDate()?.let { dfDateTime.format(it) } ?: "-"
+-                    val dueText = batch.dueDate?.toDate()?.let { dfDate.format(it) } ?: "-"
+-                    val totalCost = batch.receivedQty.coerceAtLeast(0L) * batch.unitCost
+-                    b.tvSecondary.text = buildString {
+-                        append("Terima  unit @ Rp ")
+-                        append(" | Nilai Rp ")
+-                        append(" | Supplier: ")
+-                        append(" | Diterima: ")
+-                        append(" | Jatuh tempo: ")
+-                    }
+-                    val dueStatus = batch.dueStatus()
+-                    val statusText = when (dueStatus) {
+-                        DueStatus.OVERDUE -> "Lewat jatuh tempo"
+-                        DueStatus.DUE_TODAY -> "Jatuh tempo hari ini"
+-                        DueStatus.UPCOMING -> "Belum jatuh tempo"
+-                        DueStatus.CLEARED -> "Selesai"
+-                        else -> "Tanpa jatuh tempo"
+-                    }
++            class PurchaseBatchVH(private val b: ItemFifoBatchBinding) :
++                RecyclerView.ViewHolder(b.root) {
++                private val defaultStatusColor = b.tvStatus.currentTextColor
++                fun bind(batch: StockBatch) {
++                    val invoice = batch.invoiceNo?.takeIf { it.isNotBlank() } ?: "Tanpa Invoice"
++                    val productLabel = batch.productName.ifBlank { batch.sku }
++                    val supplier = batch.supplierName?.takeIf { it.isNotBlank() } ?: "-"
++                    val receivedAtText = batch.receivedAt?.toDate()?.let { dfDateTime.format(it) } ?: "-"
++                    val dueText = batch.dueDate?.toDate()?.let { dfDate.format(it) } ?: "-"
++                    val receivedQty = batch.receivedQty.coerceAtLeast(0L)
++                    val remainingQty = batch.remainingQty.coerceAtLeast(0L)
++                    val totalCost = receivedQty * batch.unitCost
++
++                    b.tvPrimary.text = "$productLabel | $invoice"
++                    b.tvSecondary.text = buildString {
++                        append("Supplier: ")
++                        append(supplier)
++                        append(" | Terima ")
++                        append(nf.format(receivedQty))
++                        append(" unit @ Rp ")
++                        append(nf.format(batch.unitCost))
++                        append(" | Nilai Rp ")
++                        append(nf.format(totalCost))
++                        append(" | Sisa ")
++                        append(nf.format(remainingQty))
++                        append(" unit | Diterima: ")
++                        append(receivedAtText)
++                        append(" | Jatuh tempo: ")
++                        append(dueText)
++                        if (batch.termDays > 0L) {
++                            append(" | Termin ")
++                            append(batch.termDays)
++                            append(" hari")
++                        }
++                    }
++                    val dueStatus = batch.dueStatus()
++                    val statusText = when (dueStatus) {
++                        DueStatus.OVERDUE -> "Lewat jatuh tempo"
++                        DueStatus.DUE_TODAY -> "Jatuh tempo hari ini"
++                        DueStatus.UPCOMING -> "Belum jatuh tempo"
++                        DueStatus.CLEARED -> "Selesai"
++                        DueStatus.NO_DUE -> "Tanpa jatuh tempo"
++                    }
+@@
+-            fun updateSummary() {
+-                if (rows.isEmpty()) {
+-                    holder.b.tvSummary.visibility = View.GONE
+-                    return
+-                }
+-                val receivedQty = rows.sumOf { it.receivedQty.coerceAtLeast(0L) }
+-                val totalValue = rows.sumOf { it.receivedQty.coerceAtLeast(0L) * it.unitCost }
+-                holder.b.tvSummary.visibility = View.VISIBLE
+-                holder.b.tvSummary.text = "Total batch:  | Qty diterima:  unit | Nilai: Rp "
+-            }
++            fun updateSummary() {
++                if (rows.isEmpty()) {
++                    holder.b.tvSummary.visibility = View.GONE
++                    return
++                }
++                val totalBatch = rows.size
++                val receivedQty = rows.sumOf { it.receivedQty.coerceAtLeast(0L) }
++                val totalValue = rows.sumOf { it.receivedQty.coerceAtLeast(0L) * it.unitCost }
++                holder.b.tvSummary.visibility = View.VISIBLE
++                holder.b.tvSummary.text = "Total batch: $totalBatch | Qty diterima: ${nf.format(receivedQty)} unit | Nilai: Rp ${nf.format(totalValue)}"
++            }
++
++            fun applyRows(
++                newRows: List<StockBatch>,
++                emptyMessage: String? = null,
++                infoMessage: String? = null
++            ) {
++                rows.clear()
++                rows.addAll(newRows)
++                adapter.notifyDataSetChanged()
++                if (rows.isEmpty()) {
++                    holder.b.tvSummary.visibility = View.GONE
++                    holder.b.tvDesc.visibility = View.VISIBLE
++                    holder.b.tvDesc.text = emptyMessage ?: "Belum ada data pembelian pada rentang ini."
++                } else {
++                    if (infoMessage.isNullOrBlank()) {
++                        holder.b.tvDesc.visibility = View.GONE
++                    } else {
++                        holder.b.tvDesc.visibility = View.VISIBLE
++                        holder.b.tvDesc.text = infoMessage
++                    }
++                    updateSummary()
++                }
++            }
+@@
+-            fun load(start: Date, endExclusive: Date) {
+-                db.collection("stock_batches")
+-                    .orderBy("receivedAt", Query.Direction.DESCENDING)
+-                    .whereGreaterThanOrEqualTo("receivedAt", com.google.firebase.Timestamp(start))
+-                    .whereLessThan("receivedAt", com.google.firebase.Timestamp(endExclusive))
+-                    .limit(300)
+-                    .get()
+-                    .addOnSuccessListener { snap ->
+-                        rows.clear()
+-                        rows.addAll(
+-                            snap.documents.mapNotNull { doc ->
+-                                doc.toObject(StockBatch::class.java)?.apply { id = doc.id }
+-                            }
+-                        )
+-                        adapter.notifyDataSetChanged()
+-                        if (rows.isEmpty()) {
+-                            holder.b.tvDesc.visibility = View.VISIBLE
+-                            holder.b.tvDesc.text = "Belum ada data pembelian pada rentang ini."
+-                            holder.b.tvSummary.visibility = View.GONE
+-                        } else {
+-                            holder.b.tvDesc.visibility = View.GONE
+-                            updateSummary()
+-                        }
+-                    }
+-                    .addOnFailureListener { e ->
+-                        holder.b.tvDesc.visibility = View.VISIBLE
+-                        holder.b.tvDesc.text = e.message ?: "Gagal memuat data pembelian"
+-                        holder.b.tvSummary.visibility = View.GONE
+-                        rows.clear()
+-                        adapter.notifyDataSetChanged()
+-                    }
+-            }
++            fun load(start: Date, endExclusive: Date) {
++                holder.b.tilSearchSaleId.error = null
++                db.collection("stock_batches")
++                    .orderBy("receivedAt", Query.Direction.DESCENDING)
++                    .whereGreaterThanOrEqualTo("receivedAt", com.google.firebase.Timestamp(start))
++                    .whereLessThan("receivedAt", com.google.firebase.Timestamp(endExclusive))
++                    .limit(300)
++                    .get()
++                    .addOnSuccessListener { snap ->
++                        val data = snap.documents.mapNotNull { doc ->
++                            doc.toObject(StockBatch::class.java)?.apply { id = doc.id }
++                        }
++                        applyRows(data, emptyMessage = "Belum ada data pembelian pada rentang ini.")
++                    }
++                    .addOnFailureListener { e ->
++                        applyRows(emptyList(), e.message ?: "Gagal memuat data pembelian")
++                    }
++            }
++
++            fun searchInvoice(rawInput: String) {
++                val queryString = rawInput.trim()
++                if (queryString.isEmpty()) {
++                    holder.b.tilSearchSaleId.error = "Masukkan No. Invoice"
++                    return
++                }
++                holder.b.tilSearchSaleId.error = null
++
++                holder.b.btnSearchSaleId.isEnabled = false
++                holder.b.etSearchSaleId.isEnabled = false
++
++                val candidates = linkedSetOf(
++                    queryString,
++                    queryString.uppercase(localeId),
++                    queryString.lowercase(localeId)
++                ).filter { it.isNotBlank() }
++
++                fun resetControls() {
++                    holder.b.btnSearchSaleId.isEnabled = true
++                    holder.b.etSearchSaleId.isEnabled = true
++                }
++
++                fun searchAt(index: Int) {
++                    if (index >= candidates.size) {
++                        applyRows(emptyList(), "Invoice $queryString tidak ditemukan")
++                        resetControls()
++                        return
++                    }
++                    val target = candidates[index]
++                    db.collection("stock_batches")
++                        .whereEqualTo("invoiceNo", target)
++                        .limit(100)
++                        .get()
++                        .addOnSuccessListener { snap ->
++                            if (snap.isEmpty) {
++                                searchAt(index + 1)
++                            } else {
++                                val data = snap.documents.mapNotNull { doc ->
++                                    doc.toObject(StockBatch::class.java)?.apply { id = doc.id }
++                                }
++                                val info = "Menampilkan ${data.size} batch untuk invoice $target"
++                                applyRows(data, infoMessage = info)
++                                resetControls()
++                            }
++                        }
++                        .addOnFailureListener { e ->
++                            applyRows(emptyList(), e.message ?: "Gagal mencari invoice")
++                            resetControls()
++                        }
++                }
++
++                searchAt(0)
++            }
+ 
+             var currentStart = rangeStart(Date())
+             var currentEndExclusive = rangeEndExclusive(Date())
+             load(currentStart, currentEndExclusive)
++
++            holder.b.btnSearchSaleId.setOnClickListener {
++                searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
++            }
++            holder.b.etSearchSaleId.setOnEditorActionListener { _, actionId, event ->
++                val isSearch = actionId == EditorInfo.IME_ACTION_SEARCH ||
++                        (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
++                if (isSearch) {
++                    searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
++                    true
++                } else {
++                    false
++                }
++            }
+*** End Patch

@@ -5,6 +5,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -25,6 +26,7 @@ class SuperAdminSupplierFragment : Fragment() {
     private val b get() = _b!!
     private val db by lazy { FirebaseFirestore.getInstance() }
     private var reg: ListenerRegistration? = null
+    private var requiredAlert: AlertDialog? = null
     private val adapter = SupplierAdapter(
         onEdit = { openForm(it) }
     )
@@ -43,6 +45,7 @@ class SuperAdminSupplierFragment : Fragment() {
 
     override fun onDestroyView() {
         reg?.remove(); reg = null
+        requiredAlert?.dismiss(); requiredAlert = null
         _b = null
         super.onDestroyView()
     }
@@ -87,13 +90,23 @@ class SuperAdminSupplierFragment : Fragment() {
         dlg.setOnShowListener {
             val save = dlg.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
             save.setOnClickListener {
-                f.tilName.error = null
+                listOf(f.tilName, f.tilPhone, f.tilAddress, f.tilTerm).forEach { it.error = null }
                 val name = f.etName.text?.toString()?.trim().orEmpty()
                 val phone = f.etPhone.text?.toString()?.trim().orEmpty()
-                val addr  = f.etAddress.text?.toString()?.trim().orEmpty()
-                val term = f.etTerm.text?.toString()?.toLongOrNull() ?: 0L
+                val addr = f.etAddress.text?.toString()?.trim().orEmpty()
+                val termStr = f.etTerm.text?.toString()?.trim().orEmpty()
                 val active = f.swActive.isChecked
-                if (name.isEmpty()) { f.tilName.error = "Wajib"; return@setOnClickListener }
+                var ok = true
+                if (name.isEmpty()) { f.tilName.error = "Wajib"; ok = false }
+                if (phone.isEmpty()) { f.tilPhone.error = "Wajib"; ok = false }
+                if (addr.isEmpty()) { f.tilAddress.error = "Wajib"; ok = false }
+                val term = termStr.toLongOrNull()
+                if (term == null || term < 0L) {
+                    f.tilTerm.error = "Masukkan angka >= 0"
+                    ok = false
+                }
+                if (!ok) { showRequiredAlert(); return@setOnClickListener }
+                val termValue = term!!
                 val now = FieldValue.serverTimestamp()
                 if (s == null) {
                     val id = name.trim().lowercase().replace(Regex("""[^a-z0-9 -]"""), "").replace(Regex("""\s+"""), "-")
@@ -104,7 +117,7 @@ class SuperAdminSupplierFragment : Fragment() {
                         "phone" to phone,
                         "address" to addr,
                         "isActive" to active,
-                        "paymentTermDays" to term,
+                        "paymentTermDays" to termValue,
                         "createdAt" to now,
                         "updatedAt" to now
                     )).addOnSuccessListener { dlg.dismiss() }
@@ -116,16 +129,28 @@ class SuperAdminSupplierFragment : Fragment() {
                         "phone" to phone,
                         "address" to addr,
                         "isActive" to active,
-                        "paymentTermDays" to term,
+                        "paymentTermDays" to termValue,
                         "updatedAt" to now
                     )).addOnSuccessListener { dlg.dismiss() }
                         .addOnFailureListener { e -> toast(e.message ?: "Gagal simpan") }
                 }
+
             }
         }
         dlg.show()
     }
 
+    private fun showRequiredAlert() {
+        if (requiredAlert?.isShowing == true) return
+        requiredAlert = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Data belum lengkap")
+            .setMessage("Harap isi semua kolom yang wajib diisi.")
+            .setPositiveButton("OK", null)
+            .create().apply {
+                setOnDismissListener { requiredAlert = null }
+                show()
+            }
+    }
     private fun toast(s: String) = Toast.makeText(requireContext(), s, Toast.LENGTH_LONG).show()
 }
 
@@ -142,8 +167,13 @@ private class SupplierAdapter(
         fun bind(s: Supplier) {
             b.tvTitle.text = s.name
             val info = buildString {
-                if (!s.phone.isNullOrBlank()) append(s.phone).append("  •  ")
-                append("Term ").append(s.paymentTermDays).append(" hari")
+                if (!s.phone.isNullOrBlank()) {
+                    append(s.phone)
+                    append(" - ")
+                }
+                append("Term ")
+                append(s.paymentTermDays)
+                append(" hari")
             }
             b.tvSub.text = info
             b.root.setOnClickListener { onEdit(s) }
@@ -153,6 +183,3 @@ private class SupplierAdapter(
         VH(ItemSupplierBinding.inflate(LayoutInflater.from(parent.context), parent, false))
     override fun onBindViewHolder(holder: VH, position: Int) = holder.bind(getItem(position))
 }
-
-
-

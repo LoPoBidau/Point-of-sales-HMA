@@ -1,50 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
-<com.google.android.material.card.MaterialCardView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:layout_marginHorizontal="12dp"
     android:layout_marginVertical="6dp"
     app:cardElevation="0dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="?attr/colorOutline">
+    app:strokeColor="?attr/colorOutline"
+    app:strokeWidth="1dp">
 
     <LinearLayout
-        android:orientation="vertical"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:orientation="vertical"
         android:padding="12dp">
 
         <TextView
-            android:id="@+id/tvInvoice"
+            android:id="@+id/tvTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textStyle="bold"
+            android:text="Nama Produk"
             android:textSize="16sp"
-            android:text="INV-0001" />
+            android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/tvSupplier"
+            android:id="@+id/tvMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Supplier: -" />
+            android:text="SKU â€¢ Delta"
+            android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/tvProduct"
+            android:id="@+id/tvDetail"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="Nama Barang: -" />
+            android:text="Alasan"
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
         <TextView
-            android:id="@+id/tvDue"
+            android:id="@+id/tvFooter"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="Jatuh Tempo: -" />
+            android:text="Disetujui pada"
+            android:textSize="12sp"
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
     </LinearLayout>
-
 </com.google.android.material.card.MaterialCardView>

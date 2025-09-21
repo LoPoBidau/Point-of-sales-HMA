@@ -392,148 +392,345 @@ class SuperAdminReportFragment : Fragment() {
         private fun bindPurchases(holder: VH) {
             val ctx = holder.itemView.context
             val db = FirebaseFirestore.getInstance()
-            val nf = NumberFormat.getInstance(Locale("in","ID"))
-            val df = SimpleDateFormat("dd MMM yy HH:mm", Locale("in","ID"))
-            val dfDay = SimpleDateFormat("dd MMM yy", Locale("in","ID"))
+            val localeId = Locale("in", "ID")
+            val nf = NumberFormat.getInstance(localeId)
+            val dfDate = SimpleDateFormat("dd MMM yyyy", localeId)
+            val dfDateTime = SimpleDateFormat("dd MMM yyyy HH:mm", localeId)
 
-            holder.b.tvDesc.visibility = View.GONE
             holder.b.tvTitle.visibility = View.GONE
+            holder.b.tvDesc.visibility = View.GONE
             holder.b.tvSummary.visibility = View.GONE
-            holder.b.rvSales.visibility = View.VISIBLE
-            holder.b.chipGroupRange.visibility = View.VISIBLE
-            holder.b.searchRow.visibility = View.GONE
             holder.b.filterCard.visibility = View.VISIBLE
+            holder.b.searchRow.visibility = View.VISIBLE
+            holder.b.chipGroupRange.visibility = View.VISIBLE
+            holder.b.rvSales.visibility = View.VISIBLE
+            holder.b.tilSearchSaleId.error = null
+            holder.b.tilSearchSaleId.hint = null
+            holder.b.etSearchSaleId.hint = "Cari No. Invoice"
+            holder.b.btnSearchSaleId.text = "Cari"
+            holder.b.tvKeterangan.visibility = View.GONE
 
             data class Row(
-                val id: String,
+                val doc: DocumentSnapshot,
                 val invoiceNo: String,
+                val supplierName: String,
+                val productSummary: String,
+                val dueDate: Date?,
+                val createdAt: Date?,
                 val totalCost: Long,
-                val date: java.util.Date?,
-                val due: java.util.Date?,
-                val supplier: String
+                val items: List<Map<String, Any?>>
             )
 
-            val list = mutableListOf<Row>()
+            val rows = mutableListOf<Row>()
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
+
+            fun mapDocToRow(doc: DocumentSnapshot): Row {
+                val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
+                val firstName = (items.firstOrNull()?.get("name") as? String)?.ifBlank { "-" } ?: "-"
+                val productSummary = if (items.size > 1) "$firstName (+${items.size - 1} lainnya)" else firstName
+                val invoice = doc.getString("invoiceNo")?.takeIf { it.isNotBlank() } ?: doc.id
+                val supplier = doc.getString("supplierName")?.takeIf { it.isNotBlank() } ?: "-"
+                val due = doc.getTimestamp("dueDate")?.toDate()
+                val created = doc.getTimestamp("date")?.toDate()
+                val total = doc.getLong("totalCost") ?: items.fold(0L) { acc, item ->
+                    val qty = (item["qty"] as? Number)?.toLong() ?: 0L
+                    val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
+                    acc + qty * cost
+                }
+                return Row(doc, invoice, supplier, productSummary, due, created, total, items)
+            }
+
+            fun showDetail(row: Row) {
+                val padding = (16 * ctx.resources.displayMetrics.density).toInt()
+                val detail = buildString {
+                    appendLine("Nomor Invoice : ${row.invoiceNo}")
+                    appendLine("Supplier      : ${row.supplierName.ifBlank { "-" }}")
+                    appendLine("Tanggal       : ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}")
+                    appendLine("Jatuh Tempo   : ${row.dueDate?.let { dfDate.format(it) } ?: "-"}")
+                    appendLine("Nilai         : Rp ${nf.format(row.totalCost)}")
+                    appendLine()
+                    appendLine("Daftar Barang:")
+                    if (row.items.isEmpty()) {
+                        appendLine("-")
+                    } else {
+                        row.items.forEach { item ->
+                            val name = (item["name"] as? String)?.ifBlank { "-" } ?: "-"
+                            val qty = (item["qty"] as? Number)?.toLong() ?: 0L
+                            val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
+                            append("- ")
+                            append(name)
+                            append(" | Qty ")
+                            append(nf.format(qty))
+                            append(" @ Rp ")
+                            append(nf.format(cost))
+                            append(" = Rp ")
+                            append(nf.format(qty * cost))
+                            appendLine()
+                        }
+                    }
+                }
+                val detailView = TextView(ctx).apply {
+                    text = detail.trimEnd()
+                    setTextIsSelectable(true)
+                    setPadding(padding, padding, padding, padding)
+                }
+                val scroll = ScrollView(ctx).apply { addView(detailView) }
+                MaterialAlertDialogBuilder(ctx)
+                    .setTitle("Detail Pembelian ${row.invoiceNo}")
+                    .setView(scroll)
+                    .setPositiveButton("Tutup", null)
+                    .show()
+            }
+
+            class PurchaseVH(private val b: com.example.pos_hma.databinding.ItemPurchaseRowBinding) :
+                RecyclerView.ViewHolder(b.root) {
+                fun bind(row: Row) {
+                    b.tvInvoice.text = row.invoiceNo
+                    b.tvSupplier.text = if (row.supplierName.isBlank()) "Supplier: -" else "Supplier: ${row.supplierName}"
+                    b.tvProduct.text = "Nama Barang: ${row.productSummary}"
+                    val dueText = row.dueDate?.let { dfDate.format(it) } ?: "-"
+                    b.tvDue.text = "Jatuh Tempo: $dueText"
+                    b.root.setOnClickListener { showDetail(row) }
+                }
+            }
+
             val adapter = object : RecyclerView.Adapter<PurchaseVH>() {
                 override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PurchaseVH {
-                    val row = com.example.pos_hma.databinding.ItemPurchaseRowBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+                    val row = com.example.pos_hma.databinding.ItemPurchaseRowBinding.inflate(
+                        LayoutInflater.from(parent.context),
+                        parent,
+                        false
+                    )
                     return PurchaseVH(row)
                 }
-                override fun getItemCount() = list.size
-                override fun onBindViewHolder(h: PurchaseVH, position: Int) {
-                    val r = list[position]
-                    h.bind(r.invoiceNo, r.totalCost, r.date, r.due, nf, dfDay, r.supplier)
-                }
+
+                override fun onBindViewHolder(holder: PurchaseVH, position: Int) = holder.bind(rows[position])
+
+                override fun getItemCount(): Int = rows.size
             }
             holder.b.rvSales.adapter = adapter
 
-            fun fetchRange(start: java.util.Date, end: java.util.Date) {
+            fun updateSummary() {
+                if (rows.isEmpty()) {
+                    holder.b.tvSummary.visibility = View.GONE
+                    return
+                }
+                val totalValue = rows.sumOf { it.totalCost }
+                holder.b.tvSummary.visibility = View.VISIBLE
+                holder.b.tvSummary.text = "Total invoice: ${rows.size} | Nilai: Rp ${nf.format(totalValue)}"
+            }
+
+            fun applyRows(
+                newRows: List<Row>,
+                emptyMessage: String? = null,
+                infoMessage: String? = null,
+                contextLabel: String? = null
+            ) {
+                rows.clear()
+                rows.addAll(newRows.sortedByDescending { it.createdAt?.time ?: Long.MIN_VALUE })
+                adapter.notifyDataSetChanged()
+
+                if (contextLabel.isNullOrBlank()) {
+                    holder.b.tvKeterangan.visibility = View.GONE
+                } else {
+                    holder.b.tvKeterangan.visibility = View.VISIBLE
+                    holder.b.tvKeterangan.text = contextLabel
+                }
+
+                if (rows.isEmpty()) {
+                    holder.b.tvSummary.visibility = View.GONE
+                    holder.b.tvDesc.visibility = View.VISIBLE
+                    holder.b.tvDesc.text = emptyMessage ?: "Tidak ada data pembelian pada rentang ini."
+                } else {
+                    if (infoMessage.isNullOrBlank()) {
+                        holder.b.tvDesc.visibility = View.GONE
+                    } else {
+                        holder.b.tvDesc.visibility = View.VISIBLE
+                        holder.b.tvDesc.text = infoMessage
+                    }
+                    updateSummary()
+                }
+            }
+
+            fun buildRangeLabel(start: Date, endExclusive: Date): String {
+                val inclusiveEnd = Date(endExclusive.time - 1L)
+                val isSameDay = dfDate.format(start) == dfDate.format(inclusiveEnd)
+                return if (isSameDay) {
+                    "Data pembelian tanggal ${dfDate.format(start)}"
+                } else {
+                    "Data pembelian ${dfDate.format(start)} - ${dfDate.format(inclusiveEnd)}"
+                }
+            }
+
+            fun rangeStart(date: Date): Date {
+                val cal = Calendar.getInstance().apply { time = date }
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                return cal.time
+            }
+
+            fun rangeEndExclusive(date: Date): Date {
+                val cal = Calendar.getInstance().apply { time = date }
+                cal.set(Calendar.HOUR_OF_DAY, 23)
+                cal.set(Calendar.MINUTE, 59)
+                cal.set(Calendar.SECOND, 59)
+                cal.set(Calendar.MILLISECOND, 999)
+                cal.add(Calendar.MILLISECOND, 1)
+                return cal.time
+            }
+
+            fun load(start: Date, endExclusive: Date) {
+                holder.b.tilSearchSaleId.error = null
+                val contextLabel = buildRangeLabel(start, endExclusive)
                 db.collection("purchases")
-                    .whereGreaterThanOrEqualTo("date", com.google.firebase.Timestamp(start))
-                    .whereLessThan("date", com.google.firebase.Timestamp(end))
                     .orderBy("date", Query.Direction.DESCENDING)
-                    .limit(500)
+                    .whereGreaterThanOrEqualTo("date", com.google.firebase.Timestamp(start))
+                    .whereLessThan("date", com.google.firebase.Timestamp(endExclusive))
+                    .limit(300)
                     .get()
                     .addOnSuccessListener { snap ->
-                        list.clear()
-                        list.addAll(snap.documents.map { d ->
-                            Row(
-                                id = d.id,
-                                invoiceNo = d.getString("invoiceNo") ?: d.id,
-                                totalCost = d.getLong("totalCost") ?: ((d.get("items") as? List<Map<String, Any?>>)?.sumOf { ((it["qty"] as? Number)?.toLong() ?: 0L) * ((it["unitCost"] as? Number)?.toLong() ?: 0L) } ?: 0L),
-                                date = d.getTimestamp("date")?.toDate(),
-                                due = d.getTimestamp("dueDate")?.toDate(),
-                                supplier = d.getString("supplierName") ?: ""
-                            )
-                        })
-                        adapter.notifyDataSetChanged()
+                        val data = snap.documents.map { mapDocToRow(it) }
+                        applyRows(
+                            data,
+                            emptyMessage = "Tidak ada data pembelian pada rentang ini.",
+                            contextLabel = contextLabel
+                        )
+                    }
+                    .addOnFailureListener { e ->
+                        applyRows(
+                            emptyList(),
+                            e.message ?: "Gagal memuat data pembelian",
+                            contextLabel = contextLabel
+                        )
                     }
             }
 
-            // helper set default range: today
-            fun startOfDay(d: java.util.Date): java.util.Date {
-                val c = java.util.Calendar.getInstance(); c.time = d
-                c.set(java.util.Calendar.HOUR_OF_DAY, 0)
-                c.set(java.util.Calendar.MINUTE, 0)
-                c.set(java.util.Calendar.SECOND, 0)
-                c.set(java.util.Calendar.MILLISECOND, 0)
-                return c.time
-            }
-            fun endOfDay(d: java.util.Date): java.util.Date {
-                val c = java.util.Calendar.getInstance(); c.time = d
-                c.set(java.util.Calendar.HOUR_OF_DAY, 23)
-                c.set(java.util.Calendar.MINUTE, 59)
-                c.set(java.util.Calendar.SECOND, 59)
-                c.set(java.util.Calendar.MILLISECOND, 0)
-                return c.time
+            fun searchInvoice(rawInput: String) {
+                val queryString = rawInput.trim()
+                if (queryString.isEmpty()) {
+                    holder.b.tilSearchSaleId.error = "Masukkan No. Invoice"
+                    return
+                }
+                holder.b.tilSearchSaleId.error = null
+
+                holder.b.btnSearchSaleId.isEnabled = false
+                holder.b.etSearchSaleId.isEnabled = false
+
+                val candidates = linkedSetOf(
+                    queryString,
+                    queryString.uppercase(localeId),
+                    queryString.lowercase(localeId)
+                ).filter { it.isNotBlank() }
+
+                fun resetControls() {
+                    holder.b.btnSearchSaleId.isEnabled = true
+                    holder.b.etSearchSaleId.isEnabled = true
+                }
+
+                fun handleResult(label: String, mapped: List<Row>) {
+                    val info = if (mapped.isNotEmpty()) {
+                        "Menampilkan ${mapped.size} invoice dengan nomor $label"
+                    } else null
+                    applyRows(
+                        mapped,
+                        emptyMessage = "Invoice $label tidak ditemukan",
+                        infoMessage = info,
+                        contextLabel = "Hasil pencarian invoice $label"
+                    )
+                    resetControls()
+                }
+
+                fun handleError(message: String) {
+                    applyRows(
+                        emptyList(),
+                        message,
+                        contextLabel = "Hasil pencarian invoice $queryString"
+                    )
+                    resetControls()
+                }
+
+                fun searchAt(index: Int) {
+                    if (index >= candidates.size) {
+                        handleResult(queryString, emptyList())
+                        return
+                    }
+                    val target = candidates[index]
+                    db.collection("purchases")
+                        .whereEqualTo("invoiceNo", target)
+                        .limit(5)
+                        .get()
+                        .addOnSuccessListener { snap ->
+                            if (snap.isEmpty) {
+                                searchAt(index + 1)
+                            } else {
+                                handleResult(target, snap.documents.map { mapDocToRow(it) })
+                            }
+                        }
+                        .addOnFailureListener { e -> handleError(e.message ?: "Gagal mencari invoice") }
+                }
+
+                searchAt(0)
             }
 
-            var curStart = startOfDay(java.util.Date())
-            var curEnd = endOfDay(java.util.Date())
-            fetchRange(curStart, curEnd)
+            var currentStart = rangeStart(Date())
+            var currentEndExclusive = rangeEndExclusive(Date())
+            load(currentStart, currentEndExclusive)
 
-            // Chip listeners
+            holder.b.btnSearchSaleId.setOnClickListener {
+                searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
+            }
+            holder.b.etSearchSaleId.setOnEditorActionListener { _, actionId, event ->
+                val isSearch = actionId == EditorInfo.IME_ACTION_SEARCH ||
+                        (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                if (isSearch) {
+                    searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
+                    true
+                } else {
+                    false
+                }
+            }
+
             holder.b.chipToday.setOnClickListener {
-                curStart = startOfDay(java.util.Date())
-                curEnd = endOfDay(java.util.Date())
-                fetchRange(curStart, curEnd)
+                currentStart = rangeStart(Date())
+                currentEndExclusive = rangeEndExclusive(Date())
+                load(currentStart, currentEndExclusive)
             }
             holder.b.chipWeek.setOnClickListener {
-                val cal = java.util.Calendar.getInstance()
-                cal.time = java.util.Date()
-                cal.add(java.util.Calendar.DAY_OF_YEAR, -6)
-                curStart = startOfDay(cal.time)
-                curEnd = endOfDay(java.util.Date())
-                fetchRange(curStart, curEnd)
+                val cal = Calendar.getInstance()
+                cal.time = Date()
+                cal.add(Calendar.DAY_OF_YEAR, -6)
+                currentStart = rangeStart(cal.time)
+                currentEndExclusive = rangeEndExclusive(Date())
+                load(currentStart, currentEndExclusive)
             }
             holder.b.chipMonth.setOnClickListener {
-                val cal = java.util.Calendar.getInstance()
-                cal.time = java.util.Date()
-                cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
-                curStart = startOfDay(cal.time)
-                curEnd = endOfDay(java.util.Date())
-                fetchRange(curStart, curEnd)
+                val cal = Calendar.getInstance()
+                cal.time = Date()
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                currentStart = rangeStart(cal.time)
+                currentEndExclusive = rangeEndExclusive(Date())
+                load(currentStart, currentEndExclusive)
             }
             holder.b.chipCustom.setOnClickListener {
                 val picker = MaterialDatePicker.Builder.dateRangePicker().build()
                 picker.addOnPositiveButtonClickListener { range ->
-                    val start = java.util.Date(range.first ?: System.currentTimeMillis())
-                    val end = java.util.Date(range.second ?: System.currentTimeMillis())
-                    curStart = startOfDay(start)
-                    curEnd = endOfDay(end)
-                    fetchRange(curStart, curEnd)
+                    val start = Date(range.first ?: System.currentTimeMillis())
+                    val end = Date(range.second ?: System.currentTimeMillis())
+                    currentStart = rangeStart(start)
+                    currentEndExclusive = rangeEndExclusive(end)
+                    load(currentStart, currentEndExclusive)
                 }
-                (holder.itemView.context as? FragmentActivity)?.let { picker.show(it.supportFragmentManager, "pick_range") }
-            }
-
-            // Export and batch migration features removed
-        }
-
-
-        private class PurchaseVH(private val b: com.example.pos_hma.databinding.ItemPurchaseRowBinding) : RecyclerView.ViewHolder(b.root) {
-            fun bind(
-                invoiceNo: String,
-                totalCost: Long,
-                date: java.util.Date?,
-                due: java.util.Date?,
-                nf: NumberFormat,
-                df: SimpleDateFormat,
-                supplier: String = ""
-            ) {
-                val title = "$invoiceNo | Rp ${nf.format(totalCost)}"
-                val sub = buildString {
-                    append(date?.let { df.format(it) } ?: "-")
-                    append(" | Jatuh Tempo: ")
-                    append(due?.let { df.format(it) } ?: "-")
-                    if (supplier.isNotBlank()) {
-                        append(" | ")
-                        append(supplier)
-                    }
+                (holder.itemView.context as? FragmentActivity)?.let {
+                    picker.show(it.supportFragmentManager, "pick_purchase_range")
                 }
-                b.tvTitle.text = title
-                b.tvSubtitle.text = sub
             }
         }
+
+
+
+
+
     }
 }

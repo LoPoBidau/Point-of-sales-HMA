@@ -7,11 +7,14 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.view.*
 import android.widget.*
+import android.graphics.drawable.GradientDrawable
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.load
@@ -22,7 +25,9 @@ import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.*
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.ui.role.super_admin.StockEventViewModel
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.firebase.auth.FirebaseAuth
@@ -44,6 +49,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private val binding get() = _binding!!
 
     private val db by lazy { FirebaseFirestore.getInstance() }
+    private val stockEventVm by activityViewModels<StockEventViewModel>()
 
     // role
     private var currentRole: String = "superadmin"
@@ -114,7 +120,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         binding.rvProducts.layoutManager = GridLayoutManager(requireContext(), 2)
         val allowLongPress = forTypeTab != "service"
         adapter = ProductsAdapter(
-            onReceive = { openReceiveFlow(it) },
+            onReceive = { product, anchor -> openReceiveFlow(product, anchor) },
             onEdit    = { openForm(it) },
             onDelete  = { confirmDelete(it) },
             onMore    = { showProductActions(it) },  // long press
@@ -1026,7 +1032,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     }
 
     // ===== Terima Stok + (opsional) ubah harga =====
-    private fun openReceiveFlow(p: Product) {
+    private fun openReceiveFlow(p: Product, anchorView: View?) {
         val qtyBinding = DialogReceiveQtyOnlyBinding.inflate(layoutInflater)
 
         val qtyDlg = MaterialAlertDialogBuilder(requireContext())
@@ -1055,7 +1061,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                             productName = p.name,
                             qty = qty,
                             unitCost = p.lastCost,
-                            newSalePrice = p.salePrice
+                            newSalePrice = p.salePrice,
+                            anchorView = anchorView
                         )
                     }
                     .setPositiveButton("Ya") { _, _ ->
@@ -1082,7 +1089,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                                     productName = p.name,
                                     qty = qty,
                                     unitCost = unitCost,
-                                    newSalePrice = newSale
+                                    newSalePrice = newSale,
+                                    anchorView = anchorView
                                 )
                                 priceDlg.dismiss()
                             }
@@ -1099,7 +1107,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         productName: String,
         qty: Long,
         unitCost: Long,
-        newSalePrice: Long
+        newSalePrice: Long,
+        anchorView: View?
     ) {
         val inv = DialogPurchaseInvoiceBinding.inflate(layoutInflater)
         // Load suppliers for selection and default term
@@ -1163,7 +1172,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     dueTs = com.google.firebase.Timestamp(cal.time)
                 }
                 invDlg.dismiss()
-                receiveStockAndUpdatePrice(sku, productName, qty, unitCost, newSalePrice, invoiceNo, dueTs, supplierName, supplierId)
+                receiveStockAndUpdatePrice(sku, productName, qty, unitCost, newSalePrice, invoiceNo, dueTs, supplierName, supplierId, anchorView)
             }
         }
     }
@@ -1177,7 +1186,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         invoiceNo: String?,
         dueDate: com.google.firebase.Timestamp?,
         supplierName: String?,
-        supplierId: String?
+        supplierId: String?,
+        anchorView: View?
     ) {
         val pRef = db.collection("products").document(sku)
         val now = FieldValue.serverTimestamp()
@@ -1278,7 +1288,15 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         "refId" to poRef.id
                     ))
                     null
-                }.addOnSuccessListener { toast("Stok ditambah."); currentDialog?.dismiss() }
+                }.addOnSuccessListener {
+                toast("Stok ditambah.")
+                currentDialog?.dismiss()
+                stockEventVm.emitPurchaseEvent()
+                val anchor = anchorView
+                this@SuperAdminProductFragment.view?.post {
+                    animateStockReceiveSuccess(anchor)
+                } ?: animateStockReceiveSuccess(anchor)
+            }
                     .addOnFailureListener { e -> toast("Gagal terima stok: ${e.message}") }
         }
         fun onGotLastBatch(lastDoc: com.google.firebase.firestore.DocumentSnapshot?) {
@@ -1298,6 +1316,66 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .get()
             .addOnSuccessListener { snapLast -> onGotLastBatch(snapLast.documents.firstOrNull()) }
             .addOnFailureListener { onGotLastBatch(null) }
+    }
+
+    private fun animateStockReceiveSuccess(anchorView: View?) {
+        val activity = activity ?: return
+        val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        val bubbleSize = resources.getDimensionPixelSize(R.dimen.stock_receive_bubble_size)
+        val bubble = View(activity).apply {
+            val bubbleColor = try {
+                MaterialColors.getColor(anchorView ?: root, com.google.android.material.R.attr.colorPrimary)
+            } catch (_: Throwable) {
+                MaterialColors.getColor(root, com.google.android.material.R.attr.colorPrimary)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(bubbleColor)
+            }
+            alpha = 0.9f
+        }
+        val params = FrameLayout.LayoutParams(bubbleSize, bubbleSize)
+        root.addView(bubble, params)
+
+        val rootLoc = IntArray(2).apply { root.getLocationOnScreen(this) }
+        val start = IntArray(2)
+        if (anchorView != null) {
+            anchorView.getLocationOnScreen(start)
+        } else {
+            start[0] = root.width / 2 + rootLoc[0]
+            start[1] = root.height / 2 + rootLoc[1]
+        }
+        val anchorWidth = anchorView?.width ?: bubbleSize
+        val anchorHeight = anchorView?.height ?: bubbleSize
+        val startX = start[0] - rootLoc[0] + anchorWidth / 2f - bubbleSize / 2f
+        val startY = start[1] - rootLoc[1] + anchorHeight / 2f - bubbleSize / 2f
+        bubble.translationX = startX
+        bubble.translationY = startY
+
+        val bottomNav = (activity as? SuperAdminMainActivity)?.findViewById<BottomNavigationView>(R.id.bottomNav)
+        val targetView = bottomNav?.findViewById<View>(R.id.superAdminReportFragment)
+        val endLoc = IntArray(2)
+        if (targetView != null) {
+            targetView.getLocationOnScreen(endLoc)
+        } else {
+            endLoc[0] = rootLoc[0] + (root.width * 0.75f).toInt()
+            endLoc[1] = rootLoc[1] + root.height - (bottomNav?.height ?: bubbleSize)
+        }
+        val targetWidth = targetView?.width ?: bubbleSize
+        val targetHeight = targetView?.height ?: bubbleSize
+        val endX = endLoc[0] - rootLoc[0] + targetWidth / 2f - bubbleSize / 2f
+        val endY = endLoc[1] - rootLoc[1] + targetHeight / 2f - bubbleSize / 2f
+
+        bubble.animate()
+            .setDuration(600)
+            .setInterpolator(FastOutSlowInInterpolator())
+            .translationX(endX)
+            .translationY(endY)
+            .scaleX(0.2f)
+            .scaleY(0.2f)
+            .alpha(0f)
+            .withEndAction { root.removeView(bubble) }
+            .start()
     }
 
     private fun uploadImageThen(productId: String, uri: Uri, onOk: (String) -> Unit) {
@@ -1346,7 +1424,7 @@ internal fun SuperAdminProductFragment.consume(snapshots: MutableList<DocumentSn
 
 /* ===== Adapter grid ===== */
 private class ProductsAdapter(
-    val onReceive: (Product) -> Unit,
+    val onReceive: (Product, View) -> Unit,
     val onEdit: (Product) -> Unit,
     val onDelete: (Product) -> Unit,
     val onMore: (Product) -> Unit,
@@ -1418,7 +1496,7 @@ private class ProductsAdapter(
         h.tvCost.text = if (product.isService) "Modal/Unit  : -" else "Modal/Unit  : Rp ${rupiah(product.lastCost)}"
         h.btnPrimary.text = if (product.isService) "Non-Stok" else "Terima Stok"
         h.btnPrimary.isEnabled = !product.isService
-        h.btnPrimary.setOnClickListener { onReceive(product) }
+        h.btnPrimary.setOnClickListener { onReceive(product, h.btnPrimary) }
         h.btnDelete.setOnClickListener { onDelete(product) }
     }
 }

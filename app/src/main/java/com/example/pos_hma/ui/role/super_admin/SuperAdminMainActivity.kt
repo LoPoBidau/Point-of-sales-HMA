@@ -1,4 +1,4 @@
-package com.example.pos_hma.ui.role.super_admin
+﻿package com.example.pos_hma.ui.role.super_admin
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -214,7 +214,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
 
         tvEmail.text = user.email ?: "-"
 
-        tvRole.text = "Loading…"
+        tvRole.text = "Loadingâ€¦"
         user.getIdToken(false)
             .addOnSuccessListener { tok ->
                 val r = normalize(tok.claims["role"] as? String)
@@ -329,6 +329,15 @@ class SuperAdminMainActivity : AppCompatActivity() {
             }
     }
 
+    fun showReportBadge() {
+        val badge = binding.bottomNav.getOrCreateBadge(R.id.superAdminReportFragment)
+        badge.isVisible = true
+        try { badge.clearNumber() } catch (_: Throwable) { }
+        try {
+            val color = com.google.android.material.color.MaterialColors.getColor(binding.bottomNav, com.google.android.material.R.attr.colorPrimary)
+            badge.backgroundColor = color
+        } catch (_: Throwable) { }
+    }
     private fun startNotifBadgeListener() {
         regNotif?.remove(); regNotif = null
         regNotif = db.collection("notifications")
@@ -534,3 +543,5 @@ class SuperAdminMainActivity : AppCompatActivity() {
         } else super.onSupportNavigateUp()
     }
 }
+
+
