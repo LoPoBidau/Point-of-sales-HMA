@@ -1,5 +1,6 @@
 package com.example.pos_hma.ui.role.super_admin
 
+import android.app.DatePickerDialog
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
@@ -1033,148 +1034,321 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
     // ===== Terima Stok + (opsional) ubah harga =====
     private fun openReceiveFlow(p: Product, anchorView: View?) {
-        val qtyBinding = DialogReceiveQtyOnlyBinding.inflate(layoutInflater)
+        val receiveBinding = DialogStockReceiveBinding.inflate(layoutInflater)
+        receiveBinding.tvProductName.text = p.name
 
-        val qtyDlg = MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Terima stok: ${p.name}")
-            .setView(qtyBinding.root)
-            .setNegativeButton("Batal", null)
-            .setPositiveButton("Lanjut", null)
-            .create()
-
-        currentDialog?.dismiss()
-        currentDialog = qtyDlg
-        qtyDlg.setOnDismissListener { currentDialog = null }
-
-        qtyDlg.setOnShowListener {
-            val btn = qtyDlg.getButton(AlertDialog.BUTTON_POSITIVE)
-            btn.setOnClickListener {
-                val qty = qtyBinding.etQty.text?.toString()?.toLongOrNull() ?: 0L
-                if (qty <= 0) { toast("Qty wajib"); return@setOnClickListener }
-                qtyDlg.dismiss()
-
-                MaterialAlertDialogBuilder(requireContext())
-                    .setMessage("Update harga beli & harga jual sekalian?")
-                    .setNegativeButton("Tidak") { _, _ ->
-                        promptInvoiceAndCommit(
-                            sku = p.sku.ifBlank { p.id },
-                            productName = p.name,
-                            qty = qty,
-                            unitCost = p.lastCost,
-                            newSalePrice = p.salePrice,
-                            anchorView = anchorView
-                        )
-                    }
-                    .setPositiveButton("Ya") { _, _ ->
-                        val priceBinding = DialogUpdatePricesBinding.inflate(layoutInflater)
-                        if (p.lastCost > 0) priceBinding.etUnitCost.setText(p.lastCost.toString())
-                        if (p.salePrice > 0) priceBinding.etNewSalePrice.setText(p.salePrice.toString())
-
-                        val priceDlg = MaterialAlertDialogBuilder(requireContext())
-                            .setTitle("Ubah harga ${p.name}")
-                            .setView(priceBinding.root)
-                            .setNegativeButton("Batal", null)
-                            .setPositiveButton("Simpan", null)
-                            .create()
-
-                        showDialogOnce(priceDlg)
-                        priceDlg.setOnShowListener {
-                            val saveBtn = priceDlg.getButton(AlertDialog.BUTTON_POSITIVE)
-                            saveBtn.setOnClickListener {
-                                val unitCost = priceBinding.etUnitCost.text?.toString()?.toLongOrNull() ?: 0L
-                                val newSale  = priceBinding.etNewSalePrice.text?.toString()?.toLongOrNull() ?: 0L
-                                if (unitCost <= 0 || newSale <= 0) { toast("Harga beli & jual wajib"); return@setOnClickListener }
-                                promptInvoiceAndCommit(
-                                    sku = p.sku.ifBlank { p.id },
-                                    productName = p.name,
-                                    qty = qty,
-                                    unitCost = unitCost,
-                                    newSalePrice = newSale,
-                                    anchorView = anchorView
-                                )
-                                priceDlg.dismiss()
-                            }
-                        }
-                    }
-                    .show()
-            }
-        }
-        qtyDlg.show()
-    }
-
-    private fun promptInvoiceAndCommit(
-        sku: String,
-        productName: String,
-        qty: Long,
-        unitCost: Long,
-        newSalePrice: Long,
-        anchorView: View?
-    ) {
-        val inv = DialogPurchaseInvoiceBinding.inflate(layoutInflater)
-        // Load suppliers for selection and default term
         data class SupplierRow(val id: String, val name: String, val term: Long)
         val suppliers = mutableListOf<SupplierRow>()
         db.collection("suppliers").get().addOnSuccessListener { snap ->
             suppliers.clear()
-            suppliers.addAll(snap.documents.map { d ->
-                SupplierRow(
-                    id = d.id,
-                    name = d.getString("name") ?: d.id,
-                    term = d.getLong("paymentTermDays") ?: 0L
-                )
-            }.sortedBy { it.name.lowercase() })
+            suppliers.addAll(
+                snap.documents.map { doc ->
+                    SupplierRow(
+                        id = doc.id,
+                        name = doc.getString("name") ?: doc.id,
+                        term = doc.getLong("paymentTermDays") ?: 0L
+                    )
+                }.sortedBy { it.name.lowercase() }
+            )
             val names = suppliers.map { it.name }.toTypedArray()
-            (inv.actSupplier).setSimpleItems(names)
+            receiveBinding.actSupplier.setSimpleItems(names)
         }
-        val invDlg = MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Data Pembelian")
-            .setView(inv.root)
+
+        if (p.lastCost > 0) receiveBinding.etUnitCost.setText(p.lastCost.toString())
+        if (p.salePrice > 0) receiveBinding.etSalePrice.setText(p.salePrice.toString())
+
+        val localeId = Locale("in", "ID")
+        val dfIso = SimpleDateFormat("yyyy-MM-dd", localeId).apply { isLenient = false }
+        var selectedDue: Date? = null
+
+        fun refreshModeUi() {
+            val actual = receiveBinding.rbActual.isChecked
+            receiveBinding.groupPurchase.visibility = if (actual) View.GONE else View.VISIBLE
+            receiveBinding.tvActualInfo.visibility = if (actual) View.VISIBLE else View.GONE
+            if (actual) {
+                receiveBinding.swEnableSalePrice.isChecked = false
+                receiveBinding.tilSalePrice.isEnabled = false
+                receiveBinding.etSalePrice.isEnabled = false
+                receiveBinding.tilSalePrice.error = null
+            }
+        }
+
+        receiveBinding.rgMode.setOnCheckedChangeListener { _, _ -> refreshModeUi() }
+        receiveBinding.rbActual.isChecked = true
+        refreshModeUi()
+
+        receiveBinding.swEnableSalePrice.setOnCheckedChangeListener { _, isChecked ->
+            receiveBinding.tilSalePrice.isEnabled = isChecked
+            receiveBinding.etSalePrice.isEnabled = isChecked
+            if (!isChecked) receiveBinding.tilSalePrice.error = null
+        }
+
+        fun showDatePicker() {
+            val cal = Calendar.getInstance()
+            (selectedDue ?: Date()).let { cal.time = it }
+            DatePickerDialog(requireContext(), { _, year, month, dayOfMonth ->
+                val picked = Calendar.getInstance().apply {
+                    set(Calendar.YEAR, year)
+                    set(Calendar.MONTH, month)
+                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                selectedDue = picked.time
+                receiveBinding.etDueDate.setText(dfIso.format(picked.time))
+            }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+        }
+
+        receiveBinding.etDueDate.setOnClickListener { showDatePicker() }
+        receiveBinding.etDueDate.setOnLongClickListener {
+            selectedDue = null
+            receiveBinding.etDueDate.text?.clear()
+            receiveBinding.tilDueDate.error = null
+            true
+        }
+
+        val receiveDlg = MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Tambah stok: ${p.name}")
+            .setView(receiveBinding.root)
             .setNegativeButton("Batal", null)
             .setPositiveButton("Simpan", null)
             .create()
-        showDialogOnce(invDlg)
-        invDlg.setOnShowListener {
-            val save = invDlg.getButton(AlertDialog.BUTTON_POSITIVE)
+
+        currentDialog?.dismiss()
+        currentDialog = receiveDlg
+        receiveDlg.setOnDismissListener { currentDialog = null }
+
+        fun promptPriceDialog(force: Boolean, onOk: (Long, Long) -> Unit) {
+            val priceBinding = DialogUpdatePricesBinding.inflate(layoutInflater)
+            if (p.lastCost > 0) priceBinding.etUnitCost.setText(p.lastCost.toString())
+            if (p.salePrice > 0) priceBinding.etNewSalePrice.setText(p.salePrice.toString())
+            val title = if (force) "Isi harga ${p.name}" else "Ubah harga ${p.name}"
+            val priceDlg = MaterialAlertDialogBuilder(requireContext())
+                .setTitle(title)
+                .setView(priceBinding.root)
+                .setNegativeButton("Batal", null)
+                .setPositiveButton("Simpan", null)
+                .create()
+            showDialogOnce(priceDlg)
+            priceDlg.setOnShowListener {
+                val save = priceDlg.getButton(AlertDialog.BUTTON_POSITIVE)
+                save.setOnClickListener {
+                    priceBinding.tilUnitCost.error = null
+                    priceBinding.tilNewSalePrice.error = null
+                    val unitCost = priceBinding.etUnitCost.text?.toString()?.toLongOrNull() ?: 0L
+                    val salePrice = priceBinding.etNewSalePrice.text?.toString()?.toLongOrNull() ?: 0L
+                    var ok = true
+                    if (unitCost <= 0) { priceBinding.tilUnitCost.error = "Wajib"; ok = false }
+                    if (salePrice <= 0) { priceBinding.tilNewSalePrice.error = "Wajib"; ok = false }
+                    if (!ok) return@setOnClickListener
+                    priceDlg.dismiss()
+                    onOk(unitCost, salePrice)
+                }
+            }
+        }
+
+        receiveDlg.setOnShowListener {
+            val save = receiveDlg.getButton(AlertDialog.BUTTON_POSITIVE)
             save.setOnClickListener {
-                inv.tilInvoice.error = null
-                inv.tilDueDate.error = null
-                val invoiceNo = inv.etInvoiceNo.text?.toString()?.trim().orEmpty()
-                val supplierNameInput = inv.actSupplier.text?.toString()?.trim().orEmpty()
-                val sel = suppliers.firstOrNull { it.name.equals(supplierNameInput, ignoreCase = true) }
-                val supplierId = sel?.id
-                val supplierName = sel?.name ?: supplierNameInput
-                val dueStr = inv.etDueDate.text?.toString()?.trim().orEmpty()
-                if (invoiceNo.isEmpty()) { inv.tilInvoice.error = "Wajib"; return@setOnClickListener }
-                var dueTs: com.google.firebase.Timestamp? = null
-                if (dueStr.isNotEmpty()) {
-                    try {
-                        val df = SimpleDateFormat("yyyy-MM-dd", Locale("in","ID"))
-                        df.isLenient = false
-                        val d: Date = df.parse(dueStr)!!
-                        val cal = Calendar.getInstance()
-                        cal.time = d
-                        cal.set(Calendar.HOUR_OF_DAY, 23)
-                        cal.set(Calendar.MINUTE, 59)
-                        cal.set(Calendar.SECOND, 59)
-                        cal.set(Calendar.MILLISECOND, 0)
-                        dueTs = com.google.firebase.Timestamp(cal.time)
-                    } catch (e: Exception) {
-                        inv.tilDueDate.error = "Format tanggal salah (yyyy-MM-dd)"; return@setOnClickListener
+                receiveBinding.tilQty.error = null
+                val qty = receiveBinding.etQty.text?.toString()?.toLongOrNull() ?: 0L
+                if (qty <= 0) {
+                    receiveBinding.tilQty.error = "Qty wajib"
+                    return@setOnClickListener
+                }
+
+                if (receiveBinding.rbActual.isChecked) {
+                    receiveDlg.dismiss()
+                    val baseCost = p.lastCost.takeIf { it > 0 } ?: 0L
+                    val baseSale = p.salePrice.takeIf { it > 0 } ?: 0L
+                    val needPrice = baseCost <= 0 || baseSale <= 0
+                    if (needPrice) {
+                        promptPriceDialog(force = true) { unitCost, sale ->
+                            addActualStock(p, qty, unitCost, sale, anchorView)
+                        }
+                    } else {
+                        MaterialAlertDialogBuilder(requireContext())
+                            .setMessage("Update harga beli & harga jual sekalian?")
+                            .setNegativeButton("Tidak") { _, _ -> addActualStock(p, qty, baseCost, baseSale, anchorView) }
+                            .setPositiveButton("Ya") { _, _ ->
+                                promptPriceDialog(force = false) { unitCost, sale ->
+                                    addActualStock(p, qty, unitCost, sale, anchorView)
+                                }
+                            }
+                            .show()
                     }
-                } else if (sel != null && sel.term > 0L) {
+                    return@setOnClickListener
+                }
+
+                receiveBinding.tilUnitCost.error = null
+                receiveBinding.tilInvoice.error = null
+                receiveBinding.tilSalePrice.error = null
+                receiveBinding.tilDueDate.error = null
+
+                val unitCost = receiveBinding.etUnitCost.text?.toString()?.toLongOrNull() ?: 0L
+                if (unitCost <= 0) {
+                    receiveBinding.tilUnitCost.error = "Wajib"
+                    return@setOnClickListener
+                }
+
+                val invoiceNo = receiveBinding.etInvoiceNo.text?.toString()?.trim().orEmpty()
+                if (invoiceNo.isEmpty()) {
+                    receiveBinding.tilInvoice.error = "Wajib"
+                    return@setOnClickListener
+                }
+
+                val supplierInput = receiveBinding.actSupplier.text?.toString()?.trim().orEmpty()
+                val chosenSupplier = suppliers.firstOrNull { it.name.equals(supplierInput, ignoreCase = true) }
+                val supplierId = chosenSupplier?.id
+                val supplierName = chosenSupplier?.name ?: supplierInput
+
+                var dueDate: Date? = selectedDue
+                if (dueDate == null) {
+                    val dueText = receiveBinding.etDueDate.text?.toString()?.trim().orEmpty()
+                    if (dueText.isNotEmpty()) {
+                        try {
+                            val parsed = dfIso.parse(dueText) ?: throw IllegalArgumentException()
+                            dueDate = parsed
+                        } catch (_: Exception) {
+                            receiveBinding.tilDueDate.error = "Format tanggal salah (yyyy-MM-dd)"
+                            return@setOnClickListener
+                        }
+                    }
+                }
+                if (dueDate == null && chosenSupplier != null && chosenSupplier.term > 0) {
                     val cal = Calendar.getInstance()
                     cal.time = Date()
-                    cal.add(Calendar.DAY_OF_YEAR, sel.term.toInt())
+                    cal.add(Calendar.DAY_OF_YEAR, chosenSupplier.term.toInt())
                     cal.set(Calendar.HOUR_OF_DAY, 23)
                     cal.set(Calendar.MINUTE, 59)
                     cal.set(Calendar.SECOND, 59)
                     cal.set(Calendar.MILLISECOND, 0)
-                    dueTs = com.google.firebase.Timestamp(cal.time)
+                    dueDate = cal.time
                 }
-                invDlg.dismiss()
-                receiveStockAndUpdatePrice(sku, productName, qty, unitCost, newSalePrice, invoiceNo, dueTs, supplierName, supplierId, anchorView)
+
+                val salePrice = if (receiveBinding.swEnableSalePrice.isChecked) {
+                    val entered = receiveBinding.etSalePrice.text?.toString()?.toLongOrNull() ?: 0L
+                    if (entered <= 0) {
+                        receiveBinding.tilSalePrice.error = "Wajib"
+                        return@setOnClickListener
+                    }
+                    entered
+                } else {
+                    p.salePrice.takeIf { it > 0 } ?: unitCost
+                }
+
+                receiveDlg.dismiss()
+                val dueTs = dueDate?.let { com.google.firebase.Timestamp(it) }
+                receiveStockAndUpdatePrice(
+                    sku = p.sku.ifBlank { p.id },
+                    productName = p.name,
+                    qty = qty,
+                    unitCost = unitCost,
+                    newSalePrice = salePrice,
+                    invoiceNo = invoiceNo,
+                    dueDate = dueTs,
+                    supplierName = supplierName.ifBlank { null },
+                    supplierId = supplierId,
+                    anchorView = anchorView
+                )
             }
         }
+
+        receiveDlg.show()
+    }
+
+    private fun addActualStock(
+        product: Product,
+        qty: Long,
+        unitCost: Long,
+        salePrice: Long,
+        anchorView: View?
+    ) {
+        val sku = product.sku.ifBlank { product.id }
+        val pRef = db.collection("products").document(sku)
+        val now = FieldValue.serverTimestamp()
+
+        fun commit(lastDoc: com.google.firebase.firestore.DocumentSnapshot?) {
+            db.runTransaction { trx ->
+                val ps = trx.get(pRef)
+                require(ps.exists()) { "Produk tidak ditemukan" }
+                require((ps.getBoolean("trackStock") ?: true)) { "Jasa tidak pakai stok" }
+                val oldStock = ps.getLong("stock") ?: 0L
+                val newStock = oldStock + qty
+                val updates = mutableMapOf<String, Any?>(
+                    "stock" to newStock,
+                    "updatedAt" to now
+                )
+                if (unitCost > 0) updates["lastCost"] = unitCost
+                val oldSale = ps.getLong("salePrice") ?: 0L
+                if (salePrice > 0 && salePrice != oldSale) updates["salePrice"] = salePrice
+                trx.update(pRef, updates)
+
+                var merged = false
+                if (lastDoc != null) {
+                    val bRef = lastDoc.reference
+                    val bs = trx.get(bRef)
+                    val lastCost = bs.getLong("unitCost") ?: 0L
+                    if (unitCost >= lastCost) {
+                        val remain = bs.getLong("remainingQty") ?: 0L
+                        val newRemain = remain + qty
+                        val weighted = if (newRemain > 0) ((lastCost * remain + unitCost * qty) / newRemain) else unitCost
+                        trx.update(bRef, mapOf(
+                            "remainingQty" to newRemain,
+                            "unitCost" to weighted,
+                            "receivedAt" to now
+                        ))
+                        merged = true
+                    }
+                }
+                if (!merged) {
+                    val batchRef = db.collection("stock_batches").document()
+                    trx.set(batchRef, mapOf(
+                        "sku" to sku,
+                        "unitCost" to unitCost,
+                        "remainingQty" to qty,
+                        "receivedAt" to now,
+                        "purchaseId" to "",
+                        "invoiceNo" to "",
+                        "supplierName" to "",
+                        "supplierId" to "",
+                        "dueDate" to com.google.firebase.Timestamp.now()
+                    ))
+                }
+
+                val mvRef = db.collection("inventory_movements").document()
+                trx.set(mvRef, mapOf(
+                    "sku" to sku,
+                    "type" to "ACTUAL_STOCK",
+                    "qtyDelta" to qty,
+                    "unitCost" to unitCost,
+                    "createdAt" to now,
+                    "refId" to "ACTUAL_STOCK",
+                    "note" to "Tambah stok aktual"
+                ))
+                null
+            }.addOnSuccessListener {
+                toast("Stok ditambah.")
+                currentDialog?.dismiss()
+                stockEventVm.emitAdjustmentEvent()
+                val anchor = anchorView
+                this@SuperAdminProductFragment.view?.post {
+                    animateStockReceiveSuccess(anchor, R.id.superAdminInventoryFragment)
+                } ?: animateStockReceiveSuccess(anchor, R.id.superAdminInventoryFragment)
+            }.addOnFailureListener { e ->
+                toast("Gagal menambah stok: ${e.message}")
+            }
+        }
+
+        db.collection("stock_batches")
+            .whereEqualTo("sku", sku)
+            .orderBy("receivedAt", Query.Direction.DESCENDING)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { snap -> commit(snap.documents.firstOrNull()) }
+            .addOnFailureListener { commit(null) }
     }
 
     private fun receiveStockAndUpdatePrice(
@@ -1294,8 +1468,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 stockEventVm.emitPurchaseEvent()
                 val anchor = anchorView
                 this@SuperAdminProductFragment.view?.post {
-                    animateStockReceiveSuccess(anchor)
-                } ?: animateStockReceiveSuccess(anchor)
+                    animateStockReceiveSuccess(anchor, R.id.superAdminReportFragment)
+                } ?: animateStockReceiveSuccess(anchor, R.id.superAdminReportFragment)
             }
                     .addOnFailureListener { e -> toast("Gagal terima stok: ${e.message}") }
         }
@@ -1318,7 +1492,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .addOnFailureListener { onGotLastBatch(null) }
     }
 
-    private fun animateStockReceiveSuccess(anchorView: View?) {
+    private fun animateStockReceiveSuccess(anchorView: View?, targetMenuId: Int = R.id.superAdminReportFragment) {
         val activity = activity ?: return
         val root = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
         val bubbleSize = resources.getDimensionPixelSize(R.dimen.stock_receive_bubble_size)
@@ -1353,7 +1527,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         bubble.translationY = startY
 
         val bottomNav = (activity as? SuperAdminMainActivity)?.findViewById<BottomNavigationView>(R.id.bottomNav)
-        val targetView = bottomNav?.findViewById<View>(R.id.superAdminReportFragment)
+        val targetView = bottomNav?.findViewById<View>(targetMenuId)
         val endLoc = IntArray(2)
         if (targetView != null) {
             targetView.getLocationOnScreen(endLoc)

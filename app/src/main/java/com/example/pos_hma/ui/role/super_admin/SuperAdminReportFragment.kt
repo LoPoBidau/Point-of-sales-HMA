@@ -13,6 +13,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.pos_hma.databinding.FragmentSuperAdminReportBinding
 import com.example.pos_hma.databinding.ItemReportTabBinding
 import com.example.pos_hma.databinding.ItemSaleRowBinding
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.datepicker.MaterialDatePicker
@@ -418,17 +419,44 @@ class SuperAdminReportFragment : Fragment() {
                 val dueDate: Date?,
                 val createdAt: Date?,
                 val totalCost: Long,
-                val items: List<Map<String, Any?>>
+                val items: List<Map<String, Any?>>, 
+                val dueStatusLabel: String,
+                val dueStatusColorAttr: Int?
             )
 
             val rows = mutableListOf<Row>()
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
 
+            fun computeDueStatus(due: Date?): Pair<String, Int?> {
+                if (due == null) return "Tidak ada jatuh tempo" to null
+                val today = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val dueCal = Calendar.getInstance().apply {
+                    time = due
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val diffDays = ((dueCal.timeInMillis - today.timeInMillis) / (24L * 60 * 60 * 1000L)).toInt()
+                return when {
+                    diffDays < 0 -> "Terlambat ${-diffDays} hari" to com.google.android.material.R.attr.colorError
+                    diffDays == 0 -> "Jatuh tempo hari ini" to com.google.android.material.R.attr.colorError
+                    diffDays == 1 -> "Sisa 1 hari" to com.google.android.material.R.attr.colorSecondary
+                    diffDays in 2..3 -> "Sisa $diffDays hari" to com.google.android.material.R.attr.colorSecondary
+                    else -> "Sisa $diffDays hari" to com.google.android.material.R.attr.colorOnSurfaceVariant
+                }
+            }
+
             fun mapDocToRow(doc: DocumentSnapshot): Row {
                 val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
                 val firstName = (items.firstOrNull()?.get("name") as? String)?.ifBlank { "-" } ?: "-"
                 val productSummary = if (items.size > 1) "$firstName (+${items.size - 1} lainnya)" else firstName
-                val invoice = doc.getString("invoiceNo")?.takeIf { it.isNotBlank() } ?: doc.id
+                val invoice = doc.getString("invoiceNo")?.takeIf { it.isNotBlank() } ?: "-"
                 val supplier = doc.getString("supplierName")?.takeIf { it.isNotBlank() } ?: "-"
                 val due = doc.getTimestamp("dueDate")?.toDate()
                 val created = doc.getTimestamp("date")?.toDate()
@@ -437,7 +465,8 @@ class SuperAdminReportFragment : Fragment() {
                     val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
                     acc + qty * cost
                 }
-                return Row(doc, invoice, supplier, productSummary, due, created, total, items)
+                val (dueStatusLabel, dueStatusColorAttr) = computeDueStatus(due)
+                return Row(doc, invoice, supplier, productSummary, due, created, total, items, dueStatusLabel, dueStatusColorAttr)
             }
 
             fun showDetail(row: Row) {
@@ -447,21 +476,21 @@ class SuperAdminReportFragment : Fragment() {
                     appendLine("Supplier      : ${row.supplierName.ifBlank { "-" }}")
                     appendLine("Tanggal       : ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}")
                     appendLine("Jatuh Tempo   : ${row.dueDate?.let { dfDate.format(it) } ?: "-"}")
+                    appendLine("Status Tempo  : ${row.dueStatusLabel}")
                     appendLine("Nilai         : Rp ${nf.format(row.totalCost)}")
                     appendLine()
                     appendLine("Daftar Barang:")
                     if (row.items.isEmpty()) {
                         appendLine("-")
                     } else {
-                        row.items.forEach { item ->
+                        row.items.forEachIndexed { idx, item ->
                             val name = (item["name"] as? String)?.ifBlank { "-" } ?: "-"
                             val qty = (item["qty"] as? Number)?.toLong() ?: 0L
                             val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
-                            append("- ")
-                            append(name)
-                            append(" | Qty ")
+                            appendLine("${idx + 1}. $name")
+                            append("    Qty ")
                             append(nf.format(qty))
-                            append(" @ Rp ")
+                            append(" x Rp ")
                             append(nf.format(cost))
                             append(" = Rp ")
                             append(nf.format(qty * cost))
@@ -487,9 +516,14 @@ class SuperAdminReportFragment : Fragment() {
                 fun bind(row: Row) {
                     b.tvInvoice.text = row.invoiceNo
                     b.tvSupplier.text = if (row.supplierName.isBlank()) "Supplier: -" else "Supplier: ${row.supplierName}"
-                    b.tvProduct.text = "Nama Barang: ${row.productSummary}"
+                    b.tvProduct.text = "Barang: ${row.productSummary}"
                     val dueText = row.dueDate?.let { dfDate.format(it) } ?: "-"
                     b.tvDue.text = "Jatuh Tempo: $dueText"
+                    val statusLabel = "Status Tempo: ${row.dueStatusLabel}"
+                    b.tvStatus.text = statusLabel
+                    val attr = row.dueStatusColorAttr ?: com.google.android.material.R.attr.colorOnSurfaceVariant
+                    val statusColor = MaterialColors.getColor(b.tvStatus, attr)
+                    b.tvStatus.setTextColor(statusColor)
                     b.root.setOnClickListener { showDetail(row) }
                 }
             }

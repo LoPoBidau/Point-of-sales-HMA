@@ -20,30 +20,42 @@
             android:id="@+id/tvInvoice"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textStyle="bold"
-            android:textSize="16sp"
-            android:text="INV-0001" />
+            android:text="INV-0001"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
+            android:textColor="?attr/colorOnSurface"
+            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/tvSupplier"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Supplier: -" />
+            android:text="Supplier: -"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
 
         <TextView
             android:id="@+id/tvProduct"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:text="Nama Barang: -" />
+            android:text="Barang: -"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
 
         <TextView
             android:id="@+id/tvDue"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
-            android:text="Jatuh Tempo: -" />
+            android:text="Jatuh Tempo: -"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
+
+        <TextView
+            android:id="@+id/tvStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Status Tempo: -"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
 
     </LinearLayout>
 
