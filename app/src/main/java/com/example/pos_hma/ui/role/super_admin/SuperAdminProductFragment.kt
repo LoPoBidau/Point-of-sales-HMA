@@ -160,6 +160,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             onReceive = { product, anchor -> openReceiveFlow(product, anchor) },
             onEdit    = { openForm(it) },
             onDelete  = { confirmDelete(it) },
+            onViewPending = { openPendingQueueDialog(it) },
             onMore    = { showProductActions(it) },  // long press
             allowLongPress = allowLongPress
         )
@@ -1210,7 +1211,14 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             val update = receiveBinding.rbUpdateSalePrice.isChecked
             receiveBinding.tilSalePrice.isEnabled = update
             receiveBinding.etSalePrice.isEnabled = update
-            if (!update) receiveBinding.tilSalePrice.error = null
+            if (update) {
+                if (receiveBinding.etSalePrice.text.isNullOrBlank()) {
+                    val currentSale = p.salePrice.takeIf { it > 0 } ?: 0L
+                    if (currentSale > 0) receiveBinding.etSalePrice.setText(rupiah(currentSale))
+                }
+            } else {
+                receiveBinding.tilSalePrice.error = null
+            }
         }
 
         fun refreshModeUi() {
@@ -1880,6 +1888,7 @@ private class ProductsAdapter(
     val onReceive: (Product, View) -> Unit,
     val onEdit: (Product) -> Unit,
     val onDelete: (Product) -> Unit,
+    val onViewPending: (Product) -> Unit,
     val onMore: (Product) -> Unit,
     val allowLongPress: Boolean = true
 ) : ListAdapter<Product, ProductsAdapter.VH>(DIFF) {
@@ -1908,6 +1917,7 @@ private class ProductsAdapter(
         val tvPrice: TextView = v.findViewById(R.id.tvPrice)
         val tvCost: TextView = v.findViewById(R.id.tvCost)
         val btnPrimary: com.google.android.material.button.MaterialButton = v.findViewById(R.id.btnAdd)
+        val btnPending: com.google.android.material.button.MaterialButton = v.findViewById(R.id.btnPending)
         val btnDelete: ImageButton = v.findViewById(R.id.btnDelete)
         init {
             v.setOnClickListener { onEdit(getItem(bindingAdapterPosition)) }
@@ -1950,6 +1960,8 @@ private class ProductsAdapter(
         h.btnPrimary.text = if (product.isService) "Non-Stok" else "Terima Stok"
         h.btnPrimary.isEnabled = !product.isService
         h.btnPrimary.setOnClickListener { onReceive(product, h.btnPrimary) }
+        h.btnPending.visibility = if (product.isService) View.GONE else View.VISIBLE
+        h.btnPending.setOnClickListener { onViewPending(product) }
         h.btnDelete.setOnClickListener { onDelete(product) }
     }
 }
