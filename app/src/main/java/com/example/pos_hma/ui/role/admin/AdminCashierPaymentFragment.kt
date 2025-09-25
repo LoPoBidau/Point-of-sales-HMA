@@ -11,23 +11,24 @@ import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
 import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierPaymentBinding
+import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
-import com.google.firebase.firestore.Query
+import com.google.android.gms.tasks.Task
+import com.google.android.gms.tasks.Tasks
 import com.google.firebase.firestore.DocumentReference
-import com.example.pos_hma.data.BatchState
-import java.util.Locale
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.QuerySnapshot
+import com.google.firebase.firestore.SetOptions
 import java.text.NumberFormat
-import java.util.Date
-import com.lottiefiles.dotlottie.core.model.Config
-import com.lottiefiles.dotlottie.core.util.DotLottieEventListener
-import com.lottiefiles.dotlottie.core.util.DotLottieSource
+import java.util.Calendar
+import java.util.Locale
 
-private val ID_LOCALE = Locale("in","ID")
+private val ID_LOCALE = Locale("in", "ID")
 private fun rupiah(v: Long) = NumberFormat.getInstance(ID_LOCALE).format(v)
 
 class AdminCashierPaymentFragment : Fragment() {
@@ -38,10 +39,10 @@ class AdminCashierPaymentFragment : Fragment() {
     private val cartVm: CartViewModel by activityViewModels()
     private val db by lazy { FirebaseFirestore.getInstance() }
 
-    private var inputDigits: String = ""
-    private var totalAmount: Long = 0L
-    private var goodsSubTotal: Long = 0L
-    private var serviceFee: Long = 0L
+    private var inputDigits = ""
+    private var totalAmount = 0L
+    private var goodsSubTotal = 0L
+    private var serviceFee = 0L
 
     private var pendingNav: Runnable? = null
     private val EXTRA_SUCCESS_DELAY_MS = 650L
@@ -52,44 +53,23 @@ class AdminCashierPaymentFragment : Fragment() {
     }
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        // Nonaktifkan tombol back sistem; pakai tombol "Batal Bayar"
         requireActivity().onBackPressedDispatcher.addCallback(
             viewLifecycleOwner,
-            object: OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    // Consume back press silently on payment screen
-                }
-            }
+            object : OnBackPressedCallback(true) { override fun handleOnBackPressed() {} }
         )
 
-        cartVm.goodsSubTotal.observe(viewLifecycleOwner) { v ->
-            goodsSubTotal = v
-            updateSummaryUI()
-            updatePaidUI()
-        }
-        cartVm.serviceFee.observe(viewLifecycleOwner) { fee ->
-            serviceFee = fee ?: 0L
-            updateSummaryUI()
-            updatePaidUI()
-        }
-        cartVm.lines.observe(viewLifecycleOwner) { _ ->
-            updateSummaryUI()
-        }
+        cartVm.goodsSubTotal.observe(viewLifecycleOwner) { goodsSubTotal = it; updateSummaryUI(); updatePaidUI() }
+        cartVm.serviceFee.observe(viewLifecycleOwner) { serviceFee = it ?: 0L; updateSummaryUI(); updatePaidUI() }
+        cartVm.lines.observe(viewLifecycleOwner) { updateSummaryUI() }
 
-        // Keypad
-        val keys = mapOf(
+        listOf(
             R.id.btnK0 to "0", R.id.btnK1 to "1", R.id.btnK2 to "2", R.id.btnK3 to "3",
             R.id.btnK4 to "4", R.id.btnK5 to "5", R.id.btnK6 to "6",
             R.id.btnK7 to "7", R.id.btnK8 to "8", R.id.btnK9 to "9"
-        )
-        keys.forEach { (id, digit) ->
-            binding.root.findViewById<View>(id).setOnClickListener { appendDigit(digit) }
-        }
+        ).forEach { (id, d) -> binding.root.findViewById<View>(id).setOnClickListener { appendDigit(d) } }
+
         binding.btnClear.setOnClickListener { inputDigits = ""; updatePaidUI() }
-        binding.btnBackspace.setOnClickListener {
-            if (inputDigits.isNotEmpty()) inputDigits = inputDigits.dropLast(1)
-            updatePaidUI()
-        }
+        binding.btnBackspace.setOnClickListener { if (inputDigits.isNotEmpty()) { inputDigits = inputDigits.dropLast(1); updatePaidUI() } }
 
         binding.btnPayNow.setOnClickListener { attemptPay() }
         binding.btnCancel.setOnClickListener {
@@ -101,8 +81,7 @@ class AdminCashierPaymentFragment : Fragment() {
                     val nav = findNavController()
                     val popped = nav.popBackStack(R.id.adminCartFragment, false)
                     if (!popped) nav.navigate(R.id.adminCartFragment)
-                }
-                .show()
+                }.show()
         }
     }
 
@@ -115,15 +94,13 @@ class AdminCashierPaymentFragment : Fragment() {
 
     private fun updatePaidUI() {
         val paid = inputDigits.toLongOrNull() ?: 0L
-        val effectiveTotal = totalAmount
-        val change = paid - effectiveTotal
-        // Total due already shown in tvGrand by updateSummaryUI; keep it in sync just in case
-        binding.tvGrand.text = "Rp ${rupiah(effectiveTotal)}"
+        val due = totalAmount
+        binding.tvGrand.text = "Rp ${rupiah(due)}"
         binding.tvPaid.text = "Rp ${rupiah(paid)}"
-        binding.tvChange.text = "Kembalian: Rp ${rupiah(if (change > 0) change else 0)}"
-        val enabled = paid >= effectiveTotal && effectiveTotal > 0
-        binding.btnPayNow.isEnabled = enabled
-        binding.btnPayNow.alpha = if (enabled) 1f else 0.5f
+        binding.tvChange.text = "Kembalian: Rp ${rupiah((paid - due).coerceAtLeast(0))}"
+        val ok = paid >= due && due > 0
+        binding.btnPayNow.isEnabled = ok
+        binding.btnPayNow.alpha = if (ok) 1f else .5f
     }
 
     private fun attemptPay() {
@@ -133,289 +110,281 @@ class AdminCashierPaymentFragment : Fragment() {
             return
         }
         val paid = inputDigits.toLongOrNull() ?: 0L
-        val effectiveTotal = totalAmount
-
-        if (paid < effectiveTotal || effectiveTotal <= 0) {
+        val due = totalAmount
+        if (paid < due || due <= 0) {
             Toast.makeText(requireContext(), "Nominal kurang dari total", Toast.LENGTH_SHORT).show()
             return
         }
 
-        // Tampilkan overlay loading
         showProcessingOverlay(true)
 
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
         val now = FieldValue.serverTimestamp()
-        // Generate No. Nota per hari: yyddMM/#### (reset harian)
-        val cal = java.util.Calendar.getInstance()
-        val yy = (cal.get(java.util.Calendar.YEAR) % 100).toString().padStart(2, '0')
-        val dd = cal.get(java.util.Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
-        val MM = (cal.get(java.util.Calendar.MONTH) + 1).toString().padStart(2, '0')
-        val prefix = "$yy$dd$MM" // tahun(2)-tanggal-bulan -> contoh 250909
+
+        val cal = Calendar.getInstance()
+        val yy = (cal.get(Calendar.YEAR) % 100).toString().padStart(2, '0')
+        val dd = cal.get(Calendar.DAY_OF_MONTH).toString().padStart(2, '0')
+        val MM = (cal.get(Calendar.MONTH) + 1).toString().padStart(2, '0')
+        val prefix = "$yy$dd$MM"
         val counterRef = db.collection("counters").document(prefix)
 
-        // Kumpulkan kebutuhan FIFO batch per SKU (prefetch batch dokumen)
-        val skuNeeds = lines.values
-            .filter { !it.product.isService && it.product.trackStock }
-            .associate { it.product.sku.ifBlank { it.product.id } to it.qty.toLong() }
+        val batchFetches = mutableListOf<Pair<String, Task<QuerySnapshot>>>()
+        val seenSkus = mutableSetOf<String>()
+        lines.values.forEach { line ->
+            val product = line.product
+            if (!product.isService && product.trackStock) {
+                val sku = product.sku.ifBlank { product.id }
+                if (seenSkus.add(sku)) {
+                    val task = db.collection("stock_batches")
+                        .whereEqualTo("sku", sku)
+                        .orderBy("receivedAt", Query.Direction.ASCENDING)
+                        .get()
+                    batchFetches += sku to task
+                }
+            }
+        }
 
-        // Query sequentially per SKU, then run transaction
-        fun onBatchesCollected(batchesBySku: Map<String, List<com.google.firebase.firestore.DocumentSnapshot>>) {
+        fun proceed(fifoRefsBySku: Map<String, List<DocumentReference>>) {
             db.runTransaction { trx ->
-                // 1) READS FIRST: counter + reserve sale ID
                 val cSnap = trx.get(counterRef)
                 val last = cSnap.getLong("last") ?: 0L
                 val next = last + 1L
-
                 val noNota = String.format("%s/%04d", prefix, next)
                 val docId = String.format("%s-%04d", prefix, next)
+
                 val saleRef = db.collection("sales").document(docId)
 
+                data class BatchConsumption(
+                    val ref: DocumentReference?,
+                    val consumed: Long,
+                    val newRemaining: Long,
+                    val unitCost: Long,
+                    val salePrice: Long?
+                )
+
+                data class Plan(
+                    val ref: DocumentReference,
+                    val sku: String,
+                    val name: String,
+                    val qty: Long,
+                    val unitPrice: Long,
+                    val newStock: Long,
+                    val avgUnitCost: Long,
+                    val consumptions: List<BatchConsumption>,
+                    val salePriceUpdate: Long?,
+                    val lastCostUpdate: Long?
+                )
+
+                val plans = mutableListOf<Plan>()
                 val items = mutableListOf<Map<String, Any>>()
 
-                // Validate and consume per line (FIFO)
-                lines.values.forEach { l ->
-                    val p = l.product
-                    val sku = p.sku.ifBlank { p.id }
-                    val qty = l.qty.toLong()
+                lines.values.forEach { line ->
+                    val product = line.product
+                    val sku = product.sku.ifBlank { product.id }
+                    val qty = line.qty.toLong()
 
-                    if (!p.isService && p.trackStock) {
-                        // Check product stock
+                    if (!product.isService && product.trackStock) {
                         val pRef = db.collection("products").document(sku)
                         val snap = trx.get(pRef)
-                        require(snap.exists()) { "Produk tidak ditemukan: ${p.name}" }
+                        require(snap.exists()) { "Produk tidak ditemukan: ${product.name}" }
                         val track = snap.getBoolean("trackStock") ?: true
                         if (track) {
-                            val old = snap.getLong("stock") ?: 0L
-                            val newStock = old - qty
-                            require(newStock >= 0) { "Stok tidak cukup: ${p.name}" }
+                            val oldStock = snap.getLong("stock") ?: 0L
+                            val newStock = oldStock - qty
+                            require(newStock >= 0) { "Stok tidak cukup: ${product.name}" }
 
-                            // Consume FIFO from pre-fetched batches
-                            val batchDocs = (batchesBySku[sku] ?: emptyList())
-                            var need = qty
-                            var costSum = 0L
-                            for (doc in batchDocs) {
-                                if (need <= 0) break
-                                val bRef = doc.reference
-                                val bSnap = trx.get(bRef)
-                                val remain = bSnap.getLong("remainingQty") ?: 0L
-                                if (remain <= 0L) continue
-                                val unitCost = bSnap.getLong("unitCost") ?: 0L
-                                val take = kotlin.math.min(need, remain)
-                                val newRemain = remain - take
-                                val batchUpdates = mutableMapOf<String, Any>("remainingQty" to newRemain)
-                                if (newRemain <= 0L) {
-                                    batchUpdates["state"] = BatchState.CLEARED.name
-                                }
-                                trx.update(bRef, batchUpdates)
-                                costSum += take * unitCost
-                                // movement per-batch
-                                val mv = db.collection("inventory_movements").document()
-                                trx.set(mv, mapOf(
-                                    "sku" to sku,
-                                    "type" to "SALE",
-                                    "qtyDelta" to -take,
-                                    "unitCost" to unitCost,
-                                    "createdAt" to now,
-                                    "refId" to saleRef.id
-                                ))
-                                need -= take
-                            }
-                            if (need > 0) {
-                                // Auto-fill missing FIFO batches using current product stock snapshot
-                                val fallbackQty = need
-                                val fallbackCost = snap.getLong("lastCost") ?: p.lastCost
-                                val mvFallback = db.collection("inventory_movements").document()
-                                trx.set(mvFallback, mapOf(
-                                    "sku" to sku,
-                                    "type" to "SALE",
-                                    "qtyDelta" to -fallbackQty,
-                                    "unitCost" to fallbackCost,
-                                    "createdAt" to now,
-                                    "refId" to saleRef.id
-                                ))
-                                costSum += fallbackQty * fallbackCost
-                                val remainingAfterSale = newStock
-                                if (remainingAfterSale > 0) {
-                                    val autoBatch = db.collection("stock_batches").document()
-                                    trx.set(
-                                        autoBatch,
-                                        mapOf(
-                                            "sku" to sku,
-                                            "productName" to p.name,
-                                            "unitCost" to fallbackCost,
-                                            "receivedQty" to remainingAfterSale,
-                                            "remainingQty" to remainingAfterSale,
-                                            "receivedAt" to now,
-                                            "purchaseId" to "AUTO_FILL",
-                                            "invoiceNo" to "",
-                                            "supplierName" to "",
-                                            "supplierId" to "",
-                                            "state" to BatchState.OPEN.name,
-                                            "termDays" to 0L
-                                        )
-                                    )
-                                }
-                                need = 0L
-                            }
-                            require(need == 0L) { "Batch stok tidak cukup (FIFO): ${p.name}" }
-                            trx.update(pRef, mapOf("stock" to newStock, "updatedAt" to now))
+                            val batchRefs = fifoRefsBySku[sku].orEmpty()
+                            val consumptions = mutableListOf<BatchConsumption>()
+                            var remaining = qty
+                            var firstBefore: DocumentSnapshot? = null
+                            var firstAfter: DocumentSnapshot? = null
 
-                            val unitPrice = p.salePrice
-                            val avgUnitCost = if (qty > 0) (costSum / qty) else 0L
-                            items.add(
-                                mapOf(
-                                    "sku" to sku,
-                                    "name" to p.name,
-                                    "qty" to qty,
-                                    "unitPrice" to unitPrice,
-                                    "unitCost" to avgUnitCost,
-                                    "isService" to false
-                                )
+                            if (batchRefs.isEmpty()) {
+                                if (qty > 0L) {
+                                    val fallbackCost = snap.getLong("lastCost") ?: 0L
+                                    consumptions += BatchConsumption(null, qty, 0L, fallbackCost, null)
+                                    remaining = 0L
+                                }
+                            } else {
+                                for (ref in batchRefs) {
+                                    val batchSnap = trx.get(ref)
+                                    val remainingQty = batchSnap.getLong("remainingQty") ?: 0L
+                                    if (remainingQty <= 0L) continue
+                                    if (firstBefore == null) firstBefore = batchSnap
+
+                                    val unitCostBatch = batchSnap.getLong("unitCost") ?: 0L
+                                    val salePriceBatch = batchSnap.getLong("salePrice")
+                                    var newRemaining = remainingQty
+                                    if (remaining > 0L) {
+                                        val take = minOf(remaining, remainingQty)
+                                        if (take > 0L) {
+                                            newRemaining = remainingQty - take
+                                            consumptions += BatchConsumption(ref, take, newRemaining, unitCostBatch, salePriceBatch)
+                                            remaining -= take
+                                        }
+                                    }
+
+                                    if (newRemaining > 0L) {
+                                        firstAfter = batchSnap
+                                        if (remaining <= 0L) break
+                                    } else if (remaining <= 0L) {
+                                        continue
+                                    }
+                                }
+                            }
+
+                            require(remaining <= 0L) { "Batch stok tidak cukup: ${product.name}" }
+
+                            val totalCost = consumptions.fold(0L) { acc, c -> acc + c.consumed * c.unitCost }
+                            val avgUnitCost = if (qty > 0L) totalCost / qty else 0L
+                            val currentSalePrice = snap.getLong("salePrice") ?: 0L
+                            val salePriceUpdate = if (firstBefore != null && firstAfter != null && firstBefore!!.id != firstAfter!!.id) {
+                                val candidate = firstAfter!!.getLong("salePrice") ?: 0L
+                                if (candidate > 0L && candidate != currentSalePrice) candidate else null
+                            } else null
+                            val lastCostUpdate = when {
+                                firstBefore != null && firstAfter != null && firstBefore!!.id != firstAfter!!.id ->
+                                    firstAfter!!.getLong("unitCost") ?: 0L
+                                firstBefore != null && firstAfter == null && newStock <= 0L -> 0L
+                                else -> null
+                            }
+
+                            plans += Plan(
+                                ref = pRef,
+                                sku = sku,
+                                name = product.name,
+                                qty = qty,
+                                unitPrice = product.salePrice,
+                                newStock = newStock,
+                                avgUnitCost = avgUnitCost,
+                                consumptions = consumptions,
+                                salePriceUpdate = salePriceUpdate,
+                                lastCostUpdate = lastCostUpdate
+                            )
+
+                            items += mapOf(
+                                "sku" to sku,
+                                "name" to product.name,
+                                "qty" to qty,
+                                "unitPrice" to product.salePrice,
+                                "unitCost" to avgUnitCost,
+                                "isService" to false
                             )
                         }
                     } else {
-                        // Service line (no stock tracking)
-                        items.add(
-                            mapOf(
-                                "sku" to sku,
-                                "name" to p.name,
-                                "qty" to qty,
-                                "unitPrice" to p.salePrice,
-                                "unitCost" to 0L,
-                                "isService" to true
-                            )
+                        items += mapOf(
+                            "sku" to sku,
+                            "name" to product.name,
+                            "qty" to qty,
+                            "unitPrice" to product.salePrice,
+                            "unitCost" to 0L,
+                            "isService" to true
                         )
                     }
                 }
 
-                // 2) Update counter and write sale
-                trx.set(counterRef, mapOf("last" to next, "updatedAt" to now), SetOptions.merge())
+                plans.forEach { pl ->
+                    val productUpdates = mutableMapOf<String, Any>(
+                        "stock" to pl.newStock,
+                        "updatedAt" to now
+                    )
+                    pl.lastCostUpdate?.let { productUpdates["lastCost"] = it }
+                    pl.salePriceUpdate?.let { productUpdates["salePrice"] = it }
+                    trx.update(pl.ref, productUpdates)
+
+                    for (cons in pl.consumptions) {
+                        if (cons.consumed <= 0L) continue
+                        cons.ref?.let { ref ->
+                            val batchUpdates = mutableMapOf<String, Any>(
+                                "remainingQty" to cons.newRemaining
+                            )
+                            if (cons.newRemaining <= 0L) {
+                                batchUpdates["state"] = BatchState.CLEARED.name
+                            }
+                            trx.update(ref, batchUpdates)
+                        }
+                        val mv = db.collection("inventory_movements").document()
+                        val movement = mutableMapOf<String, Any>(
+                            "sku" to pl.sku,
+                            "type" to "SALE",
+                            "qtyDelta" to -cons.consumed,
+                            "unitCost" to cons.unitCost,
+                            "createdAt" to now,
+                            "refId" to saleRef.id
+                        )
+                        cons.ref?.let { movement["batchId"] = it.id }
+                        trx.set(mv, movement)
+                    }
+                }
+
                 trx.set(saleRef, mapOf(
-                    "createdAt" to now,
-                    "cashierId" to uid,
-                    "items" to items,
-                    "total" to effectiveTotal,
-                    "paid" to paid,
-                    "change" to (paid - effectiveTotal),
+                    "createdAt" to now, "cashierId" to uid, "items" to items,
+                    "total" to due, "paid" to paid, "change" to (paid - due),
                     "serviceFee" to (cartVm.serviceFee.value ?: 0L),
-                    "status" to "PAID",
-                    "noNota" to noNota
+                    "status" to "PAID", "noNota" to noNota
                 ))
+
+                trx.set(counterRef, mapOf("last" to next, "updatedAt" to now), SetOptions.merge())
 
                 Pair(noNota, saleRef.id)
             }.addOnSuccessListener { (noNota, docId) ->
-                // after success continue below
-                // handled in same place as before
-                onSaleCommitted(noNota, docId, lines, effectiveTotal, paid)
+                onSaleCommitted(noNota, docId, paid, due)
             }.addOnFailureListener { e ->
                 showProcessingOverlay(false)
-                Toast.makeText(requireContext(), e.message ?: "Gagal memproses pembayaran (FIFO)", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), e.message ?: "Gagal memproses pembayaran", Toast.LENGTH_LONG).show()
             }
         }
 
-        // Fetch batches then call transaction
-        if (skuNeeds.isEmpty()) {
-            // No goods, only service fee
-            onBatchesCollected(emptyMap())
-            return
-        }
-
-        val batchesBySku = mutableMapOf<String, MutableList<com.google.firebase.firestore.DocumentSnapshot>>()
-        val skus = skuNeeds.keys.toList()
-        // Map SKU -> product name for clearer error message
-        val nameBySku = lines.values
-            .filter { !it.product.isService && it.product.trackStock }
-            .associate { (it.product.sku.ifBlank { it.product.id }) to it.product.name }
-
-        fun fetchSkuPaged(idx: Int) {
-            if (idx >= skus.size) {
-                // Prefetch complete; proceed even if some SKU needs auto-fill batches
-                onBatchesCollected(batchesBySku.mapValues { it.value.toList() })
-                return
-            }
-
-            val sku = skus[idx]
-            val need = skuNeeds[sku] ?: 0L
-            batchesBySku[sku] = mutableListOf()
-
-            fun page(startAfter: com.google.firebase.firestore.DocumentSnapshot? = null) {
-                var q = db.collection("stock_batches")
-                    .whereEqualTo("sku", sku)
-                    .orderBy("receivedAt", Query.Direction.ASCENDING)
-                    .limit(50)
-                if (startAfter != null) q = q.startAfter(startAfter)
-                q.get()
-                    .addOnSuccessListener { snap ->
-                        val docs = snap.documents.filter { (it.getLong("remainingQty") ?: 0L) > 0L }
-                        batchesBySku[sku]!!.addAll(docs)
-                        val sum = batchesBySku[sku]!!.sumOf { d -> d.getLong("remainingQty") ?: 0L }
-                        val hasMore = docs.isNotEmpty()
-                        if (sum < need && hasMore) page(docs.last()) else fetchSkuPaged(idx + 1)
+        if (batchFetches.isEmpty()) {
+            proceed(emptyMap())
+        } else {
+            Tasks.whenAllSuccess<QuerySnapshot>(batchFetches.map { it.second })
+                .addOnSuccessListener { snapshots ->
+                    val fifoRefs = mutableMapOf<String, List<DocumentReference>>()
+                    snapshots.forEachIndexed { index, snapshot ->
+                        val docs = snapshot.documents.map { it.reference }
+                        fifoRefs[batchFetches[index].first] = docs
                     }
-                    .addOnFailureListener {
-                        // treat as no more; proceed
-                        fetchSkuPaged(idx + 1)
-                    }
-            }
-            page()
+                    proceed(fifoRefs)
+                }
+                .addOnFailureListener { e ->
+                    showProcessingOverlay(false)
+                    Toast.makeText(requireContext(), e.message ?: "Gagal memuat batch stok", Toast.LENGTH_LONG).show()
+                }
         }
-        fetchSkuPaged(0)
     }
-
-    private fun onSaleCommitted(
-        noNota: String,
-        docId: String,
-        lines: Map<String, com.example.pos_hma.ui.role.admin.CartLine>,
-        effectiveTotal: Long,
-        paid: Long
-    ) {
-        // setelah runTransaction sukses:
+    private fun onSaleCommitted(noNota: String, docId: String, paid: Long, total: Long) {
+        val lines = cartVm.lines.value ?: emptyMap()
         val store = ReceiptFormatter.StoreInfo(
-                name = "HAGWY MULYA AGUNG BENGKEL",
-                address1 = "JL. APT PRANOTO",
-                address2 = "KOTA SAMARINDA SEBERANG",
-                phone = "0341-8686715"
-            )
+            name = "HAGWY MULYA AGUNG BENGKEL",
+            address1 = "JL. APT PRANOTO",
+            address2 = "KOTA SAMARINDA SEBERANG",
+            phone = "0341-8686715"
+        )
         val items = lines.values.map { l ->
             val p = l.product
-            ReceiptFormatter.Item(
-                name = p.name,
-                qty = l.qty.toLong(),
-                unitPrice = p.salePrice,
-                isService = false
-            )
+            ReceiptFormatter.Item(name = p.name, qty = l.qty.toLong(), unitPrice = p.salePrice, isService = false)
         }
-        val saleInfo = ReceiptFormatter.SaleInfo(
-            saleId = noNota,
-            date   = java.util.Date(),
-            total  = effectiveTotal,
-            paid   = paid
-        )
+        val saleInfo = ReceiptFormatter.SaleInfo(saleId = noNota, date = java.util.Date(), total = total, paid = paid)
 
         val svc = cartVm.serviceFee.value ?: 0L
         val receiptForScreen  = ReceiptFormatter.buildForScreen(store, saleInfo, items, serviceFee = svc)
         val receiptForPrinter = ReceiptFormatter.buildForPrinter(store, saleInfo, items, serviceFee = svc)
 
         cartVm.clear()
-
-        // Show success, then navigate
-        showSuccessThenNavigate(
-            Bundle().apply {
-                putString("saleId", noNota)
-                putString("saleDocId", docId)
-                putCharSequence("receiptScreen", receiptForScreen)
-                putString("receiptPrinter", receiptForPrinter)
-            }
-        )
+        showSuccessThenNavigate(Bundle().apply {
+            putString("saleId", noNota)
+            putString("saleDocId", docId)
+            putCharSequence("receiptScreen", receiptForScreen)
+            putString("receiptPrinter", receiptForPrinter)
+        })
     }
 
     private fun updateSummaryUI() {
         val hasGoods = (cartVm.lines.value?.isNotEmpty() == true)
-        // Sub Total (barang)
         binding.tvTotalLabel.text = "Sub Total"
         binding.tvTotal.text = "Rp ${rupiah(goodsSubTotal)}"
 
-        // Service fee row
         val hasFee = serviceFee > 0
         binding.tvServiceFeeLabel.visibility = if (hasFee) View.VISIBLE else View.GONE
         binding.tvServiceFeeValue.visibility = if (hasFee) View.VISIBLE else View.GONE
@@ -424,10 +393,8 @@ class AdminCashierPaymentFragment : Fragment() {
             binding.tvServiceFeeValue.text = "Rp ${rupiah(serviceFee)}"
         }
 
-        // Grand total (yang harus dibayar)
         totalAmount = goodsSubTotal + serviceFee
         binding.tvGrand.text = "Rp ${rupiah(totalAmount)}"
-        // Besarkan khusus jika hanya service
         if (!hasGoods && hasFee) {
             binding.tvTotal.visibility = View.GONE
             binding.tvTotalLabel.visibility = View.GONE
@@ -452,7 +419,6 @@ class AdminCashierPaymentFragment : Fragment() {
     }
 
     private fun showSuccessThenNavigate(args: Bundle) {
-        // Tampilkan animasi DotLottie (JSON dari assets), lalu navigasi setelah selesai + jeda
         binding.progress.visibility = View.GONE
         val anim = binding.successCheck
         anim.visibility = View.VISIBLE
@@ -464,34 +430,23 @@ class AdminCashierPaymentFragment : Fragment() {
         }
         pendingNav = r
 
-        // Dengarkan event selesai animasi
-        val listener = object : DotLottieEventListener {
-            override fun onComplete() {
-                // Sedikit delay agar pengguna melihat hasilnya
-                binding.root.postDelayed(r, EXTRA_SUCCESS_DELAY_MS)
-            }
+        val listener = object : com.lottiefiles.dotlottie.core.util.DotLottieEventListener {
+            override fun onComplete() { binding.root.postDelayed(r, EXTRA_SUCCESS_DELAY_MS) }
         }
         anim.addEventListener(listener)
 
-        // Muat dari assets/success_check.json
-        val config = Config.Builder()
-            .autoplay(true)
-            .speed(1f)
-            .loop(false)
-            .source(DotLottieSource.Asset("success_check.json"))
+        val config = com.lottiefiles.dotlottie.core.model.Config.Builder()
+            .autoplay(true).speed(1f).loop(false)
+            .source(com.lottiefiles.dotlottie.core.util.DotLottieSource.Asset("success_check.json"))
             .build()
         anim.load(config)
     }
 
     override fun onDestroyView() {
         pendingNav?.let { binding.root.removeCallbacks(it) }
-        // Tidak perlu memaksa stop animasi; view akan dilepas
         pendingNav = null
         _binding = null
         super.onDestroyView()
     }
 }
-
-
-
 

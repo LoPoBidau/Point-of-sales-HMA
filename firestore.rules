@@ -1,0 +1,221 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== Helpers =====
+    function signedIn() { return request.auth != null; }
+    function role() {
+      return signedIn()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+    function hasAny(r) { return signedIn() && r.hasAny([role()]); }
+    function isOwnerOrSuper() { return hasAny(['owner','superadmin']); }
+    function isAdminLike()    { return hasAny(['admin','owner','superadmin']); }
+    function isCashierLike()  { return hasAny(['cashier','admin','owner','superadmin']); }
+
+    // ===== users =====
+    match /users/{uid} {
+      allow read:  if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ===== categories =====
+    match /categories/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isOwnerOrSuper();
+    }
+
+    // ===== products =====
+    match /products/{id} {
+      allow read: if signedIn();
+
+      allow create: if isOwnerOrSuper()
+        && request.resource.data.keys().hasOnly([
+          'name','nameLowercase','sku','categoryId','categoryName',
+          'type','trackStock','stock','lastCost','salePrice','images',
+          'isActive','createdAt','updatedAt'
+        ]);
+
+      allow update: if (
+        isCashierLike() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'stock','updatedAt','stockLayers','inbound'
+        ])
+      ) || (
+        isOwnerOrSuper() &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'name','nameLowercase','categoryId','categoryName','salePrice',
+          'images','trackStock','lastCost','stock','updatedAt','isActive',
+          'type','inbound','stockLayers'
+        ])
+      );
+
+      allow delete: if isOwnerOrSuper();
+    }
+
+    // ===== stock_batches =====
+    match /stock_batches/{id} {
+      allow read: if isAdminLike();
+      allow create: if isAdminLike()
+        && request.resource.data.keys().hasOnly([
+          'sku','productName','unitCost','receivedQty','remainingQty','receivedAt',
+          'purchaseId','invoiceNo','supplierName','supplierId','dueDate','termDays',
+          'state','salePrice'
+        ])
+        && request.resource.data.sku is string
+        && (!('productName' in request.resource.data) || request.resource.data.productName is string)
+        && request.resource.data.unitCost is int
+        && request.resource.data.remainingQty is int
+        && request.resource.data.remainingQty >= 0
+        && (!('receivedQty' in request.resource.data) || (request.resource.data.receivedQty is int && request.resource.data.receivedQty >= 0))
+        && (!('salePrice' in request.resource.data) || (request.resource.data.salePrice is int && request.resource.data.salePrice >= 0))
+        && (!('state' in request.resource.data) || request.resource.data.state is string);
+      allow update: if isAdminLike()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'remainingQty','unitCost','receivedAt',
+          'purchaseId','invoiceNo','supplierName','supplierId',
+          'dueDate','termDays','state','salePrice'
+        ])
+        && request.resource.data.remainingQty is int
+        && request.resource.data.remainingQty >= 0
+        && (!('salePrice' in request.resource.data) || (request.resource.data.salePrice is int && request.resource.data.salePrice >= 0))
+        && (!('state' in request.resource.data) || request.resource.data.state in ['HOLD','OPEN','CLEARED']);
+      allow delete: if isOwnerOrSuper();
+    }
+
+    // ===== movements =====
+    match /inventory_movements/{id} {
+      allow read: if signedIn();
+      allow create: if isCashierLike()
+        && request.resource.data.keys().hasOnly([
+             'sku','type','qtyDelta','unitCost','createdAt','refId','note','effectiveAt','batchId'
+           ])
+        && (request.resource.data.type == 'SALE'
+            || request.resource.data.type == 'PURCHASE'
+            || request.resource.data.type == 'ADJUSTMENT'
+            || request.resource.data.type == 'ACTUAL_STOCK')
+        && (!('batchId' in request.resource.data) || request.resource.data.batchId is string);
+    }
+
+    // ===== sales =====
+    match /sales/{id} {
+      allow read: if isCashierLike();
+      allow create: if isCashierLike()
+        && request.resource.data.keys().hasOnly([
+             'createdAt','cashierId','items','total','paid','change','status','serviceFee','noNota'
+           ])
+        && request.resource.data.status == 'PAID'
+        && request.resource.data.total  is int
+        && request.resource.data.paid   is int
+        && request.resource.data.change is int
+        && (!('serviceFee' in request.resource.data) || request.resource.data.serviceFee is int)
+        && (!('noNota'     in request.resource.data) || request.resource.data.noNota is string);
+      allow update, delete: if false;
+    }
+
+    // ===== counters =====
+    match /counters/{dayId} {
+      allow read: if isAdminLike();
+      allow create: if isAdminLike()
+        && request.resource.data.keys().hasOnly(['last','updatedAt'])
+        && request.resource.data.last is int
+        && request.resource.data.last >= 1;
+      allow update: if isAdminLike()
+        && request.resource.data.keys().hasOnly(['last','updatedAt'])
+        && request.resource.data.last == resource.data.last + 1;
+    }
+
+    // ===== purchases =====
+    match /purchases/{id} {
+      allow read: if isAdminLike();
+      allow create: if isAdminLike()
+        && request.resource.data.keys().hasOnly([
+          'date','createdBy','items',
+          'invoiceNo','dueDate',
+          'supplierId','supplierName','supplierPhone','supplierAddress',
+          'totalCost','termDays','dueReminderSent','note',
+          'stockPosted','stockPostedAt','pendingStockId','createdAt','updatedAt'
+        ])
+        && (!('stockPosted' in request.resource.data) || request.resource.data.stockPosted is bool)
+        && (!('stockPostedAt' in request.resource.data) || request.resource.data.stockPostedAt is timestamp || request.resource.data.stockPostedAt == null)
+        && (!('pendingStockId' in request.resource.data) || request.resource.data.pendingStockId is string || request.resource.data.pendingStockId == null);
+      allow update: if isAdminLike()
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'items','totalCost','updatedAt','dueDate','termDays','dueReminderSent','note',
+          'supplierId','supplierName','supplierPhone','supplierAddress',
+          'stockPosted','stockPostedAt','pendingStockId'
+        ])
+        && (!('stockPosted' in request.resource.data) || request.resource.data.stockPosted is bool)
+        && (!('stockPostedAt' in request.resource.data) || request.resource.data.stockPostedAt is timestamp || request.resource.data.stockPostedAt == null)
+        && (!('pendingStockId' in request.resource.data) || request.resource.data.pendingStockId is string || request.resource.data.pendingStockId == null);
+      allow delete: if isOwnerOrSuper();
+    }
+
+    // ===== pending stock receipts =====
+    match /pending_stock_receipts/{id} {
+      allow read: if isOwnerOrSuper();
+      allow create: if isOwnerOrSuper()
+        && request.resource.data.keys().hasOnly([
+          'sku','productName','qty','unitCost','newSalePrice',
+          'invoiceNo','supplierName','supplierId',
+          'termDays','dueDate','scheduledAt',
+          'purchaseId','createdAt','createdBy',
+          'status','notificationSent'
+        ])
+        && request.resource.data.status == 'pending'
+        && request.resource.data.qty is int
+        && request.resource.data.qty > 0
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0
+        && request.resource.data.notificationSent is bool;
+      allow update: if isOwnerOrSuper()
+        && request.resource.data.keys().hasOnly([
+          'sku','productName','qty','unitCost','newSalePrice',
+          'invoiceNo','supplierName','supplierId',
+          'termDays','dueDate','scheduledAt',
+          'purchaseId','createdAt','createdBy',
+          'status','notificationSent','processingAt','postedAt'
+        ])
+        && request.resource.data.qty is int
+        && request.resource.data.qty > 0
+        && request.resource.data.unitCost is int
+        && request.resource.data.unitCost >= 0
+        && request.resource.data.status in ['pending','processing','posted']
+        && (
+             resource.data.status == request.resource.data.status
+             || (resource.data.status == 'pending' && request.resource.data.status in ['processing','posted'])
+             || (resource.data.status == 'processing' && request.resource.data.status == 'posted')
+           );
+      allow delete: if isOwnerOrSuper();
+    }
+
+    // ===== suppliers =====
+    match /suppliers/{id} {
+      allow read: if isAdminLike();
+      allow create: if isAdminLike() && (request.resource.data.name is string);
+      allow update: if isAdminLike();
+      allow delete: if isOwnerOrSuper();
+    }
+
+    // ===== stock_adjust_requests & notifications =====
+    match /stock_adjust_requests/{id} {
+      allow read: if isAdminLike();
+      allow create: if isAdminLike()
+        && request.resource.data.keys().hasOnly([
+             'sku','productName','requestedDelta','reason','status','requestedBy','createdAt','unitCost','mode'
+           ])
+        && request.resource.data.status == 'PENDING';
+      allow update, delete: if isOwnerOrSuper();
+    }
+
+    match /notifications/{id} {
+      allow read: if isAdminLike();
+      allow create: if isAdminLike();
+      allow update, delete: if isOwnerOrSuper();
+    }
+  }
+}
+
+
+

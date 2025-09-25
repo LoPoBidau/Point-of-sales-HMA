@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingVertical="6dp">
+
+    <TextView
+        android:id="@+id/tvItemName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Nama Barang"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/tvItemMeta"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="Qty 0 x Rp 0 = Rp 0"
+        android:textAppearance="@style/TextAppearance.MaterialComponents.Caption" />
+
+    <View
+        android:id="@+id/divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="6dp"
+        android:background="?attr/colorOutline" />
+
+</LinearLayout>
+
+

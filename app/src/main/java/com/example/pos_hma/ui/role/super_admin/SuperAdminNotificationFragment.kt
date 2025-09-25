@@ -101,11 +101,18 @@ class SuperAdminNotificationFragment : Fragment() {
     }
 
     private fun onNotifClick(n: AppNotif) {
-        // Mark as read
+        // Tandai sebagai dibaca (update butuh role "superadmin/owner" sesuai rules)
         db.collection("notifications").document(n.id).update("read", true)
-        // Navigate for certain types
-        if (n.type == "ADJUSTMENT_REQUEST") {
-            try { findNavController().navigate(R.id.superAdminAdjustRequestFragment) } catch (_: Throwable) {}
+
+        // Arahkan sesuai tipe (opsional)
+        when (n.type) {
+            "ADJUSTMENT_REQUEST" -> {
+                try { findNavController().navigate(R.id.superAdminAdjustRequestFragment) } catch (_: Throwable) {}
+            }
+            "PURCHASE_DUE" -> {
+                // Belum ada layar detail purchase → arahkan ke Report agar Super Admin bisa cek
+                try { findNavController().navigate(R.id.superAdminReportFragment) } catch (_: Throwable) {}
+            }
         }
     }
 }
@@ -131,7 +138,7 @@ private class NotifAdapter(
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): NotifVH {
-        val b = ItemNotificationBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        val b = com.example.pos_hma.databinding.ItemNotificationBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return NotifVH(b, onClick)
     }
 

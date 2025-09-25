@@ -106,6 +106,37 @@
                         android:text="Tanggal" />
                 </com.google.android.material.chip.ChipGroup>
 
+                <com.google.android.material.chip.ChipGroup
+                    android:id="@+id/chipGroupPurchaseStatus"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:visibility="gone"
+                    app:singleSelection="true">
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipStatusAll"
+                        style="@style/Widget.MaterialComponents.Chip.Choice"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="true"
+                        android:text="Semua" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipStatusUpcoming"
+                        style="@style/Widget.MaterialComponents.Chip.Choice"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Menunggu jatuh tempo" />
+
+                    <com.google.android.material.chip.Chip
+                        android:id="@+id/chipStatusOverdue"
+                        style="@style/Widget.MaterialComponents.Chip.Choice"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Sudah jatuh tempo" />
+                </com.google.android.material.chip.ChipGroup>
+
                 
 
                 <TextView

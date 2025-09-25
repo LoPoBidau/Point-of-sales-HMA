@@ -8,6 +8,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.content.pm.PackageManager
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuItem
@@ -28,6 +29,7 @@ import androidx.navigation.NavOptions
 import com.example.pos_hma.R
 import com.example.pos_hma.databinding.ActivitySuperAdminMainBinding
 import com.example.pos_hma.ui.login.LoginActivity
+import com.example.pos_hma.worker.ScheduledStockPostingWorker
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
 import com.example.pos_hma.utils.NetworkUtil
@@ -103,6 +105,8 @@ class SuperAdminMainActivity : AppCompatActivity() {
                 }
             }
             binding.bottomNav.setOnItemReselectedListener { /* no-op */ }
+
+            reschedulePendingStockReceipts()
 
             // Toggle UI based on destination
             navController.addOnDestinationChangedListener { _, dest, _ ->
@@ -536,6 +540,25 @@ class SuperAdminMainActivity : AppCompatActivity() {
     }
 
     
+
+    private fun reschedulePendingStockReceipts() {
+        try {
+            db.collection("pending_stock_receipts")
+                .whereEqualTo("status", "pending")
+                .get()
+                .addOnSuccessListener { snap ->
+                    for (doc in snap.documents) {
+                        val ts = doc.getTimestamp("scheduledAt") ?: doc.getTimestamp("dueDate") ?: continue
+                        ScheduledStockPostingWorker.enqueue(applicationContext, doc.id, ts)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.w("SuperAdminMainActivity", "Gagal menjadwalkan ulang pending stok", e)
+                }
+        } catch (e: Exception) {
+            Log.w("SuperAdminMainActivity", "Exception menjadwalkan ulang pending stok", e)
+        }
+    }
 
     override fun onSupportNavigateUp(): Boolean {
         return if (::navController.isInitialized) {

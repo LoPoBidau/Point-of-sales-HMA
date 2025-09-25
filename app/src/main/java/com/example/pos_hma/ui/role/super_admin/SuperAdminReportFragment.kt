@@ -3,6 +3,7 @@ package com.example.pos_hma.ui.role.super_admin
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
+import android.content.res.ColorStateList
 import android.view.ViewGroup
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
@@ -10,7 +11,10 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.annotation.AttrRes
 import com.example.pos_hma.databinding.FragmentSuperAdminReportBinding
+import com.example.pos_hma.databinding.DialogPurchaseDetailBinding
+import com.example.pos_hma.databinding.ItemPurchaseDetailItemBinding
 import com.example.pos_hma.databinding.ItemReportTabBinding
 import com.example.pos_hma.databinding.ItemSaleRowBinding
 import com.google.android.material.color.MaterialColors
@@ -18,11 +22,11 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
-import android.widget.ScrollView
-import android.widget.TextView
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.example.pos_hma.worker.ScheduledStockPostingWorker
+import com.google.firebase.Timestamp
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -33,6 +37,9 @@ class SuperAdminReportFragment : Fragment() {
     private val binding get() = _binding!!
 
     private val tabs = listOf("Penjualan", "Pembelian", "Stok & Valuasi")
+
+    private enum class PurchaseStatusFilter { ALL, UPCOMING, OVERDUE }
+
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
         _binding = FragmentSuperAdminReportBinding.inflate(inflater, container, false)
@@ -75,6 +82,7 @@ class SuperAdminReportFragment : Fragment() {
                     holder.b.rvSales.visibility = View.GONE
                     holder.b.searchRow.visibility = View.GONE
                     holder.b.chipGroupRange.visibility = View.GONE
+                    holder.b.chipGroupPurchaseStatus.visibility = View.GONE
                     holder.b.filterCard.visibility = View.GONE
                     holder.b.tvDesc.text = "Nilai persediaan, pergerakan stok, valuasi FIFO. (coming soon)"
                 }
@@ -96,6 +104,7 @@ class SuperAdminReportFragment : Fragment() {
             holder.b.chipGroupRange.visibility = View.VISIBLE
             holder.b.searchRow.visibility = View.VISIBLE
             holder.b.filterCard.visibility = View.VISIBLE
+            holder.b.chipGroupPurchaseStatus.visibility = View.GONE
 
             fun fetchAndShow(saleId: String) {
                 db.collection("sales").document(saleId).get().addOnSuccessListener { doc ->
@@ -403,13 +412,23 @@ class SuperAdminReportFragment : Fragment() {
             holder.b.tvSummary.visibility = View.GONE
             holder.b.filterCard.visibility = View.VISIBLE
             holder.b.searchRow.visibility = View.VISIBLE
-            holder.b.chipGroupRange.visibility = View.VISIBLE
+            holder.b.chipGroupRange.visibility = View.GONE
+            holder.b.chipGroupPurchaseStatus.visibility = View.VISIBLE
             holder.b.rvSales.visibility = View.VISIBLE
             holder.b.tilSearchSaleId.error = null
             holder.b.tilSearchSaleId.hint = null
             holder.b.etSearchSaleId.hint = "Cari No. Invoice"
             holder.b.btnSearchSaleId.text = "Cari"
             holder.b.tvKeterangan.visibility = View.GONE
+
+            data class StatusInfo(
+                val title: String,
+                val detail: String,
+                @AttrRes val badgeColorAttr: Int,
+                @AttrRes val badgeTextColorAttr: Int,
+                @AttrRes val strokeColorAttr: Int,
+                val priority: Int
+            )
 
             data class Row(
                 val doc: DocumentSnapshot,
@@ -419,21 +438,42 @@ class SuperAdminReportFragment : Fragment() {
                 val dueDate: Date?,
                 val createdAt: Date?,
                 val totalCost: Long,
-                val items: List<Map<String, Any?>>, 
-                val dueStatusLabel: String,
-                val dueStatusColorAttr: Int?
+                val items: List<Map<String, Any?>>,
+                val statusTitle: String,
+                val statusDetail: String,
+                @AttrRes val badgeColorAttr: Int,
+                @AttrRes val badgeTextColorAttr: Int,
+                @AttrRes val strokeColorAttr: Int,
+                val statusPriority: Int,
+                val stockPosted: Boolean,
+                val pendingStockId: String?
             )
 
             val rows = mutableListOf<Row>()
+            var masterRows: List<Row> = emptyList()
+            var lastEmptyMessage: String? = null
+            var lastInfoMessage: String? = null
+            var lastContextLabel: String? = null
+            var statusFilter = PurchaseStatusFilter.ALL
+            val ensuredPendingIds = mutableSetOf<String>()
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
 
-            fun computeDueStatus(due: Date?): Pair<String, Int?> {
-                if (due == null) return "Tidak ada jatuh tempo" to null
+            fun computeStatus(due: Date?): StatusInfo {
                 val today = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
+                }
+                if (due == null) {
+                    return StatusInfo(
+                        title = "Tanpa jatuh tempo",
+                        detail = "Transaksi tunai / lunas",
+                        badgeColorAttr = com.google.android.material.R.attr.colorSurfaceVariant,
+                        badgeTextColorAttr = com.google.android.material.R.attr.colorOnSurface,
+                        strokeColorAttr = com.google.android.material.R.attr.colorOutline,
+                        priority = 2
+                    )
                 }
                 val dueCal = Calendar.getInstance().apply {
                     time = due
@@ -444,11 +484,30 @@ class SuperAdminReportFragment : Fragment() {
                 }
                 val diffDays = ((dueCal.timeInMillis - today.timeInMillis) / (24L * 60 * 60 * 1000L)).toInt()
                 return when {
-                    diffDays < 0 -> "Terlambat ${-diffDays} hari" to com.google.android.material.R.attr.colorError
-                    diffDays == 0 -> "Jatuh tempo hari ini" to com.google.android.material.R.attr.colorError
-                    diffDays == 1 -> "Sisa 1 hari" to com.google.android.material.R.attr.colorSecondary
-                    diffDays in 2..3 -> "Sisa $diffDays hari" to com.google.android.material.R.attr.colorSecondary
-                    else -> "Sisa $diffDays hari" to com.google.android.material.R.attr.colorOnSurfaceVariant
+                    diffDays < 0 -> StatusInfo(
+                        title = "Sudah jatuh tempo",
+                        detail = "Terlambat ${-diffDays} hari",
+                        badgeColorAttr = com.google.android.material.R.attr.colorError,
+                        badgeTextColorAttr = com.google.android.material.R.attr.colorOnError,
+                        strokeColorAttr = com.google.android.material.R.attr.colorError,
+                        priority = 0
+                    )
+                    diffDays == 0 -> StatusInfo(
+                        title = "Sudah jatuh tempo",
+                        detail = "Jatuh tempo hari ini",
+                        badgeColorAttr = com.google.android.material.R.attr.colorError,
+                        badgeTextColorAttr = com.google.android.material.R.attr.colorOnError,
+                        strokeColorAttr = com.google.android.material.R.attr.colorError,
+                        priority = 0
+                    )
+                    else -> StatusInfo(
+                        title = "Menunggu jatuh tempo",
+                        detail = "Sisa $diffDays hari",
+                        badgeColorAttr = com.google.android.material.R.attr.colorSecondary,
+                        badgeTextColorAttr = com.google.android.material.R.attr.colorOnSecondary,
+                        strokeColorAttr = com.google.android.material.R.attr.colorSecondary,
+                        priority = 1
+                    )
                 }
             }
 
@@ -465,48 +524,69 @@ class SuperAdminReportFragment : Fragment() {
                     val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
                     acc + qty * cost
                 }
-                val (dueStatusLabel, dueStatusColorAttr) = computeDueStatus(due)
-                return Row(doc, invoice, supplier, productSummary, due, created, total, items, dueStatusLabel, dueStatusColorAttr)
+                val status = computeStatus(due)
+                val stockPosted = doc.getBoolean("stockPosted") ?: false
+                val pendingStockId = doc.getString("pendingStockId")
+                return Row(
+                    doc = doc,
+                    invoiceNo = invoice,
+                    supplierName = supplier,
+                    productSummary = productSummary,
+                    dueDate = due,
+                    createdAt = created,
+                    totalCost = total,
+                    items = items,
+                    statusTitle = status.title,
+                    statusDetail = status.detail,
+                    badgeColorAttr = status.badgeColorAttr,
+                    badgeTextColorAttr = status.badgeTextColorAttr,
+                    strokeColorAttr = status.strokeColorAttr,
+                    statusPriority = status.priority,
+                    stockPosted = stockPosted,
+                    pendingStockId = pendingStockId
+                )
             }
 
             fun showDetail(row: Row) {
-                val padding = (16 * ctx.resources.displayMetrics.density).toInt()
-                val detail = buildString {
-                    appendLine("Nomor Invoice : ${row.invoiceNo}")
-                    appendLine("Supplier      : ${row.supplierName.ifBlank { "-" }}")
-                    appendLine("Tanggal       : ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}")
-                    appendLine("Jatuh Tempo   : ${row.dueDate?.let { dfDate.format(it) } ?: "-"}")
-                    appendLine("Status Tempo  : ${row.dueStatusLabel}")
-                    appendLine("Nilai         : Rp ${nf.format(row.totalCost)}")
-                    appendLine()
-                    appendLine("Daftar Barang:")
-                    if (row.items.isEmpty()) {
-                        appendLine("-")
-                    } else {
-                        row.items.forEachIndexed { idx, item ->
-                            val name = (item["name"] as? String)?.ifBlank { "-" } ?: "-"
-                            val qty = (item["qty"] as? Number)?.toLong() ?: 0L
-                            val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
-                            appendLine("${idx + 1}. $name")
-                            append("    Qty ")
-                            append(nf.format(qty))
-                            append(" x Rp ")
-                            append(nf.format(cost))
-                            append(" = Rp ")
-                            append(nf.format(qty * cost))
-                            appendLine()
-                        }
+                val detailBinding = DialogPurchaseDetailBinding.inflate(LayoutInflater.from(ctx))
+                detailBinding.tvDialogInvoice.text = row.invoiceNo
+                detailBinding.tvDialogSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
+                detailBinding.tvDialogDate.text = "Tanggal: ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}"
+                detailBinding.tvDialogDue.text = "Jatuh Tempo: ${row.dueDate?.let { dfDate.format(it) } ?: "-"}"
+                detailBinding.tvDialogTotal.text = "Total: Rp ${nf.format(row.totalCost)}"
+                detailBinding.tvDialogStatusTitle.text = row.statusTitle
+                detailBinding.tvDialogStatusDetail.text = row.statusDetail
+
+                val badgeColor = MaterialColors.getColor(detailBinding.tvDialogStatusTitle, row.badgeColorAttr)
+                val badgeTextColor = MaterialColors.getColor(detailBinding.tvDialogStatusTitle, row.badgeTextColorAttr)
+                detailBinding.tvDialogStatusTitle.backgroundTintList = ColorStateList.valueOf(badgeColor)
+                detailBinding.tvDialogStatusTitle.setTextColor(badgeTextColor)
+                detailBinding.tvDialogStatusDetail.setTextColor(badgeColor)
+
+                val container = detailBinding.containerItems
+                container.removeAllViews()
+                if (row.items.isEmpty()) {
+                    val empty = android.widget.TextView(ctx).apply {
+                        text = "Tidak ada item"
+                        setTextAppearance(com.google.android.material.R.style.TextAppearance_MaterialComponents_Body2)
+                    }
+                    container.addView(empty)
+                } else {
+                    row.items.forEachIndexed { index, item ->
+                        val itemBinding = ItemPurchaseDetailItemBinding.inflate(LayoutInflater.from(ctx), container, false)
+                        val name = (item["name"] as? String)?.ifBlank { "-" } ?: "-"
+                        val qty = (item["qty"] as? Number)?.toLong() ?: 0L
+                        val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
+                        itemBinding.tvItemName.text = "${index + 1}. $name"
+                        itemBinding.tvItemMeta.text = "Qty ${nf.format(qty)} x Rp ${nf.format(cost)} = Rp ${nf.format(qty * cost)}"
+                        itemBinding.divider.visibility = if (index == row.items.lastIndex) View.GONE else View.VISIBLE
+                        container.addView(itemBinding.root)
                     }
                 }
-                val detailView = TextView(ctx).apply {
-                    text = detail.trimEnd()
-                    setTextIsSelectable(true)
-                    setPadding(padding, padding, padding, padding)
-                }
-                val scroll = ScrollView(ctx).apply { addView(detailView) }
+
                 MaterialAlertDialogBuilder(ctx)
                     .setTitle("Detail Pembelian ${row.invoiceNo}")
-                    .setView(scroll)
+                    .setView(detailBinding.root)
                     .setPositiveButton("Tutup", null)
                     .show()
             }
@@ -515,15 +595,26 @@ class SuperAdminReportFragment : Fragment() {
                 RecyclerView.ViewHolder(b.root) {
                 fun bind(row: Row) {
                     b.tvInvoice.text = row.invoiceNo
+                    b.tvStatusTitle.text = row.statusTitle
+                    b.tvStatusDetail.text = row.statusDetail
+
+                    val badgeColor = MaterialColors.getColor(b.tvStatusTitle, row.badgeColorAttr)
+                    val badgeTextColor = MaterialColors.getColor(b.tvStatusTitle, row.badgeTextColorAttr)
+                    b.tvStatusTitle.backgroundTintList = ColorStateList.valueOf(badgeColor)
+                    b.tvStatusTitle.setTextColor(badgeTextColor)
+                    b.tvStatusDetail.setTextColor(badgeColor)
+
+                    val strokeColor = MaterialColors.getColor(b.root, row.strokeColorAttr)
+                    val strokeWidth = (b.root.resources.displayMetrics.density * 2f).toInt().coerceAtLeast(2)
+                    b.root.strokeWidth = strokeWidth
+                    b.root.setStrokeColor(strokeColor)
+
                     b.tvSupplier.text = if (row.supplierName.isBlank()) "Supplier: -" else "Supplier: ${row.supplierName}"
                     b.tvProduct.text = "Barang: ${row.productSummary}"
                     val dueText = row.dueDate?.let { dfDate.format(it) } ?: "-"
                     b.tvDue.text = "Jatuh Tempo: $dueText"
-                    val statusLabel = "Status Tempo: ${row.dueStatusLabel}"
-                    b.tvStatus.text = statusLabel
-                    val attr = row.dueStatusColorAttr ?: com.google.android.material.R.attr.colorOnSurfaceVariant
-                    val statusColor = MaterialColors.getColor(b.tvStatus, attr)
-                    b.tvStatus.setTextColor(statusColor)
+                    b.tvTotal.text = "Total: Rp ${nf.format(row.totalCost)}"
+
                     b.root.setOnClickListener { showDetail(row) }
                 }
             }
@@ -544,14 +635,75 @@ class SuperAdminReportFragment : Fragment() {
             }
             holder.b.rvSales.adapter = adapter
 
-            fun updateSummary() {
-                if (rows.isEmpty()) {
+            fun updateSummary(current: List<Row>) {
+                if (current.isEmpty()) {
                     holder.b.tvSummary.visibility = View.GONE
                     return
                 }
-                val totalValue = rows.sumOf { it.totalCost }
+                val totalValue = current.sumOf { it.totalCost }
+                val overdueCount = current.count { it.statusPriority == 0 }
+                val upcomingCount = current.count { it.statusPriority == 1 }
+                val noDueCount = current.size - overdueCount - upcomingCount
+                val summaryParts = mutableListOf(
+                    "Total invoice: ${current.size}",
+                    "Nilai: Rp ${nf.format(totalValue)}"
+                )
+                summaryParts += "Sudah JT: $overdueCount"
+                summaryParts += "Menunggu: $upcomingCount"
+                if (noDueCount > 0) summaryParts += "Tanpa tempo: $noDueCount"
                 holder.b.tvSummary.visibility = View.VISIBLE
-                holder.b.tvSummary.text = "Total invoice: ${rows.size} | Nilai: Rp ${nf.format(totalValue)}"
+                holder.b.tvSummary.text = summaryParts.joinToString(" | ")
+            }
+
+            fun ensureDueAutoPosting(source: List<Row>) {
+                if (source.isEmpty()) return
+                val appCtx = holder.itemView.context.applicationContext
+                val now = System.currentTimeMillis()
+                source.forEach { row ->
+                    val pendingId = row.pendingStockId
+                    val due = row.dueDate
+                    if (!row.stockPosted && !pendingId.isNullOrBlank() && due != null && due.time <= now && ensuredPendingIds.add(pendingId)) {
+                        ScheduledStockPostingWorker.enqueue(appCtx, pendingId, Timestamp(due))
+                    }
+                }
+            }
+
+            fun filterAndDisplay() {
+                val filtered = when (statusFilter) {
+                    PurchaseStatusFilter.ALL -> masterRows
+                    PurchaseStatusFilter.UPCOMING -> masterRows.filter { it.statusPriority == 1 }
+                    PurchaseStatusFilter.OVERDUE -> masterRows.filter { it.statusPriority == 0 }
+                }
+                rows.clear()
+                rows.addAll(filtered)
+                adapter.notifyDataSetChanged()
+
+                if (lastContextLabel.isNullOrBlank()) {
+                    holder.b.tvKeterangan.visibility = View.GONE
+                } else {
+                    holder.b.tvKeterangan.visibility = View.VISIBLE
+                    holder.b.tvKeterangan.text = lastContextLabel
+                }
+
+                if (filtered.isEmpty()) {
+                    holder.b.tvSummary.visibility = View.GONE
+                    holder.b.tvDesc.visibility = View.VISIBLE
+                    val emptyMsg = when {
+                        masterRows.isEmpty() -> lastEmptyMessage ?: "Tidak ada data pembelian pada rentang ini."
+                        statusFilter == PurchaseStatusFilter.UPCOMING -> "Tidak ada pembelian yang menunggu jatuh tempo."
+                        statusFilter == PurchaseStatusFilter.OVERDUE -> "Tidak ada pembelian yang sudah jatuh tempo."
+                        else -> lastEmptyMessage ?: "Tidak ada data pembelian pada rentang ini."
+                    }
+                    holder.b.tvDesc.text = emptyMsg
+                } else {
+                    if (lastInfoMessage.isNullOrBlank()) {
+                        holder.b.tvDesc.visibility = View.GONE
+                    } else {
+                        holder.b.tvDesc.visibility = View.VISIBLE
+                        holder.b.tvDesc.text = lastInfoMessage
+                    }
+                    updateSummary(filtered)
+                }
             }
 
             fun applyRows(
@@ -560,75 +712,39 @@ class SuperAdminReportFragment : Fragment() {
                 infoMessage: String? = null,
                 contextLabel: String? = null
             ) {
-                rows.clear()
-                rows.addAll(newRows.sortedByDescending { it.createdAt?.time ?: Long.MIN_VALUE })
-                adapter.notifyDataSetChanged()
+                masterRows = newRows.sortedWith(compareBy<Row> { it.statusPriority }
+                    .thenBy { it.dueDate ?: Date(Long.MAX_VALUE) }
+                    .thenByDescending { it.createdAt?.time ?: Long.MIN_VALUE })
+                lastEmptyMessage = emptyMessage
+                lastInfoMessage = infoMessage
+                lastContextLabel = contextLabel
+                ensureDueAutoPosting(masterRows)
+                filterAndDisplay()
+            }
 
-                if (contextLabel.isNullOrBlank()) {
-                    holder.b.tvKeterangan.visibility = View.GONE
-                } else {
-                    holder.b.tvKeterangan.visibility = View.VISIBLE
-                    holder.b.tvKeterangan.text = contextLabel
+            holder.b.chipGroupPurchaseStatus.setOnCheckedStateChangeListener { _, checkedIds ->
+                val selected = checkedIds.firstOrNull()
+                statusFilter = when (selected) {
+                    holder.b.chipStatusUpcoming.id -> PurchaseStatusFilter.UPCOMING
+                    holder.b.chipStatusOverdue.id -> PurchaseStatusFilter.OVERDUE
+                    else -> PurchaseStatusFilter.ALL
                 }
-
-                if (rows.isEmpty()) {
-                    holder.b.tvSummary.visibility = View.GONE
-                    holder.b.tvDesc.visibility = View.VISIBLE
-                    holder.b.tvDesc.text = emptyMessage ?: "Tidak ada data pembelian pada rentang ini."
-                } else {
-                    if (infoMessage.isNullOrBlank()) {
-                        holder.b.tvDesc.visibility = View.GONE
-                    } else {
-                        holder.b.tvDesc.visibility = View.VISIBLE
-                        holder.b.tvDesc.text = infoMessage
-                    }
-                    updateSummary()
-                }
+                filterAndDisplay()
             }
+            holder.b.chipGroupPurchaseStatus.check(holder.b.chipStatusAll.id)
 
-            fun buildRangeLabel(start: Date, endExclusive: Date): String {
-                val inclusiveEnd = Date(endExclusive.time - 1L)
-                val isSameDay = dfDate.format(start) == dfDate.format(inclusiveEnd)
-                return if (isSameDay) {
-                    "Data pembelian tanggal ${dfDate.format(start)}"
-                } else {
-                    "Data pembelian ${dfDate.format(start)} - ${dfDate.format(inclusiveEnd)}"
-                }
-            }
-
-            fun rangeStart(date: Date): Date {
-                val cal = Calendar.getInstance().apply { time = date }
-                cal.set(Calendar.HOUR_OF_DAY, 0)
-                cal.set(Calendar.MINUTE, 0)
-                cal.set(Calendar.SECOND, 0)
-                cal.set(Calendar.MILLISECOND, 0)
-                return cal.time
-            }
-
-            fun rangeEndExclusive(date: Date): Date {
-                val cal = Calendar.getInstance().apply { time = date }
-                cal.set(Calendar.HOUR_OF_DAY, 23)
-                cal.set(Calendar.MINUTE, 59)
-                cal.set(Calendar.SECOND, 59)
-                cal.set(Calendar.MILLISECOND, 999)
-                cal.add(Calendar.MILLISECOND, 1)
-                return cal.time
-            }
-
-            fun load(start: Date, endExclusive: Date) {
+            fun loadRecent() {
                 holder.b.tilSearchSaleId.error = null
-                val contextLabel = buildRangeLabel(start, endExclusive)
+                val contextLabel = "Menampilkan 300 pembelian terbaru"
                 db.collection("purchases")
                     .orderBy("date", Query.Direction.DESCENDING)
-                    .whereGreaterThanOrEqualTo("date", com.google.firebase.Timestamp(start))
-                    .whereLessThan("date", com.google.firebase.Timestamp(endExclusive))
                     .limit(300)
                     .get()
                     .addOnSuccessListener { snap ->
                         val data = snap.documents.map { mapDocToRow(it) }
                         applyRows(
                             data,
-                            emptyMessage = "Tidak ada data pembelian pada rentang ini.",
+                            emptyMessage = "Belum ada data pembelian.",
                             contextLabel = contextLabel
                         )
                     }
@@ -644,7 +760,7 @@ class SuperAdminReportFragment : Fragment() {
             fun searchInvoice(rawInput: String) {
                 val queryString = rawInput.trim()
                 if (queryString.isEmpty()) {
-                    holder.b.tilSearchSaleId.error = "Masukkan No. Invoice"
+                    loadRecent()
                     return
                 }
                 holder.b.tilSearchSaleId.error = null
@@ -708,9 +824,7 @@ class SuperAdminReportFragment : Fragment() {
                 searchAt(0)
             }
 
-            var currentStart = rangeStart(Date())
-            var currentEndExclusive = rangeEndExclusive(Date())
-            load(currentStart, currentEndExclusive)
+            loadRecent()
 
             holder.b.btnSearchSaleId.setOnClickListener {
                 searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
@@ -723,41 +837,6 @@ class SuperAdminReportFragment : Fragment() {
                     true
                 } else {
                     false
-                }
-            }
-
-            holder.b.chipToday.setOnClickListener {
-                currentStart = rangeStart(Date())
-                currentEndExclusive = rangeEndExclusive(Date())
-                load(currentStart, currentEndExclusive)
-            }
-            holder.b.chipWeek.setOnClickListener {
-                val cal = Calendar.getInstance()
-                cal.time = Date()
-                cal.add(Calendar.DAY_OF_YEAR, -6)
-                currentStart = rangeStart(cal.time)
-                currentEndExclusive = rangeEndExclusive(Date())
-                load(currentStart, currentEndExclusive)
-            }
-            holder.b.chipMonth.setOnClickListener {
-                val cal = Calendar.getInstance()
-                cal.time = Date()
-                cal.set(Calendar.DAY_OF_MONTH, 1)
-                currentStart = rangeStart(cal.time)
-                currentEndExclusive = rangeEndExclusive(Date())
-                load(currentStart, currentEndExclusive)
-            }
-            holder.b.chipCustom.setOnClickListener {
-                val picker = MaterialDatePicker.Builder.dateRangePicker().build()
-                picker.addOnPositiveButtonClickListener { range ->
-                    val start = Date(range.first ?: System.currentTimeMillis())
-                    val end = Date(range.second ?: System.currentTimeMillis())
-                    currentStart = rangeStart(start)
-                    currentEndExclusive = rangeEndExclusive(end)
-                    load(currentStart, currentEndExclusive)
-                }
-                (holder.itemView.context as? FragmentActivity)?.let {
-                    picker.show(it.supportFragmentManager, "pick_purchase_range")
                 }
             }
         }

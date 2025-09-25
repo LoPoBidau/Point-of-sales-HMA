@@ -12,6 +12,7 @@ data class StockBatch(
     var unitCost: Long = 0L,
     var receivedQty: Long = 0L,
     var remainingQty: Long = 0L,
+    var salePrice: Long = 0L,
     var receivedAt: Timestamp? = null,
     var purchaseId: String? = null,
     var invoiceNo: String? = null,
@@ -38,7 +39,7 @@ data class StockBatch(
     }
 }
 
-enum class BatchState { OPEN, CLEARED }
+enum class BatchState { HOLD, OPEN, CLEARED }
 
 enum class DueStatus { UPCOMING, DUE_TODAY, OVERDUE, NO_DUE, CLEARED }
 
