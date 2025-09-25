@@ -137,7 +137,6 @@ class AdminCashierPaymentFragment : Fragment() {
                 if (seenSkus.add(sku)) {
                     val task = db.collection("stock_batches")
                         .whereEqualTo("sku", sku)
-                        .orderBy("receivedAt", Query.Direction.ASCENDING)
                         .get()
                     batchFetches += sku to task
                 }
@@ -170,9 +169,7 @@ class AdminCashierPaymentFragment : Fragment() {
                     val unitPrice: Long,
                     val newStock: Long,
                     val avgUnitCost: Long,
-                    val consumptions: List<BatchConsumption>,
-                    val salePriceUpdate: Long?,
-                    val lastCostUpdate: Long?
+                    val consumptions: List<BatchConsumption>
                 )
 
                 val plans = mutableListOf<Plan>()
@@ -237,18 +234,6 @@ class AdminCashierPaymentFragment : Fragment() {
 
                             val totalCost = consumptions.fold(0L) { acc, c -> acc + c.consumed * c.unitCost }
                             val avgUnitCost = if (qty > 0L) totalCost / qty else 0L
-                            val currentSalePrice = snap.getLong("salePrice") ?: 0L
-                            val salePriceUpdate = if (firstBefore != null && firstAfter != null && firstBefore!!.id != firstAfter!!.id) {
-                                val candidate = firstAfter!!.getLong("salePrice") ?: 0L
-                                if (candidate > 0L && candidate != currentSalePrice) candidate else null
-                            } else null
-                            val lastCostUpdate = when {
-                                firstBefore != null && firstAfter != null && firstBefore!!.id != firstAfter!!.id ->
-                                    firstAfter!!.getLong("unitCost") ?: 0L
-                                firstBefore != null && firstAfter == null && newStock <= 0L -> 0L
-                                else -> null
-                            }
-
                             plans += Plan(
                                 ref = pRef,
                                 sku = sku,
@@ -257,9 +242,7 @@ class AdminCashierPaymentFragment : Fragment() {
                                 unitPrice = product.salePrice,
                                 newStock = newStock,
                                 avgUnitCost = avgUnitCost,
-                                consumptions = consumptions,
-                                salePriceUpdate = salePriceUpdate,
-                                lastCostUpdate = lastCostUpdate
+                                consumptions = consumptions
                             )
 
                             items += mapOf(
@@ -288,8 +271,6 @@ class AdminCashierPaymentFragment : Fragment() {
                         "stock" to pl.newStock,
                         "updatedAt" to now
                     )
-                    pl.lastCostUpdate?.let { productUpdates["lastCost"] = it }
-                    pl.salePriceUpdate?.let { productUpdates["salePrice"] = it }
                     trx.update(pl.ref, productUpdates)
 
                     for (cons in pl.consumptions) {
@@ -342,7 +323,10 @@ class AdminCashierPaymentFragment : Fragment() {
                 .addOnSuccessListener { snapshots ->
                     val fifoRefs = mutableMapOf<String, List<DocumentReference>>()
                     snapshots.forEachIndexed { index, snapshot ->
-                        val docs = snapshot.documents.map { it.reference }
+                        val docs = snapshot.documents
+                            .sortedWith(compareBy<DocumentSnapshot> { it.getTimestamp("receivedAt")?.toDate()?.time ?: Long.MAX_VALUE }
+                                .thenBy { it.id })
+                            .map { it.reference }
                         fifoRefs[batchFetches[index].first] = docs
                     }
                     proceed(fifoRefs)

@@ -89,20 +89,14 @@
                     android:maxLines="1" />
             </com.google.android.material.textfield.TextInputLayout>
 
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/tilInvoice"
+            <TextView
+                android:id="@+id/tvInvoiceInfo"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="No. Invoice">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etInvoiceNo"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="text"
-                    android:maxLines="1" />
-            </com.google.android.material.textfield.TextInputLayout>
+                android:layout_marginTop="8dp"
+                android:text="Nomor invoice akan dibuat otomatis saat disimpan."
+                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                android:textColor="?attr/colorOnSurfaceVariant" />
 
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/tilSupplier"
@@ -145,29 +139,6 @@
                 android:text="Kosongkan untuk pakai termin pembayaran supplier"
                 android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
                 android:textColor="?attr/colorOnSurfaceVariant" />
-
-            <com.google.android.material.materialswitch.MaterialSwitch
-                android:id="@+id/swEnableSalePrice"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Aktifkan input harga jual" />
-
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/tilSalePrice"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:hint="Harga jual (Rp)">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etSalePrice"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:enabled="false"
-                    android:inputType="number"
-                    android:maxLines="1" />
-            </com.google.android.material.textfield.TextInputLayout>
 
         </LinearLayout>
 

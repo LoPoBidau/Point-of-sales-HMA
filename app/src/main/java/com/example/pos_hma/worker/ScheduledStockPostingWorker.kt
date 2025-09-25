@@ -1,28 +1,19 @@
 package com.example.pos_hma.worker
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
 import android.util.Log
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.navigation.NavDeepLinkBuilder
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
-import com.example.pos_hma.R
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.SetOptions
+import com.example.pos_hma.util.StockNotificationHelper
 import kotlinx.coroutines.tasks.await
-import java.text.NumberFormat
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class ScheduledStockPostingWorker(
@@ -50,12 +41,26 @@ class ScheduledStockPostingWorker(
 
         val status = snapshot.getString("status") ?: "pending"
         if (status == "posted") {
-            val notified = ensureNotification(snapshot, docId)
-            if (notified && snapshot.getBoolean("notificationSent") != true) {
-                try {
-                    docRef.update("notificationSent", true).await()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Gagal menandai notifikasi terkirim (posted)", e)
+            val qtyPosted = snapshot.getLong("qty") ?: 0L
+            if (qtyPosted > 0L) {
+                val skuSnapshot = snapshot.getString("sku").orEmpty()
+                val nameSnapshot = snapshot.getString("productName").orEmpty().ifBlank { skuSnapshot }
+                val posted = StockNotificationHelper.notifyStockPosted(
+                    applicationContext,
+                    db,
+                    docId,
+                    nameSnapshot,
+                    qtyPosted,
+                    snapshot.getTimestamp("dueDate"),
+                    skuSnapshot,
+                    snapshot.getString("invoiceNo")
+                )
+                if (posted && snapshot.getBoolean("notificationSent") != true) {
+                    try {
+                        docRef.update("notificationSent", true).await()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Gagal menandai notifikasi terkirim (posted)", e)
+                    }
                 }
             }
             return Result.success()
@@ -225,7 +230,16 @@ class ScheduledStockPostingWorker(
             return Result.retry()
         }
 
-        val notified = ensureNotification(snapshot, docId, productName, qty)
+        val notified = StockNotificationHelper.notifyStockPosted(
+            applicationContext,
+            db,
+            docId,
+            productName,
+            qty,
+            scheduledTs,
+            sku,
+            purchaseId.takeIf { it.isNotBlank() }
+        )
         if (notified) {
             try {
                 docRef.update("notificationSent", true).await()
@@ -233,99 +247,8 @@ class ScheduledStockPostingWorker(
                 Log.w(TAG, "Gagal menandai notifikasi terkirim", e)
             }
         }
-        persistInAppNotification(docId, productName, qty, scheduledTs, sku)
 
         return Result.success()
-    }
-
-    private suspend fun persistInAppNotification(
-        docId: String,
-        productName: String,
-        qty: Long,
-        scheduledTs: Timestamp,
-        sku: String
-    ) {
-        val nf = NumberFormat.getInstance(Locale("in", "ID"))
-        val title = "Stok otomatis ditambahkan"
-        val message = "$productName bertambah ${nf.format(qty)} unit."
-        val data = mutableMapOf<String, Any>(
-            "type" to "STOCK_POSTED",
-            "title" to title,
-            "message" to message,
-            "toRole" to "super-admin",
-            "read" to false,
-            "referenceId" to docId,
-            "sku" to sku,
-            "qty" to qty,
-            "dueDate" to scheduledTs,
-            "createdAt" to FieldValue.serverTimestamp()
-        )
-        try {
-            db.collection("notifications")
-                .document("sa_stock_posted_$docId")
-                .set(data, SetOptions.merge())
-                .await()
-        } catch (e: Exception) {
-            Log.w(TAG, "Gagal menyimpan notifikasi in-app", e)
-        }
-    }
-
-    private fun ensureNotification(
-        snapshot: com.google.firebase.firestore.DocumentSnapshot,
-        docId: String,
-        productName: String? = null,
-        qtyFallback: Long? = null
-    ): Boolean {
-        val qty = qtyFallback ?: snapshot.getLong("qty") ?: return false
-        val name = productName ?: snapshot.getString("productName").orEmpty().ifBlank { snapshot.getString("sku").orEmpty() }
-
-        val notifier = NotificationManagerCompat.from(applicationContext)
-        if (!notifier.areNotificationsEnabled()) return false
-
-        ensureChannel()
-
-        val locale = Locale("in", "ID")
-        val nf = NumberFormat.getInstance(locale)
-        val title = "Stok otomatis ditambahkan"
-        val message = "$name bertambah ${nf.format(qty)} unit."
-
-        val pendingIntent = NavDeepLinkBuilder(applicationContext)
-            .setGraph(R.navigation.nav_super_admin)
-            .setDestination(R.id.superAdminInventoryFragment)
-            .createPendingIntent()
-
-        val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(title)
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        return try {
-            notifier.notify(("stock_posted_$docId").hashCode(), notif)
-            true
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Izin notifikasi ditolak", e)
-            false
-        }
-    }
-
-    private fun ensureChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        val existing = manager.getNotificationChannel(CHANNEL_ID)
-        if (existing != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Stok Otomatis",
-            NotificationManager.IMPORTANCE_HIGH
-        ).apply {
-            description = "Notifikasi ketika stok otomatis ditambahkan pada tanggal jatuh tempo"
-        }
-        manager.createNotificationChannel(channel)
     }
 
     companion object {

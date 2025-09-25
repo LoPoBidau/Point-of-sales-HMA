@@ -15,6 +15,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -25,6 +26,7 @@ import com.example.pos_hma.data.InventoryMovement
 import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.*
 import com.example.pos_hma.worker.ScheduledStockPostingWorker
+import com.example.pos_hma.util.StockNotificationHelper
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.color.MaterialColors
@@ -341,7 +343,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private fun normalizeSku(s: String) = s.trim().uppercase().replace("\\s+".toRegex(), "-")
     private fun slugify(s: String) = s.trim().lowercase().replace("[^a-z0-9\\s-]".toRegex(), "").replace("\\s+".toRegex(), "-")
 
-    // ====== Normalisasi tipe kategori (ID/EN → key) ======
+    // ====== Normalisasi tipe kategori (ID/EN -> key) ======
     private fun toTypeKey(raw: String?): String {
         val s = raw?.trim()?.lowercase().orEmpty()
         return when (s) {
@@ -746,16 +748,20 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
     // ===== Menu aksi produk (long press) =====
     private fun showProductActions(p: Product) {
-        val items = arrayOf("Riwayat Stok", "Penyesuaian Stok", "Ubah Harga")
+        val actions = mutableListOf<Pair<String, () -> Unit>>()
+        actions += "Riwayat Stok" to { openHistoryDialog(p) }
+        if (!p.isService && p.trackStock) {
+            actions += "Antrian Pending" to { openPendingQueueDialog(p) }
+        }
+        actions += "Penyesuaian Stok" to { openAdjustStockDialog(p) }
+        actions += "Ubah Harga" to { openQuickUpdatePriceDialog(p) }
+
         MaterialAlertDialogBuilder(requireContext())
             .setTitle(p.name)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> openHistoryDialog(p)
-                    1 -> openAdjustStockDialog(p)
-                    2 -> openQuickUpdatePriceDialog(p)
-                }
-            }.show()
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which ->
+                actions.getOrNull(which)?.second?.invoke()
+            }
+            .show()
     }
 
     private fun openQuickUpdatePriceDialog(p: Product) {
@@ -841,8 +847,114 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         load(true)
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Riwayat Stok — ${p.name}")
+            .setTitle("Riwayat Stok - ${p.name}")
             .setView(h.root)
+            .setPositiveButton("Tutup", null)
+            .show()
+    }
+
+    private fun openPendingQueueDialog(p: Product) {
+        val binding = DialogFifoQueueBinding.inflate(layoutInflater)
+        val nf = NumberFormat.getInstance(ID_LOCALE)
+        val dfDate = SimpleDateFormat("dd MMM yyyy", ID_LOCALE)
+        val dfDateTime = SimpleDateFormat("dd MMM yyyy HH:mm", ID_LOCALE)
+
+        data class PendingRow(
+            val invoiceNo: String,
+            val supplierName: String,
+            val qty: Long,
+            val dueDate: com.google.firebase.Timestamp?,
+            val scheduledAt: com.google.firebase.Timestamp?,
+            val status: String,
+            val purchaseId: String?
+        )
+
+        val rows = mutableListOf<PendingRow>()
+
+        class PendingVH(private val b: ItemFifoBatchBinding) : RecyclerView.ViewHolder(b.root) {
+            fun bind(row: PendingRow) {
+                b.tvTitle.text = if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Invoice otomatis"
+                b.tvSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
+                b.tvQty.text = "Qty ${nf.format(row.qty)} unit"
+                val dueText = row.dueDate?.toDate()?.let { dfDate.format(it) } ?: "-"
+                val scheduledText = row.scheduledAt?.toDate()?.let { dfDateTime.format(it) } ?: "-"
+                b.tvDue.text = "Jatuh tempo: $dueText (jadwal $scheduledText)"
+                val statusPretty = when (row.status.lowercase(Locale.ROOT)) {
+                    "processing" -> "Sedang diproses"
+                    "posted" -> "Selesai"
+                    else -> "Menunggu"
+                }
+                val purchaseInfo = row.purchaseId?.takeIf { it.isNotBlank() }?.let { " - Purchase ${it.takeLast(6)}" } ?: ""
+                b.tvStatus.text = "Status: $statusPretty$purchaseInfo"
+            }
+        }
+
+        val adapter = object : RecyclerView.Adapter<PendingVH>() {
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PendingVH {
+                val row = ItemFifoBatchBinding.inflate(layoutInflater, parent, false)
+                return PendingVH(row)
+            }
+
+            override fun onBindViewHolder(holder: PendingVH, position: Int) = holder.bind(rows[position])
+
+            override fun getItemCount(): Int = rows.size
+        }
+
+        binding.rvQueue.layoutManager = LinearLayoutManager(requireContext())
+        binding.rvQueue.adapter = adapter
+        binding.progress.visibility = View.VISIBLE
+        binding.tvEmpty.visibility = View.GONE
+        binding.tvSummary.visibility = View.GONE
+
+        fun render() {
+            binding.progress.visibility = View.GONE
+            if (rows.isEmpty()) {
+                binding.tvEmpty.visibility = View.VISIBLE
+                binding.tvSummary.visibility = View.GONE
+            } else {
+                binding.tvEmpty.visibility = View.GONE
+                binding.tvSummary.visibility = View.VISIBLE
+                val totalQty = rows.sumOf { it.qty }
+                binding.tvSummary.text = "Total antrian: ${rows.size} | Qty: ${nf.format(totalQty)}"
+            }
+            adapter.notifyDataSetChanged()
+        }
+
+        val skuKey = p.sku.ifBlank { p.id }
+        db.collection("pending_stock_receipts")
+            .whereEqualTo("sku", skuKey)
+            .get()
+            .addOnSuccessListener { snap ->
+                rows.clear()
+                rows.addAll(
+                    snap.documents.mapNotNull { doc ->
+                        val qtyVal = doc.getLong("qty") ?: return@mapNotNull null
+                        val statusVal = doc.getString("status") ?: "pending"
+                        PendingRow(
+                            invoiceNo = doc.getString("invoiceNo") ?: "",
+                            supplierName = doc.getString("supplierName") ?: "",
+                            qty = qtyVal,
+                            dueDate = doc.getTimestamp("dueDate"),
+                            scheduledAt = doc.getTimestamp("scheduledAt"),
+                            status = statusVal,
+                            purchaseId = doc.getString("purchaseId")
+                        )
+                    }.sortedWith(
+                        compareBy<PendingRow> { it.dueDate?.toDate()?.time ?: Long.MAX_VALUE }
+                            .thenBy { it.scheduledAt?.toDate()?.time ?: Long.MAX_VALUE }
+                    )
+                )
+                render()
+            }
+            .addOnFailureListener { e ->
+                toast("Gagal memuat antrian: ${e.message}")
+                rows.clear(); render()
+            }
+            .addOnCompleteListener { binding.progress.visibility = View.GONE }
+
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Antrian Pending ${p.name}")
+            .setView(binding.root)
             .setPositiveButton("Tutup", null)
             .show()
     }
@@ -852,7 +964,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             val sign = if (m.qtyDelta >= 0) "+" else ""
             b.tvTitle.text = "${m.type}  (${sign}${m.qtyDelta})"
             val ts = m.createdAt?.toDate()?.toString() ?: "-"
-            b.tvSub.text = "${m.note ?: ""}  •  $ts"
+            b.tvSub.text = "${m.note ?: ""}  -  $ts"
         }
     }
 
@@ -873,7 +985,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         refreshAdjUi()
 
         val dlg = MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Penyesuaian Stok — ${p.name}")
+            .setTitle("Penyesuaian Stok - ${p.name}")
             .setView(a.root)
             .setNegativeButton("Batal", null)
             .setPositiveButton("Simpan", null)
@@ -1072,9 +1184,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         }
 
         if (p.lastCost > 0) receiveBinding.etUnitCost.setText(rupiah(p.lastCost))
-        if (p.salePrice > 0) receiveBinding.etSalePrice.setText(rupiah(p.salePrice))
         receiveBinding.etUnitCost.attachRupiahFormatter()
-        receiveBinding.etSalePrice.attachRupiahFormatter()
 
         val localeId = Locale("in", "ID")
         val dfIso = SimpleDateFormat("yyyy-MM-dd", localeId).apply { isLenient = false }
@@ -1084,21 +1194,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             val actual = receiveBinding.rbActual.isChecked
             receiveBinding.groupPurchase.visibility = if (actual) View.GONE else View.VISIBLE
             receiveBinding.tvActualInfo.visibility = if (actual) View.VISIBLE else View.GONE
-            val saleEnabled = receiveBinding.swEnableSalePrice.isChecked
-            receiveBinding.tilSalePrice.isEnabled = saleEnabled
-            receiveBinding.etSalePrice.isEnabled = saleEnabled
-            if (!saleEnabled) receiveBinding.tilSalePrice.error = null
         }
 
         receiveBinding.rgMode.setOnCheckedChangeListener { _, _ -> refreshModeUi() }
         receiveBinding.rbActual.isChecked = true
         refreshModeUi()
-
-        receiveBinding.swEnableSalePrice.setOnCheckedChangeListener { _, isChecked ->
-            receiveBinding.tilSalePrice.isEnabled = isChecked
-            receiveBinding.etSalePrice.isEnabled = isChecked
-            if (!isChecked) receiveBinding.tilSalePrice.error = null
-        }
 
         fun showDatePicker() {
             val cal = Calendar.getInstance()
@@ -1202,8 +1302,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 }
 
                 receiveBinding.tilUnitCost.error = null
-                receiveBinding.tilInvoice.error = null
-                receiveBinding.tilSalePrice.error = null
                 receiveBinding.tilDueDate.error = null
 
                 val unitCost = receiveBinding.etUnitCost.text.asCleanLongOrNull()
@@ -1213,12 +1311,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 }
 
                 val unitCostValue = unitCost
-
-                val invoiceNo = receiveBinding.etInvoiceNo.text?.toString()?.trim().orEmpty()
-                if (invoiceNo.isEmpty()) {
-                    receiveBinding.tilInvoice.error = "Wajib"
-                    return@setOnClickListener
-                }
 
                 val supplierInput = receiveBinding.actSupplier.text?.toString()?.trim().orEmpty()
                 val chosenSupplier = suppliers.firstOrNull { it.name.equals(supplierInput, ignoreCase = true) }
@@ -1249,16 +1341,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     dueDate = cal.time
                 }
 
-                val salePrice = if (receiveBinding.swEnableSalePrice.isChecked) {
-                    val entered = receiveBinding.etSalePrice.text.asCleanLongOrNull()
-                    if (entered == null || entered <= 0) {
-                        receiveBinding.tilSalePrice.error = "Wajib"
-                        return@setOnClickListener
-                    }
-                    entered
-                } else {
-                    p.salePrice.takeIf { it > 0 } ?: unitCostValue
-                }
+                val salePrice = p.salePrice.takeIf { it > 0 } ?: unitCostValue
 
                 receiveDlg.dismiss()
                 val dueTs = dueDate?.let { com.google.firebase.Timestamp(it) }
@@ -1268,7 +1351,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     qty = qty,
                     unitCost = unitCostValue,
                     newSalePrice = salePrice,
-                    invoiceNo = invoiceNo,
                     dueDate = dueTs,
                     supplierName = supplierName.ifBlank { null },
                     supplierId = supplierId,
@@ -1379,7 +1461,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         qty: Long,
         unitCost: Long,
         newSalePrice: Long,
-        invoiceNo: String?,
         dueDate: com.google.firebase.Timestamp?,
         supplierName: String?,
         supplierId: String?,
@@ -1396,22 +1477,41 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
         fun commitReceive(
             lastDoc: DocumentSnapshot?,
-            existingPurchaseId: String?,
             delayStock: Boolean,
             pendingDocument: DocumentReference?
         ) {
-            var stagedSalePrice: Long? = null
+            data class ReceiveResult(
+                val purchaseId: String,
+                val invoiceNo: String,
+                val stagedSalePrice: Long?
+            )
+
+            val invoiceCounterRef = db.collection("counters").document("purchase_invoice")
+
             db.runTransaction { trx ->
                 val pSnap = trx.get(pRef)
                 require(pSnap.exists()) { "Produk tidak ditemukan" }
                 require((pSnap.getBoolean("trackStock") ?: true)) { "Jasa tidak pakai stok" }
 
-                val poRef = when {
-                    delayStock -> db.collection("purchases").document()
-                    existingPurchaseId != null -> db.collection("purchases").document(existingPurchaseId)
-                    else -> db.collection("purchases").document()
+                val counterSnap = trx.get(invoiceCounterRef)
+                val nextInvoice = if (counterSnap.exists()) {
+                    val current = counterSnap.getLong("last") ?: 0L
+                    val next = current + 1L
+                    trx.update(invoiceCounterRef, mapOf(
+                        "last" to next,
+                        "updatedAt" to now
+                    ))
+                    next
+                } else {
+                    trx.set(invoiceCounterRef, mapOf(
+                        "last" to 1L,
+                        "updatedAt" to now
+                    ))
+                    1L
                 }
-                val oldPoSnap = if (!delayStock && existingPurchaseId != null) trx.get(poRef) else null
+                val invoiceNoGenerated = "Invoice-%03d".format(nextInvoice)
+
+                val poRef = db.collection("purchases").document()
                 val lastBatchSnap = if (!delayStock && lastDoc != null) trx.get(lastDoc.reference) else null
 
                 val items = listOf(
@@ -1431,73 +1531,42 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 val shouldStageSalePrice = !delayStock && newSalePrice > 0 && newSalePrice != currentSalePrice && stockOld > 0 && unitCost < currentCost
                 val batchSalePrice = if (newSalePrice > 0) newSalePrice else currentSalePrice
 
-                var purchaseWriteIsUpdate = false
-                var purchaseUpdateData: MutableMap<String, Any>? = null
-                var purchaseCreateData: MutableMap<String, Any?>? = null
-
-                if (oldPoSnap != null) {
-                    val oldItems = (oldPoSnap.get("items") as? List<Map<String, Any?>>).orEmpty()
-                    val newItems = oldItems + items
-                    val newTotal = (oldPoSnap.getLong("totalCost") ?: 0L) + (qty * unitCost)
-                    val oldDue = oldPoSnap.getTimestamp("dueDate")?.toDate()
-                    val newDue = dueDate?.toDate()
-                    val keepDue = when {
-                        oldDue == null -> newDue
-                        newDue == null -> oldDue
-                        else -> if (newDue.before(oldDue)) newDue else oldDue
-                    }
-                    val dueTs = keepDue?.let { com.google.firebase.Timestamp(it) }
-                        ?: oldPoSnap.getTimestamp("dueDate")
-                        ?: dueDate
-                        ?: com.google.firebase.Timestamp.now()
-                    purchaseWriteIsUpdate = true
-                    purchaseUpdateData = mutableMapOf<String, Any>(
-                        "items" to newItems,
-                        "totalCost" to newTotal,
-                        "updatedAt" to now,
-                        "dueDate" to dueTs,
-                        "stockPosted" to true,
-                        "stockPostedAt" to now
-                    ).apply { if (termDays > 0L) put("termDays", termDays) }
-                } else {
-                    purchaseCreateData = mutableMapOf<String, Any?>(
-                        "date" to now,
-                        "createdBy" to (uid ?: ""),
-                        "invoiceNo" to (invoiceNo ?: ""),
-                        "dueDate" to (dueDate ?: com.google.firebase.Timestamp.now()),
-                        "supplierName" to (supplierName ?: ""),
-                        "supplierId" to (supplierId ?: ""),
-                        "items" to items,
-                        "totalCost" to (qty * unitCost),
-                        "termDays" to termDays,
-                        "dueReminderSent" to false
-                    ).apply {
-                        if (delayStock) {
-                            put("stockPosted", false)
-                            put("stockPostedAt", null)
-                            pendingDocument?.let { put("pendingStockId", it.id) }
-                        } else {
-                            put("stockPosted", true)
-                            put("stockPostedAt", now)
-                        }
-                    }
-                }
-
-                val productUpdates = mutableMapOf<String, Any?>(
+                val purchaseData = mutableMapOf<String, Any?>(
+                    "date" to now,
+                    "createdBy" to (uid ?: ""),
+                    "invoiceNo" to invoiceNoGenerated,
+                    "dueDate" to (dueDate ?: com.google.firebase.Timestamp.now()),
+                    "supplierName" to (supplierName ?: ""),
+                    "supplierId" to (supplierId ?: ""),
+                    "items" to items,
+                    "totalCost" to (qty * unitCost),
+                    "termDays" to termDays,
+                    "dueReminderSent" to false,
+                    "createdAt" to now,
                     "updatedAt" to now
                 )
+                if (delayStock) {
+                    purchaseData["stockPosted"] = false
+                    purchaseData["stockPostedAt"] = null
+                    pendingDocument?.let { purchaseData["pendingStockId"] = it.id }
+                } else {
+                    purchaseData["stockPosted"] = true
+                    purchaseData["stockPostedAt"] = now
+                }
+                trx.set(poRef, purchaseData)
+
+                val productUpdates = mutableMapOf<String, Any?>("updatedAt" to now)
                 if (!delayStock) productUpdates["stock"] = newStock
                 if (unitCost > 0) productUpdates["lastCost"] = unitCost
                 if (!delayStock && !shouldStageSalePrice && newSalePrice > 0 && newSalePrice != currentSalePrice) {
                     productUpdates["salePrice"] = newSalePrice
                 }
                 trx.update(pRef, productUpdates)
-                if (shouldStageSalePrice) {
-                    stagedSalePrice = newSalePrice
-                }
 
-                if (purchaseWriteIsUpdate && purchaseUpdateData != null) trx.update(poRef, purchaseUpdateData)
-                else if (purchaseCreateData != null) trx.set(poRef, purchaseCreateData)
+                var stagedSalePriceResult: Long? = null
+                if (shouldStageSalePrice) {
+                    stagedSalePriceResult = newSalePrice
+                }
 
                 if (!delayStock) {
                     var merged = false
@@ -1529,7 +1598,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                             "remainingQty" to qty,
                             "receivedAt" to now,
                             "purchaseId" to poRef.id,
-                            "invoiceNo" to (invoiceNo ?: ""),
+                            "invoiceNo" to invoiceNoGenerated,
                             "supplierName" to (supplierName ?: ""),
                             "supplierId" to (supplierId ?: ""),
                             "dueDate" to (dueDate ?: com.google.firebase.Timestamp.now()),
@@ -1565,7 +1634,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         "qty" to qty,
                         "unitCost" to unitCost,
                         "newSalePrice" to newSalePrice,
-                        "invoiceNo" to (invoiceNo ?: ""),
+                        "invoiceNo" to invoiceNoGenerated,
                         "supplierName" to (supplierName ?: ""),
                         "supplierId" to (supplierId ?: ""),
                         "termDays" to termDays,
@@ -1579,8 +1648,13 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     )
                     trx.set(targetDoc, pendingData)
                 }
-                null
-            }.addOnSuccessListener {
+
+                ReceiveResult(
+                    purchaseId = poRef.id,
+                    invoiceNo = invoiceNoGenerated,
+                    stagedSalePrice = stagedSalePriceResult
+                )
+            }.addOnSuccessListener { result ->
                 if (delayStock) {
                     stockEventVm.emitPurchaseEvent()
                     currentDialog?.dismiss()
@@ -1590,42 +1664,45 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     } catch (_: Throwable) {
                         SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(scheduledTimestamp.toDate())
                     }
-                    toast("Stok akan otomatis ditambah pada $humanDate.")
+                    toast("Stok akan otomatis ditambah pada $humanDate. Invoice ${result.invoiceNo}.")
                     pendingDocument?.let { doc ->
                         val ctx = requireContext().applicationContext
                         ScheduledStockPostingWorker.enqueue(ctx, doc.id, scheduledTimestamp)
                     }
                 } else {
-                    val staged = stagedSalePrice
-                    val message = if (staged != null && staged > 0) {
+                    val staged = result.stagedSalePrice
+                    val base = if (staged != null && staged > 0) {
                         val formatted = rupiah(staged)
                         "Stok ditambah. Harga jual baru Rp $formatted aktif setelah stok lama habis."
                     } else "Stok ditambah."
-                    toast(message)
+                    toast("$base Invoice ${result.invoiceNo}.")
                     currentDialog?.dismiss()
                     stockEventVm.emitPurchaseEvent()
                     val anchor = anchorView
                     view?.post { animateStockReceiveSuccess(anchor, R.id.superAdminReportFragment) }
                         ?: animateStockReceiveSuccess(anchor, R.id.superAdminReportFragment)
+                    val ctx = requireContext().applicationContext
+                    StockNotificationHelper.notifyStockPosted(
+                        ctx,
+                        db,
+                        result.purchaseId,
+                        productName,
+                        qty,
+                        dueDate,
+                        sku,
+                        result.invoiceNo
+                    )
                 }
             }.addOnFailureListener { e -> toast("Gagal terima stok: ${e.message}") }
         }
 
         fun onGotLastBatch(lastDoc: DocumentSnapshot?) {
-            if (shouldDelayStockPosting(dueDate)) {
-                commitReceive(lastDoc, null, true, pendingRef)
+            if (shouldDelayStock) {
+                commitReceive(lastDoc, true, pendingRef)
                 return
             }
-            if (!invoiceNo.isNullOrBlank() && !supplierName.isNullOrBlank()) {
-                var q: Query = db.collection("purchases").whereEqualTo("invoiceNo", invoiceNo)
-                q = if (!supplierId.isNullOrBlank()) q.whereEqualTo("supplierId", supplierId) else q.whereEqualTo("supplierName", supplierName)
-                q.limit(1).get().addOnSuccessListener { snap ->
-                    val existing = snap.documents.firstOrNull()
-                    commitReceive(lastDoc, existing?.id, false, null)
-                }.addOnFailureListener { commitReceive(lastDoc, null, false, null) }
-            } else commitReceive(lastDoc, null, false, null)
+            commitReceive(lastDoc, false, null)
         }
-
         db.collection("stock_batches")
             .whereEqualTo("sku", sku)
             .orderBy("receivedAt", Query.Direction.DESCENDING)
