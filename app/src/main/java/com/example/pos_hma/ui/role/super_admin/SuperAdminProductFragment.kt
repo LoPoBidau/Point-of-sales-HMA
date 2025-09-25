@@ -448,10 +448,16 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
             form.etName.setText(p!!.name)
             form.etSKU.setText(p.sku); form.etSKU.isEnabled = false
-            form.etPrice.setText(rupiah(p.salePrice))
-
-            if (fixedIsService) { form.tilPrice.hint = "Harga ditentukan kasir"; form.etPrice.isEnabled = false }
-            else { form.tilPrice.hint = "Harga jual (Rp)"; form.etPrice.isEnabled = true }
+            if (fixedIsService) {
+                form.tilPrice.visibility = View.VISIBLE
+                form.tilPrice.hint = "Harga jasa (Rp)"
+                form.etPrice.isEnabled = true
+                if (p.salePrice > 0) form.etPrice.setText(rupiah(p.salePrice)) else form.etPrice.setText("")
+            } else {
+                form.tilPrice.visibility = View.GONE
+                form.etPrice.isEnabled = false
+                form.etPrice.setText("")
+            }
 
             if (p.images.firstOrNull().isNullOrBlank()) {
                 form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
@@ -464,16 +470,18 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 form.swService.visibility = View.GONE
                 form.tilStock.visibility = View.GONE
                 form.tilInitCost.visibility = View.GONE
-                form.tilPrice.hint = "Harga ditentukan kasir"
+                form.tilPrice.visibility = View.VISIBLE
+                form.tilPrice.hint = "Harga jasa (Rp)"
+                form.etPrice.isEnabled = true
                 form.etPrice.setText("")
-                form.etPrice.isEnabled = false
             } else {
                 // Goods tab: create goods only
                 form.swService.visibility = View.GONE
                 form.tilStock.visibility = View.VISIBLE
                 form.tilInitCost.visibility = View.VISIBLE
-                form.tilPrice.hint = "Harga jual (Rp)"
-                form.etPrice.isEnabled = true
+                form.tilPrice.visibility = View.GONE
+                form.etPrice.isEnabled = false
+                form.etPrice.setText("")
             }
         }
 
@@ -512,12 +520,14 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 form.tilStock.visibility = if (isSvc) View.GONE else View.VISIBLE
                 form.tilInitCost.visibility = if (isSvc) View.GONE else View.VISIBLE
                 if (isSvc) {
-                    form.tilPrice.hint = "Harga ditentukan kasir"
-                    form.etPrice.setText("")
-                    form.etPrice.isEnabled = false
-                } else {
-                    form.tilPrice.hint = "Harga jual (Rp)"
+                    form.tilPrice.visibility = View.VISIBLE
+                    form.tilPrice.hint = "Harga jasa (Rp)"
                     form.etPrice.isEnabled = true
+                } else {
+                    form.tilPrice.visibility = View.GONE
+                    form.etPrice.isEnabled = false
+                    form.etPrice.setText("")
+                    form.tilPrice.error = null
                 }
                 // Muat kategori sesuai tipe baru dan reset pilihan
                 loadCategoriesForForm(currentTypeKey()) {
@@ -553,7 +563,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             val btn = dlg.getButton(AlertDialog.BUTTON_POSITIVE)
             btn.setOnClickListener {
                 // reset error
-                listOf(form.tilName, form.tilSKU, form.tilCategory, form.tilPrice, form.tilStock, form.tilInitCost).forEach { it.error = null }
+                val cleared = mutableListOf(form.tilName, form.tilSKU, form.tilCategory, form.tilStock, form.tilInitCost)
+                if (form.tilPrice.visibility == View.VISIBLE) cleared += form.tilPrice
+                cleared.forEach { it.error = null }
                 form.tvPhotoError.visibility = View.GONE; form.cardImage.strokeWidth = 0
 
                 var ok = true
@@ -561,8 +573,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 if (!isEditing && form.etSKU.text.isNullOrBlank()) { form.tilSKU.error = "Harus diisi"; ok = false }
 
                 val isService = if (isEditing) fixedIsService else form.swService.isChecked
-                val salePrice = if (isService) 0L else form.etPrice.text.asCleanLong()
-                if (!isService && salePrice <= 0) { form.tilPrice.error = "Harus diisi"; ok = false }
+                val salePrice = if (form.tilPrice.visibility == View.VISIBLE) form.etPrice.text.asCleanLong() else 0L
+                if (form.tilPrice.visibility == View.VISIBLE && salePrice <= 0) { form.tilPrice.error = "Harus diisi"; ok = false }
 
                 val initStock = if (isService) 0L else (form.etStock.text.toString().toLongOrNull() ?: 0L)
                 val initCost  = if (isService) 0L else form.etInitCost.text.asCleanLong()
@@ -654,8 +666,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     val updates = mutableMapOf<String, Any>(
                         "name" to name, "nameLowercase" to name.lowercase(),
                         "categoryId" to catId, "categoryName" to catName,
-                        "salePrice" to salePrice, "updatedAt" to FieldValue.serverTimestamp()
-                    )
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    ).apply {
+                        if (form.tilPrice.visibility == View.VISIBLE) this["salePrice"] = salePrice
+                    }
                     if (selectedImageUri != null) {
                         uploadImageThen(docId, selectedImageUri!!) { url ->
                             updates["images"] = listOf(url)
@@ -1184,19 +1198,33 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         }
 
         if (p.lastCost > 0) receiveBinding.etUnitCost.setText(rupiah(p.lastCost))
+        if (p.salePrice > 0) receiveBinding.etSalePrice.setText(rupiah(p.salePrice))
         receiveBinding.etUnitCost.attachRupiahFormatter()
+        receiveBinding.etSalePrice.attachRupiahFormatter()
 
         val localeId = Locale("in", "ID")
         val dfIso = SimpleDateFormat("yyyy-MM-dd", localeId).apply { isLenient = false }
         var selectedDue: Date? = null
 
+        fun refreshSalePriceUi() {
+            val update = receiveBinding.rbUpdateSalePrice.isChecked
+            receiveBinding.tilSalePrice.isEnabled = update
+            receiveBinding.etSalePrice.isEnabled = update
+            if (!update) receiveBinding.tilSalePrice.error = null
+        }
+
         fun refreshModeUi() {
             val actual = receiveBinding.rbActual.isChecked
             receiveBinding.groupPurchase.visibility = if (actual) View.GONE else View.VISIBLE
             receiveBinding.tvActualInfo.visibility = if (actual) View.VISIBLE else View.GONE
+            if (actual) {
+                receiveBinding.rgSalePriceMode.check(receiveBinding.rbKeepSalePrice.id)
+            }
+            refreshSalePriceUi()
         }
 
         receiveBinding.rgMode.setOnCheckedChangeListener { _, _ -> refreshModeUi() }
+        receiveBinding.rgSalePriceMode.setOnCheckedChangeListener { _, _ -> refreshSalePriceUi() }
         receiveBinding.rbActual.isChecked = true
         refreshModeUi()
 
@@ -1341,7 +1369,18 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     dueDate = cal.time
                 }
 
-                val salePrice = p.salePrice.takeIf { it > 0 } ?: unitCostValue
+                val salePrice = if (receiveBinding.rbUpdateSalePrice.isChecked) {
+                    val entered = receiveBinding.etSalePrice.text.asCleanLongOrNull()
+                    if (entered == null || entered <= 0) {
+                        receiveBinding.tilSalePrice.error = "Wajib"
+                        return@setOnClickListener
+                    }
+                    receiveBinding.tilSalePrice.error = null
+                    entered
+                } else {
+                    val current = p.salePrice.takeIf { it > 0 } ?: 0L
+                    if (current > 0) current else unitCostValue
+                }
 
                 receiveDlg.dismiss()
                 val dueTs = dueDate?.let { com.google.firebase.Timestamp(it) }
