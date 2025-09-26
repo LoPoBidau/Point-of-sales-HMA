@@ -885,6 +885,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         )
 
         val rows = mutableListOf<PendingRow>()
+        var stageInfo: String? = null
 
         class PendingVH(private val b: ItemFifoBatchBinding) : RecyclerView.ViewHolder(b.root) {
             fun bind(row: PendingRow) {
@@ -923,19 +924,41 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
         fun render() {
             binding.progress.visibility = View.GONE
+            val infoParts = mutableListOf<String>()
             if (rows.isEmpty()) {
-                binding.tvEmpty.visibility = View.VISIBLE
-                binding.tvSummary.visibility = View.GONE
+                binding.tvEmpty.visibility = if (stageInfo.isNullOrBlank()) View.VISIBLE else View.GONE
             } else {
                 binding.tvEmpty.visibility = View.GONE
-                binding.tvSummary.visibility = View.VISIBLE
                 val totalQty = rows.sumOf { it.qty }
-                binding.tvSummary.text = "Total antrian: ${rows.size} | Qty: ${nf.format(totalQty)}"
+                infoParts += "Total antrian: ${rows.size} | Qty: ${nf.format(totalQty)}"
+            }
+            stageInfo?.let { if (it.isNotBlank()) infoParts += it }
+            if (infoParts.isEmpty()) {
+                binding.tvSummary.visibility = View.GONE
+            } else {
+                binding.tvSummary.visibility = View.VISIBLE
+                binding.tvSummary.text = infoParts.joinToString(" | ")
             }
             adapter.notifyDataSetChanged()
         }
 
         val skuKey = p.sku.ifBlank { p.id }
+        db.collection("products").document(skuKey)
+            .get()
+            .addOnSuccessListener { doc ->
+                val stagedQty = doc.getLong("stagedOldQty") ?: 0L
+                if (stagedQty > 0L) {
+                    val stageCost = doc.getLong("stagedLastCost") ?: 0L
+                    val stageSale = doc.getLong("stagedSalePrice") ?: 0L
+                    val parts = mutableListOf<String>()
+                    parts += "Stok lama tersisa ${nf.format(stagedQty)} unit"
+                    if (stageCost > 0L) parts += "Modal baru Rp ${nf.format(stageCost)}"
+                    if (stageSale > 0L) parts += "Harga jual baru Rp ${nf.format(stageSale)}"
+                    stageInfo = parts.joinToString(" | ")
+                    render()
+                }
+            }
+
         db.collection("pending_stock_receipts")
             .whereEqualTo("sku", skuKey)
             .get()
@@ -1575,7 +1598,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 val newStock = stockOld + qty
                 val currentSalePrice = pSnap.getLong("salePrice") ?: 0L
                 val currentCost = pSnap.getLong("lastCost") ?: unitCost
-                val shouldStageSalePrice = !delayStock && newSalePrice > 0 && newSalePrice != currentSalePrice && stockOld > 0 && unitCost < currentCost
+                val stageCost = !delayStock && unitCost > 0 && stockOld > 0 && unitCost < currentCost
+                val stagePrice = !delayStock && newSalePrice > 0 && stockOld > 0 && newSalePrice < currentSalePrice
                 val batchSalePrice = if (newSalePrice > 0) newSalePrice else currentSalePrice
 
                 val purchaseData = mutableMapOf<String, Any?>(
@@ -1604,14 +1628,23 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
                 val productUpdates = mutableMapOf<String, Any?>("updatedAt" to now)
                 if (!delayStock) productUpdates["stock"] = newStock
-                if (unitCost > 0) productUpdates["lastCost"] = unitCost
-                if (!delayStock && !shouldStageSalePrice && newSalePrice > 0 && newSalePrice != currentSalePrice) {
+                if (stageCost) {
+                    productUpdates["stagedLastCost"] = unitCost
+                } else if (unitCost > 0) {
+                    productUpdates["lastCost"] = unitCost
+                }
+                if (stagePrice) {
+                    productUpdates["stagedSalePrice"] = newSalePrice
+                } else if (!delayStock && newSalePrice > 0 && newSalePrice != currentSalePrice) {
                     productUpdates["salePrice"] = newSalePrice
+                }
+                if (stageCost || stagePrice) {
+                    productUpdates["stagedOldQty"] = stockOld
                 }
                 trx.update(pRef, productUpdates)
 
                 var stagedSalePriceResult: Long? = null
-                if (shouldStageSalePrice) {
+                if (stagePrice) {
                     stagedSalePriceResult = newSalePrice
                 }
 

@@ -39,15 +39,26 @@ service cloud.firestore {
 
       allow update: if (
         isCashierLike() &&
-        request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'stock','updatedAt','stockLayers','inbound'
-        ])
+        let changed = request.resource.data.diff(resource.data).changedKeys();
+        changed.hasOnly([
+          'stock','updatedAt','stockLayers','inbound','salePrice','lastCost','stagedSalePrice','stagedLastCost','stagedOldQty'
+        ]) &&
+        (!changed.hasAny(['salePrice']) ||
+          (resource.data.stagedSalePrice is int &&
+           request.resource.data.salePrice == resource.data.stagedSalePrice &&
+           !('stagedSalePrice' in request.resource.data.keys()))
+        ) &&
+        (!changed.hasAny(['lastCost']) ||
+          (resource.data.stagedLastCost is int &&
+           request.resource.data.lastCost == resource.data.stagedLastCost &&
+           !('stagedLastCost' in request.resource.data.keys()))
+        )
       ) || (
         isOwnerOrSuper() &&
         request.resource.data.diff(resource.data).changedKeys().hasOnly([
           'name','nameLowercase','categoryId','categoryName','salePrice',
           'images','trackStock','lastCost','stock','updatedAt','isActive',
-          'type','inbound','stockLayers'
+          'type','inbound','stockLayers','stagedSalePrice','stagedLastCost','stagedOldQty'
         ])
       );
 

@@ -146,15 +146,25 @@ class ScheduledStockPostingWorker(
                 val newStock = oldStock + qty
                 val currentSalePrice = pSnap.getLong("salePrice") ?: 0L
                 val currentCost = pSnap.getLong("lastCost") ?: unitCost
-                val shouldStageSalePrice = newSalePrice > 0 && newSalePrice != currentSalePrice && oldStock > 0 && unitCost < currentCost
+                val stageCost = unitCost > 0 && oldStock > 0 && unitCost < currentCost
+                val stagePrice = newSalePrice > 0 && oldStock > 0 && newSalePrice < currentSalePrice
                 val batchSalePrice = if (newSalePrice > 0) newSalePrice else currentSalePrice
                 val productUpdates = mutableMapOf<String, Any?>(
                     "stock" to newStock,
                     "updatedAt" to nowField
                 )
-                if (unitCost > 0) productUpdates["lastCost"] = unitCost
-                if (!shouldStageSalePrice && newSalePrice > 0 && newSalePrice != currentSalePrice) {
+                if (stageCost) {
+                    productUpdates["stagedLastCost"] = unitCost
+                } else if (unitCost > 0) {
+                    productUpdates["lastCost"] = unitCost
+                }
+                if (stagePrice) {
+                    productUpdates["stagedSalePrice"] = newSalePrice
+                } else if (newSalePrice > 0 && newSalePrice != currentSalePrice) {
                     productUpdates["salePrice"] = newSalePrice
+                }
+                if (stageCost || stagePrice) {
+                    productUpdates["stagedOldQty"] = oldStock
                 }
                 trx.update(pRef, productUpdates)
 

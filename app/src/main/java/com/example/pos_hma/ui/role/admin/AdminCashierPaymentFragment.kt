@@ -169,7 +169,10 @@ class AdminCashierPaymentFragment : Fragment() {
                     val unitPrice: Long,
                     val newStock: Long,
                     val avgUnitCost: Long,
-                    val consumptions: List<BatchConsumption>
+                    val consumptions: List<BatchConsumption>,
+                    val stagedSalePrice: Long?,
+                    val stagedLastCost: Long?,
+                    val stagedOldQty: Long
                 )
 
                 val plans = mutableListOf<Plan>()
@@ -234,6 +237,9 @@ class AdminCashierPaymentFragment : Fragment() {
 
                             val totalCost = consumptions.fold(0L) { acc, c -> acc + c.consumed * c.unitCost }
                             val avgUnitCost = if (qty > 0L) totalCost / qty else 0L
+                            val stagedSalePrice = snap.getLong("stagedSalePrice")
+                            val stagedLastCost = snap.getLong("stagedLastCost")
+                            val stagedOldQty = snap.getLong("stagedOldQty") ?: 0L
                             plans += Plan(
                                 ref = pRef,
                                 sku = sku,
@@ -242,7 +248,10 @@ class AdminCashierPaymentFragment : Fragment() {
                                 unitPrice = product.salePrice,
                                 newStock = newStock,
                                 avgUnitCost = avgUnitCost,
-                                consumptions = consumptions
+                                consumptions = consumptions,
+                                stagedSalePrice = stagedSalePrice,
+                                stagedLastCost = stagedLastCost,
+                                stagedOldQty = stagedOldQty
                             )
 
                             items += mapOf(
@@ -271,6 +280,29 @@ class AdminCashierPaymentFragment : Fragment() {
                         "stock" to pl.newStock,
                         "updatedAt" to now
                     )
+
+                    val hasStage = (pl.stagedSalePrice != null && pl.stagedSalePrice > 0) || (pl.stagedLastCost != null && pl.stagedLastCost > 0) || pl.stagedOldQty > 0
+                    if (hasStage) {
+                        var remainingOld = pl.stagedOldQty
+                        if (remainingOld > 0) {
+                            remainingOld = (remainingOld - pl.qty).coerceAtLeast(0L)
+                            if (remainingOld > 0) {
+                                productUpdates["stagedOldQty"] = remainingOld
+                            } else {
+                                productUpdates["stagedOldQty"] = FieldValue.delete()
+                            }
+                        }
+                        if (remainingOld <= 0) {
+                            pl.stagedSalePrice?.let { if (it > 0) productUpdates["salePrice"] = it }
+                            pl.stagedLastCost?.let { if (it > 0) productUpdates["lastCost"] = it }
+                            productUpdates["stagedSalePrice"] = FieldValue.delete()
+                            productUpdates["stagedLastCost"] = FieldValue.delete()
+                            if (!productUpdates.containsKey("stagedOldQty")) {
+                                productUpdates["stagedOldQty"] = FieldValue.delete()
+                            }
+                        }
+                    }
+
                     trx.update(pl.ref, productUpdates)
 
                     for (cons in pl.consumptions) {
