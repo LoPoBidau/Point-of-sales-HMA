@@ -871,6 +871,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .show()
     }
 
+
     private fun openPendingQueueDialog(p: Product) {
         val binding = DialogFifoQueueBinding.inflate(layoutInflater)
         val nf = NumberFormat.getInstance(ID_LOCALE)
@@ -880,7 +881,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         data class PendingRow(
             val invoiceNo: String,
             val supplierName: String,
+            val productName: String,
             val qty: Long,
+            val unitCost: Long?,
+            val unitSalePrice: Long?,
             val dueDate: com.google.firebase.Timestamp?,
             val scheduledAt: com.google.firebase.Timestamp?,
             val status: String,
@@ -890,10 +894,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         )
 
         val rows = mutableListOf<PendingRow>()
+        val scheduledRows = mutableListOf<PendingRow>()
+        val stagedRows = mutableListOf<PendingRow>()
         var stageInfo: String? = null
-        var pendingDone = false
-        var holdDone = false
-
+        val registrations = mutableListOf<ListenerRegistration>()
+        val hiddenStatuses = setOf("posted", "done", "selesai", "completed", "complete", "finished", "finish")
 
         fun sortRows() {
             rows.sortWith(
@@ -913,22 +918,46 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             )
         }
 
-        fun maybeHideProgress() {
-            if (pendingDone && holdDone) {
-                binding.progress.visibility = View.GONE
+        fun render() {
+            binding.progress.visibility = View.GONE
+            val infoParts = mutableListOf<String>()
+            if (rows.isEmpty()) {
+                binding.tvEmpty.visibility = if (stageInfo.isNullOrBlank()) View.VISIBLE else View.GONE
+            } else {
+                binding.tvEmpty.visibility = View.GONE
+                val totalQty = rows.sumOf { it.qty }
+                infoParts += "Total antrian: ${rows.size} | Qty: ${nf.format(totalQty)}"
             }
+            stageInfo?.let { if (it.isNotBlank()) infoParts += it }
+            if (infoParts.isEmpty()) {
+                binding.tvSummary.visibility = View.GONE
+            } else {
+                binding.tvSummary.visibility = View.VISIBLE
+                binding.tvSummary.text = infoParts.joinToString(" | ")
+            }
+            adapter.notifyDataSetChanged()
+        }
+
+        fun updateQueueUi() {
+            sortRows()
+            render()
         }
 
         class PendingVH(private val b: ItemFifoBatchBinding) : RecyclerView.ViewHolder(b.root) {
             fun bind(row: PendingRow) {
+                b.tvProduct.text = "Barang: ${row.productName.ifBlank { "-" }}"
+                val costText = row.unitCost?.takeIf { it > 0 }?.let { "Modal/unit: Rp ${nf.format(it)}" } ?: "Modal/unit: -"
+                val saleText = row.unitSalePrice?.takeIf { it > 0 }?.let { "Harga jual/unit: Rp ${nf.format(it)}" } ?: "Harga jual/unit: -"
+                b.tvCost.text = costText
+                b.tvSale.text = saleText
                 when (row.type) {
                     PendingQueueType.SCHEDULED -> {
-                        b.tvTitle.text = if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Invoice otomatis"
+                        b.tvTitle.text = if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Pengadaan terjadwal"
                         b.tvSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
                         b.tvQty.text = "Qty ${nf.format(row.qty)} unit"
                         val dueText = row.dueDate?.toDate()?.let { dfDate.format(it) } ?: "-"
                         val scheduledText = row.scheduledAt?.toDate()?.let { dfDateTime.format(it) } ?: "-"
-                        b.tvDue.text = "Jatuh tempo: $dueText (jadwal $scheduledText)"
+                        b.tvDue.text = "Jadwal posting: $scheduledText | Jatuh tempo: $dueText"
                         val statusPretty = when (row.status.lowercase(Locale.ROOT)) {
                             "processing" -> "Sedang diproses"
                             "posted" -> "Selesai"
@@ -961,29 +990,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             override fun getItemCount(): Int = rows.size
         }
 
-        fun render() {
-            binding.progress.visibility = View.GONE
-            val infoParts = mutableListOf<String>()
-            if (rows.isEmpty()) {
-                binding.tvEmpty.visibility = if (stageInfo.isNullOrBlank()) View.VISIBLE else View.GONE
-            } else {
-                binding.tvEmpty.visibility = View.GONE
-                val totalQty = rows.sumOf { it.qty }
-                infoParts += "Total antrian: ${rows.size} | Qty: ${nf.format(totalQty)}"
-            }
-            stageInfo?.let { if (it.isNotBlank()) infoParts += it }
-            if (infoParts.isEmpty()) {
-                binding.tvSummary.visibility = View.GONE
-            } else {
-                binding.tvSummary.visibility = View.VISIBLE
-                binding.tvSummary.text = infoParts.joinToString(" | ")
-            }
-            adapter.notifyDataSetChanged()
-        }
-
-        fun updateQueueUi() {
-            sortRows()
-            render()
+        fun rebuildRows() {
+            rows.clear()
+            rows.addAll(stagedRows)
+            rows.addAll(scheduledRows)
+            updateQueueUi()
         }
 
         binding.rvQueue.layoutManager = LinearLayoutManager(requireContext())
@@ -993,37 +1004,55 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         binding.tvSummary.visibility = View.GONE
 
         val skuKey = p.sku.ifBlank { p.id }
-        db.collection("products").document(skuKey)
-            .get()
-            .addOnSuccessListener { doc ->
-                val stagedQty = doc.getLong("stagedOldQty") ?: 0L
-                val stagedIncomingQty = doc.getLong("stagedIncomingQty") ?: 0L
-                val parts = mutableListOf<String>()
-                if (stagedQty > 0L) {
-                    parts += "Stok lama tersisa ${nf.format(stagedQty)} unit"
-                    val stageCost = doc.getLong("stagedLastCost") ?: 0L
-                    val stageSale = doc.getLong("stagedSalePrice") ?: 0L
-                    if (stageCost > 0L) parts += "Modal baru Rp ${nf.format(stageCost)}"
-                    if (stageSale > 0L) parts += "Harga jual baru Rp ${nf.format(stageSale)}"
+        val productReg = db.collection("products").document(skuKey)
+            .addSnapshotListener { doc, e ->
+                if (e != null) {
+                    if (isAdded) toast("Gagal memuat info stok tertahan: ${e.message}")
+                    return@addSnapshotListener
                 }
-                if (stagedIncomingQty > 0L) {
-                    parts += "Stok baru tertahan ${nf.format(stagedIncomingQty)} unit"
+                if (doc != null && doc.exists()) {
+                    val stagedQty = doc.getLong("stagedOldQty") ?: 0L
+                    val stagedIncomingQty = doc.getLong("stagedIncomingQty") ?: 0L
+                    val parts = mutableListOf<String>()
+                    if (stagedQty > 0L) {
+                        parts += "Stok lama tersisa ${nf.format(stagedQty)} unit"
+                        val stageCost = doc.getLong("stagedLastCost") ?: 0L
+                        val stageSale = doc.getLong("stagedSalePrice") ?: 0L
+                        if (stageCost > 0L) parts += "Modal baru Rp ${nf.format(stageCost)}"
+                        if (stageSale > 0L) parts += "Harga jual baru Rp ${nf.format(stageSale)}"
+                    }
+                    if (stagedIncomingQty > 0L) {
+                        parts += "Stok baru tertahan ${nf.format(stagedIncomingQty)} unit"
+                    }
+                    stageInfo = if (parts.isEmpty()) null else parts.joinToString(" | ")
+                } else {
+                    stageInfo = null
                 }
-                stageInfo = if (parts.isEmpty()) null else parts.joinToString(" | ")
                 render()
             }
+        registrations += productReg
 
-        db.collection("pending_stock_receipts")
+        val pendingReg = db.collection("pending_stock_receipts")
             .whereEqualTo("sku", skuKey)
-            .get()
-            .addOnSuccessListener { snap ->
-                val pendingRows = snap.documents.mapNotNull { doc ->
-                    val qtyVal = doc.getLong("qty") ?: return@mapNotNull null
+            .addSnapshotListener { snap, e ->
+                if (e != null) {
+                    if (isAdded) toast("Gagal memuat antrian: ${e.message}")
+                    return@addSnapshotListener
+                }
+                scheduledRows.clear()
+                snap?.documents?.forEach { doc ->
+                    val qtyVal = doc.getLong("qty") ?: return@forEach
+                    if (qtyVal <= 0L) return@forEach
                     val statusVal = doc.getString("status") ?: "pending"
-                    PendingRow(
+                    val statusNormalized = statusVal.lowercase(Locale.ROOT)
+                    if (statusNormalized in hiddenStatuses) return@forEach
+                    scheduledRows += PendingRow(
                         invoiceNo = doc.getString("invoiceNo") ?: "",
                         supplierName = doc.getString("supplierName") ?: "",
+                        productName = doc.getString("productName") ?: p.name,
                         qty = qtyVal,
+                        unitCost = doc.getLong("unitCost"),
+                        unitSalePrice = doc.getLong("newSalePrice") ?: doc.getLong("salePrice"),
                         dueDate = doc.getTimestamp("dueDate"),
                         scheduledAt = doc.getTimestamp("scheduledAt"),
                         status = statusVal,
@@ -1032,29 +1061,29 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         receivedAt = null
                     )
                 }
-                rows.addAll(pendingRows)
-                updateQueueUi()
+                rebuildRows()
             }
-            .addOnFailureListener { e ->
-                toast("Gagal memuat antrian: ${e.message}")
-                updateQueueUi()
-            }
-            .addOnCompleteListener {
-                pendingDone = true
-                maybeHideProgress()
-            }
+        registrations += pendingReg
 
-        db.collection("stock_batches")
+        val holdReg = db.collection("stock_batches")
             .whereEqualTo("sku", skuKey)
             .whereEqualTo("state", BatchState.HOLD.name)
-            .get()
-            .addOnSuccessListener { snap ->
-                val holdRows = snap.documents.mapNotNull { doc ->
-                    val qtyVal = doc.getLong("remainingQty") ?: doc.getLong("receivedQty") ?: return@mapNotNull null
-                    PendingRow(
+            .addSnapshotListener { snap, e ->
+                if (e != null) {
+                    if (isAdded) toast("Gagal memuat stok tertahan: ${e.message}")
+                    return@addSnapshotListener
+                }
+                stagedRows.clear()
+                snap?.documents?.forEach { doc ->
+                    val qtyVal = doc.getLong("remainingQty") ?: doc.getLong("receivedQty") ?: return@forEach
+                    if (qtyVal <= 0L) return@forEach
+                    stagedRows += PendingRow(
                         invoiceNo = doc.getString("invoiceNo") ?: "",
                         supplierName = doc.getString("supplierName") ?: "",
+                        productName = doc.getString("productName") ?: p.name,
                         qty = qtyVal,
+                        unitCost = doc.getLong("unitCost"),
+                        unitSalePrice = doc.getLong("salePrice"),
                         dueDate = null,
                         scheduledAt = null,
                         status = doc.getString("state") ?: BatchState.HOLD.name,
@@ -1063,25 +1092,25 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         receivedAt = doc.getTimestamp("receivedAt")
                     )
                 }
-                rows.addAll(holdRows)
-                updateQueueUi()
+                rebuildRows()
             }
-            .addOnFailureListener { e ->
-                toast("Gagal memuat stok tertahan: ${e.message}")
-                updateQueueUi()
-            }
-            .addOnCompleteListener {
-                holdDone = true
-                maybeHideProgress()
-            }
+        registrations += holdReg
 
-        MaterialAlertDialogBuilder(requireContext())
+        val dialog = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Antrian Pending ${p.name}")
             .setView(binding.root)
             .setPositiveButton("Tutup", null)
-            .show()
-    }
+            .create()
 
+        dialog.setOnDismissListener {
+            registrations.forEach { it.remove() }
+            registrations.clear()
+            if (currentDialog === dialog) currentDialog = null
+        }
+        currentDialog?.dismiss()
+        currentDialog = dialog
+        dialog.show()
+    }
     private class MovVH(private val b: ItemMovementRowBinding) : RecyclerView.ViewHolder(b.root) {
         fun bind(m: InventoryMovement) {
             val sign = if (m.qtyDelta >= 0) "+" else ""
