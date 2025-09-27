@@ -20,6 +20,7 @@ data class Product(
     var stock: Long = 0L,
     var lastCost: Long = 0L,
     var salePrice: Long = 0L,
+    var stagedIncomingQty: Long = 0L,
 
     var images: List<String> = emptyList(),
 
@@ -31,3 +32,4 @@ data class Product(
 ) {
     val isService: Boolean get() = type == "service"
 }
+

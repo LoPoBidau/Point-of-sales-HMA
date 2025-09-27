@@ -24,6 +24,7 @@ import com.example.pos_hma.R
 import com.example.pos_hma.data.Category
 import com.example.pos_hma.data.InventoryMovement
 import com.example.pos_hma.data.Product
+import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.databinding.*
 import com.example.pos_hma.worker.ScheduledStockPostingWorker
 import com.example.pos_hma.util.StockNotificationHelper
@@ -79,6 +80,8 @@ private fun EditText.attachRupiahFormatter() {
         }
     })
 }
+
+private enum class PendingQueueType { SCHEDULED, STAGED }
 
 class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
@@ -881,27 +884,69 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             val dueDate: com.google.firebase.Timestamp?,
             val scheduledAt: com.google.firebase.Timestamp?,
             val status: String,
-            val purchaseId: String?
+            val purchaseId: String?,
+            val type: PendingQueueType,
+            val receivedAt: com.google.firebase.Timestamp?
         )
 
         val rows = mutableListOf<PendingRow>()
         var stageInfo: String? = null
+        var pendingDone = false
+        var holdDone = false
+
+
+        fun sortRows() {
+            rows.sortWith(
+                compareBy<PendingRow> { if (it.type == PendingQueueType.STAGED) 0 else 1 }
+                    .thenBy { row ->
+                        when (row.type) {
+                            PendingQueueType.STAGED -> row.receivedAt?.toDate()?.time ?: Long.MAX_VALUE
+                            PendingQueueType.SCHEDULED -> row.dueDate?.toDate()?.time ?: Long.MAX_VALUE
+                        }
+                    }
+                    .thenBy { row ->
+                        when (row.type) {
+                            PendingQueueType.STAGED -> row.invoiceNo
+                            PendingQueueType.SCHEDULED -> row.scheduledAt?.toDate()?.time ?: Long.MAX_VALUE
+                        }
+                    }
+            )
+        }
+
+        fun maybeHideProgress() {
+            if (pendingDone && holdDone) {
+                binding.progress.visibility = View.GONE
+            }
+        }
 
         class PendingVH(private val b: ItemFifoBatchBinding) : RecyclerView.ViewHolder(b.root) {
             fun bind(row: PendingRow) {
-                b.tvTitle.text = if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Invoice otomatis"
-                b.tvSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
-                b.tvQty.text = "Qty ${nf.format(row.qty)} unit"
-                val dueText = row.dueDate?.toDate()?.let { dfDate.format(it) } ?: "-"
-                val scheduledText = row.scheduledAt?.toDate()?.let { dfDateTime.format(it) } ?: "-"
-                b.tvDue.text = "Jatuh tempo: $dueText (jadwal $scheduledText)"
-                val statusPretty = when (row.status.lowercase(Locale.ROOT)) {
-                    "processing" -> "Sedang diproses"
-                    "posted" -> "Selesai"
-                    else -> "Menunggu"
+                when (row.type) {
+                    PendingQueueType.SCHEDULED -> {
+                        b.tvTitle.text = if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Invoice otomatis"
+                        b.tvSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
+                        b.tvQty.text = "Qty ${nf.format(row.qty)} unit"
+                        val dueText = row.dueDate?.toDate()?.let { dfDate.format(it) } ?: "-"
+                        val scheduledText = row.scheduledAt?.toDate()?.let { dfDateTime.format(it) } ?: "-"
+                        b.tvDue.text = "Jatuh tempo: $dueText (jadwal $scheduledText)"
+                        val statusPretty = when (row.status.lowercase(Locale.ROOT)) {
+                            "processing" -> "Sedang diproses"
+                            "posted" -> "Selesai"
+                            else -> "Menunggu"
+                        }
+                        val purchaseInfo = row.purchaseId?.takeIf { it.isNotBlank() }?.let { " - Purchase ${it.takeLast(6)}" } ?: ""
+                        b.tvStatus.text = "Status: $statusPretty$purchaseInfo"
+                    }
+                    PendingQueueType.STAGED -> {
+                        b.tvTitle.text = if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Stok baru tertahan"
+                        b.tvSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
+                        b.tvQty.text = "Qty ${nf.format(row.qty)} unit"
+                        val receivedText = row.receivedAt?.toDate()?.let { dfDateTime.format(it) } ?: "-"
+                        b.tvDue.text = "Diterima: $receivedText"
+                        val purchaseInfo = row.purchaseId?.takeIf { it.isNotBlank() }?.let { " - Purchase ${it.takeLast(6)}" } ?: ""
+                        b.tvStatus.text = "Status: Menunggu stok lama habis$purchaseInfo"
+                    }
                 }
-                val purchaseInfo = row.purchaseId?.takeIf { it.isNotBlank() }?.let { " - Purchase ${it.takeLast(6)}" } ?: ""
-                b.tvStatus.text = "Status: $statusPretty$purchaseInfo"
             }
         }
 
@@ -915,12 +960,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
             override fun getItemCount(): Int = rows.size
         }
-
-        binding.rvQueue.layoutManager = LinearLayoutManager(requireContext())
-        binding.rvQueue.adapter = adapter
-        binding.progress.visibility = View.VISIBLE
-        binding.tvEmpty.visibility = View.GONE
-        binding.tvSummary.visibility = View.GONE
 
         fun render() {
             binding.progress.visibility = View.GONE
@@ -942,53 +981,99 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             adapter.notifyDataSetChanged()
         }
 
+        fun updateQueueUi() {
+            sortRows()
+            render()
+        }
+
+        binding.rvQueue.layoutManager = LinearLayoutManager(requireContext())
+        binding.rvQueue.adapter = adapter
+        binding.progress.visibility = View.VISIBLE
+        binding.tvEmpty.visibility = View.GONE
+        binding.tvSummary.visibility = View.GONE
+
         val skuKey = p.sku.ifBlank { p.id }
         db.collection("products").document(skuKey)
             .get()
             .addOnSuccessListener { doc ->
                 val stagedQty = doc.getLong("stagedOldQty") ?: 0L
+                val stagedIncomingQty = doc.getLong("stagedIncomingQty") ?: 0L
+                val parts = mutableListOf<String>()
                 if (stagedQty > 0L) {
+                    parts += "Stok lama tersisa ${nf.format(stagedQty)} unit"
                     val stageCost = doc.getLong("stagedLastCost") ?: 0L
                     val stageSale = doc.getLong("stagedSalePrice") ?: 0L
-                    val parts = mutableListOf<String>()
-                    parts += "Stok lama tersisa ${nf.format(stagedQty)} unit"
                     if (stageCost > 0L) parts += "Modal baru Rp ${nf.format(stageCost)}"
                     if (stageSale > 0L) parts += "Harga jual baru Rp ${nf.format(stageSale)}"
-                    stageInfo = parts.joinToString(" | ")
-                    render()
                 }
+                if (stagedIncomingQty > 0L) {
+                    parts += "Stok baru tertahan ${nf.format(stagedIncomingQty)} unit"
+                }
+                stageInfo = if (parts.isEmpty()) null else parts.joinToString(" | ")
+                render()
             }
 
         db.collection("pending_stock_receipts")
             .whereEqualTo("sku", skuKey)
             .get()
             .addOnSuccessListener { snap ->
-                rows.clear()
-                rows.addAll(
-                    snap.documents.mapNotNull { doc ->
-                        val qtyVal = doc.getLong("qty") ?: return@mapNotNull null
-                        val statusVal = doc.getString("status") ?: "pending"
-                        PendingRow(
-                            invoiceNo = doc.getString("invoiceNo") ?: "",
-                            supplierName = doc.getString("supplierName") ?: "",
-                            qty = qtyVal,
-                            dueDate = doc.getTimestamp("dueDate"),
-                            scheduledAt = doc.getTimestamp("scheduledAt"),
-                            status = statusVal,
-                            purchaseId = doc.getString("purchaseId")
-                        )
-                    }.sortedWith(
-                        compareBy<PendingRow> { it.dueDate?.toDate()?.time ?: Long.MAX_VALUE }
-                            .thenBy { it.scheduledAt?.toDate()?.time ?: Long.MAX_VALUE }
+                val pendingRows = snap.documents.mapNotNull { doc ->
+                    val qtyVal = doc.getLong("qty") ?: return@mapNotNull null
+                    val statusVal = doc.getString("status") ?: "pending"
+                    PendingRow(
+                        invoiceNo = doc.getString("invoiceNo") ?: "",
+                        supplierName = doc.getString("supplierName") ?: "",
+                        qty = qtyVal,
+                        dueDate = doc.getTimestamp("dueDate"),
+                        scheduledAt = doc.getTimestamp("scheduledAt"),
+                        status = statusVal,
+                        purchaseId = doc.getString("purchaseId"),
+                        type = PendingQueueType.SCHEDULED,
+                        receivedAt = null
                     )
-                )
-                render()
+                }
+                rows.addAll(pendingRows)
+                updateQueueUi()
             }
             .addOnFailureListener { e ->
                 toast("Gagal memuat antrian: ${e.message}")
-                rows.clear(); render()
+                updateQueueUi()
             }
-            .addOnCompleteListener { binding.progress.visibility = View.GONE }
+            .addOnCompleteListener {
+                pendingDone = true
+                maybeHideProgress()
+            }
+
+        db.collection("stock_batches")
+            .whereEqualTo("sku", skuKey)
+            .whereEqualTo("state", BatchState.HOLD.name)
+            .get()
+            .addOnSuccessListener { snap ->
+                val holdRows = snap.documents.mapNotNull { doc ->
+                    val qtyVal = doc.getLong("remainingQty") ?: doc.getLong("receivedQty") ?: return@mapNotNull null
+                    PendingRow(
+                        invoiceNo = doc.getString("invoiceNo") ?: "",
+                        supplierName = doc.getString("supplierName") ?: "",
+                        qty = qtyVal,
+                        dueDate = null,
+                        scheduledAt = null,
+                        status = doc.getString("state") ?: BatchState.HOLD.name,
+                        purchaseId = doc.getString("purchaseId"),
+                        type = PendingQueueType.STAGED,
+                        receivedAt = doc.getTimestamp("receivedAt")
+                    )
+                }
+                rows.addAll(holdRows)
+                updateQueueUi()
+            }
+            .addOnFailureListener { e ->
+                toast("Gagal memuat stok tertahan: ${e.message}")
+                updateQueueUi()
+            }
+            .addOnCompleteListener {
+                holdDone = true
+                maybeHideProgress()
+            }
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Antrian Pending ${p.name}")
@@ -1582,8 +1667,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 val invoiceNoGenerated = "Invoice-%03d".format(nextInvoice)
 
                 val poRef = db.collection("purchases").document()
-                val lastBatchSnap = if (!delayStock && lastDoc != null) trx.get(lastDoc.reference) else null
-
                 val items = listOf(
                     mapOf(
                         "sku" to sku,
@@ -1626,8 +1709,19 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 }
                 trx.set(poRef, purchaseData)
 
+                val previousIncoming = pSnap.getLong("stagedIncomingQty") ?: 0L
+                val holdNewStock = !delayStock && (stageCost || stagePrice)
                 val productUpdates = mutableMapOf<String, Any?>("updatedAt" to now)
-                if (!delayStock) productUpdates["stock"] = newStock
+                when {
+                    delayStock -> { /* stock update deferred until posting */ }
+                    holdNewStock -> {
+                        productUpdates["stock"] = stockOld
+                        productUpdates["stagedIncomingQty"] = previousIncoming + qty
+                    }
+                    else -> {
+                        productUpdates["stock"] = newStock
+                    }
+                }
                 if (stageCost) {
                     productUpdates["stagedLastCost"] = unitCost
                 } else if (unitCost > 0) {
@@ -1649,51 +1743,24 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 }
 
                 if (!delayStock) {
-                    var merged = false
-                    var batchUpdateData: Map<String, Any>? = null
-                    var batchCreateData: Map<String, Any>? = null
-                    var targetBatchId: String? = null
-
-                    if (lastBatchSnap != null) {
-                        val lastCost = lastBatchSnap.getLong("unitCost") ?: 0L
-                        if (unitCost >= lastCost) {
-                            val remain = lastBatchSnap.getLong("remainingQty") ?: 0L
-                            val newRemain = remain + qty
-                            val weighted = if (newRemain > 0) ((lastCost * remain + unitCost * qty) / newRemain) else unitCost
-                            val update = mutableMapOf<String, Any>(
-                                "remainingQty" to newRemain,
-                                "unitCost" to weighted,
-                                "receivedAt" to now
-                            )
-                            if (newSalePrice > 0) update["salePrice"] = newSalePrice
-                            batchUpdateData = update
-                            merged = true
-                            targetBatchId = lastBatchSnap.id
-                        }
-                    }
-                    if (!merged) {
-                        val create = mutableMapOf<String, Any>(
-                            "sku" to sku,
-                            "unitCost" to unitCost,
-                            "remainingQty" to qty,
-                            "receivedAt" to now,
-                            "purchaseId" to poRef.id,
-                            "invoiceNo" to invoiceNoGenerated,
-                            "supplierName" to (supplierName ?: ""),
-                            "supplierId" to (supplierId ?: ""),
-                            "dueDate" to (dueDate ?: com.google.firebase.Timestamp.now()),
-                            "termDays" to termDays
-                        )
-                        create["salePrice"] = batchSalePrice
-                        batchCreateData = create
-                    }
-
-                    if (merged && lastDoc != null && batchUpdateData != null) trx.update(lastDoc.reference, batchUpdateData)
-                    else if (batchCreateData != null) {
-                        val batchRef = db.collection("stock_batches").document()
-                        trx.set(batchRef, batchCreateData)
-                        targetBatchId = batchRef.id
-                    }
+                    val batchRef = db.collection("stock_batches").document()
+                    val batchData = mutableMapOf<String, Any>(
+                        "sku" to sku,
+                        "unitCost" to unitCost,
+                        "remainingQty" to qty,
+                        "receivedQty" to qty,
+                        "receivedAt" to now,
+                        "purchaseId" to poRef.id,
+                        "invoiceNo" to invoiceNoGenerated,
+                        "supplierName" to (supplierName ?: ""),
+                        "supplierId" to (supplierId ?: ""),
+                        "dueDate" to (dueDate ?: com.google.firebase.Timestamp.now()),
+                        "termDays" to termDays,
+                        "state" to if (holdNewStock) BatchState.HOLD.name else BatchState.OPEN.name
+                    )
+                    batchData["salePrice"] = batchSalePrice
+                    trx.set(batchRef, batchData)
+                    val targetBatchId = batchRef.id
 
                     val mvRef = db.collection("inventory_movements").document()
                     val movement = mutableMapOf<String, Any>(
@@ -1702,9 +1769,12 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         "qtyDelta" to qty,
                         "unitCost" to unitCost,
                         "createdAt" to now,
-                        "refId" to poRef.id
+                        "refId" to poRef.id,
+                        "batchId" to targetBatchId
                     )
-                    targetBatchId?.let { movement["batchId"] = it }
+                    if (holdNewStock) {
+                        movement["note"] = "Stok baru menunggu stok lama habis"
+                    }
                     trx.set(mvRef, movement)
                 } else {
                     val targetDoc = pendingDocument ?: throw IllegalStateException("Pending document ref null")
@@ -1776,20 +1846,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }.addOnFailureListener { e -> toast("Gagal terima stok: ${e.message}") }
         }
 
-        fun onGotLastBatch(lastDoc: DocumentSnapshot?) {
-            if (shouldDelayStock) {
-                commitReceive(lastDoc, true, pendingRef)
-                return
-            }
-            commitReceive(lastDoc, false, null)
+        if (shouldDelayStock) {
+            commitReceive(null, true, pendingRef)
+        } else {
+            commitReceive(null, false, null)
         }
-        db.collection("stock_batches")
-            .whereEqualTo("sku", sku)
-            .orderBy("receivedAt", Query.Direction.DESCENDING)
-            .limit(1)
-            .get()
-            .addOnSuccessListener { snapLast -> onGotLastBatch(snapLast.documents.firstOrNull()) }
-            .addOnFailureListener { onGotLastBatch(null) }
     }
 
     private fun shouldDelayStockPosting(dueTs: com.google.firebase.Timestamp?): Boolean {

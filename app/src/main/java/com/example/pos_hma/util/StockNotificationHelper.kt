@@ -106,6 +106,64 @@ object StockNotificationHelper {
         }
     }
 
+    fun notifyStageActivated(
+        context: Context,
+        db: FirebaseFirestore,
+        sku: String,
+        productName: String,
+        newSalePrice: Long?,
+        newLastCost: Long?,
+        incomingQty: Long
+    ): Boolean {
+        val parts = mutableListOf<String>()
+        if (incomingQty > 0) {
+            parts += "Stok baru ${numberFormat.format(incomingQty)} unit siap digunakan."
+        }
+        newLastCost?.let { if (it > 0) parts += "Modal baru Rp ${numberFormat.format(it)}" }
+        newSalePrice?.let { if (it > 0) parts += "Harga jual baru Rp ${numberFormat.format(it)}" }
+        val detail = if (parts.isEmpty()) "Stok baru siap digunakan." else parts.joinToString(" ")
+        val title = "Stok Baru Aktif"
+        val message = "$productName: $detail"
+
+        val data = mutableMapOf<String, Any>(
+            "type" to "STOCK_STAGE_ACTIVATED",
+            "title" to title,
+            "message" to message,
+            "toRole" to "super-admin",
+            "read" to false,
+            "referenceId" to "stage_$sku",
+            "sku" to sku,
+            "incomingQty" to incomingQty,
+            "createdAt" to FieldValue.serverTimestamp()
+        )
+        db.collection("notifications")
+            .document("sa_stage_${sku}_${System.currentTimeMillis()}")
+            .set(data, SetOptions.merge())
+
+        val notifier = NotificationManagerCompat.from(context)
+        if (!notifier.areNotificationsEnabled()) return false
+        ensureChannel(context)
+        val pendingIntent = NavDeepLinkBuilder(context)
+            .setGraph(R.navigation.nav_super_admin)
+            .setDestination(R.id.superAdminInventoryFragment)
+            .createPendingIntent()
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .build()
+        return try {
+            notifier.notify(("stage_$sku").hashCode(), notification)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
     fun notifyStockPosted(
         context: Context,
         db: FirebaseFirestore,

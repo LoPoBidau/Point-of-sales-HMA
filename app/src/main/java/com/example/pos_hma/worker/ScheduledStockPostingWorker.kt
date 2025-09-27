@@ -13,6 +13,7 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.example.pos_hma.util.StockNotificationHelper
+import com.example.pos_hma.data.BatchState
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
 
@@ -42,7 +43,8 @@ class ScheduledStockPostingWorker(
         val status = snapshot.getString("status") ?: "pending"
         if (status == "posted") {
             val qtyPosted = snapshot.getLong("qty") ?: 0L
-            if (qtyPosted > 0L) {
+            val wasHeld = snapshot.getBoolean("held") == true
+            if (qtyPosted > 0L && !wasHeld) {
                 val skuSnapshot = snapshot.getString("sku").orEmpty()
                 val nameSnapshot = snapshot.getString("productName").orEmpty().ifBlank { skuSnapshot }
                 val posted = StockNotificationHelper.notifyStockPosted(
@@ -108,22 +110,9 @@ class ScheduledStockPostingWorker(
         val purchaseId = snapshot.getString("purchaseId").orEmpty()
         val productName = snapshot.getString("productName").orEmpty().ifBlank { sku }
 
-        val lastBatchDoc = try {
-            db.collection("stock_batches")
-                .whereEqualTo("sku", sku)
-                .orderBy("receivedAt", Query.Direction.DESCENDING)
-                .limit(1)
-                .get()
-                .await()
-                .documents
-                .firstOrNull()
-        } catch (e: Exception) {
-            Log.w(TAG, "Gagal mengambil batch terakhir", e)
-            null
-        }
-
         val mvRef = db.collection("inventory_movements").document()
         val batchRef = db.collection("stock_batches").document()
+        var holdNewStockResult = false
 
         try {
             db.runTransaction { trx ->
@@ -148,11 +137,19 @@ class ScheduledStockPostingWorker(
                 val currentCost = pSnap.getLong("lastCost") ?: unitCost
                 val stageCost = unitCost > 0 && oldStock > 0 && unitCost < currentCost
                 val stagePrice = newSalePrice > 0 && oldStock > 0 && newSalePrice < currentSalePrice
+                val holdNewStock = stageCost || stagePrice
+                holdNewStockResult = holdNewStock
                 val batchSalePrice = if (newSalePrice > 0) newSalePrice else currentSalePrice
+                val previousIncoming = pSnap.getLong("stagedIncomingQty") ?: 0L
                 val productUpdates = mutableMapOf<String, Any?>(
-                    "stock" to newStock,
                     "updatedAt" to nowField
                 )
+                if (holdNewStock) {
+                    productUpdates["stock"] = oldStock
+                    productUpdates["stagedIncomingQty"] = previousIncoming + qty
+                } else {
+                    productUpdates["stock"] = newStock
+                }
                 if (stageCost) {
                     productUpdates["stagedLastCost"] = unitCost
                 } else if (unitCost > 0) {
@@ -160,7 +157,7 @@ class ScheduledStockPostingWorker(
                 }
                 if (stagePrice) {
                     productUpdates["stagedSalePrice"] = newSalePrice
-                } else if (newSalePrice > 0 && newSalePrice != currentSalePrice) {
+                } else if (!holdNewStock && newSalePrice > 0 && newSalePrice != currentSalePrice) {
                     productUpdates["salePrice"] = newSalePrice
                 }
                 if (stageCost || stagePrice) {
@@ -168,43 +165,23 @@ class ScheduledStockPostingWorker(
                 }
                 trx.update(pRef, productUpdates)
 
-                val lastBatchSnap = if (lastBatchDoc != null) trx.get(lastBatchDoc.reference) else null
-                var merged = false
-                var targetBatchId: String? = null
-                if (lastBatchSnap != null) {
-                    val lastCost = lastBatchSnap.getLong("unitCost") ?: 0L
-                    if (unitCost >= lastCost) {
-                        val remain = lastBatchSnap.getLong("remainingQty") ?: 0L
-                        val newRemain = remain + qty
-                        val weighted = if (newRemain > 0) ((lastCost * remain + unitCost * qty) / newRemain) else unitCost
-                        val batchUpdates = mutableMapOf<String, Any>(
-                            "remainingQty" to newRemain,
-                            "unitCost" to weighted,
-                            "receivedAt" to nowField
-                        )
-                        if (newSalePrice > 0) batchUpdates["salePrice"] = newSalePrice
-                        trx.update(lastBatchSnap.reference, batchUpdates)
-                        merged = true
-                        targetBatchId = lastBatchSnap.id
-                    }
-                }
-                if (!merged) {
-                    val batchData = mutableMapOf<String, Any>(
-                        "sku" to sku,
-                        "unitCost" to unitCost,
-                        "remainingQty" to qty,
-                        "receivedAt" to nowField,
-                        "purchaseId" to purchaseId,
-                        "invoiceNo" to invoiceNo,
-                        "supplierName" to supplierName,
-                        "supplierId" to supplierId,
-                        "dueDate" to scheduledTs,
-                        "termDays" to termDays
-                    )
-                    batchData["salePrice"] = batchSalePrice
-                    trx.set(batchRef, batchData)
-                    targetBatchId = batchRef.id
-                }
+                val batchData = mutableMapOf<String, Any>(
+                    "sku" to sku,
+                    "unitCost" to unitCost,
+                    "remainingQty" to qty,
+                    "receivedQty" to qty,
+                    "receivedAt" to nowField,
+                    "purchaseId" to purchaseId,
+                    "invoiceNo" to invoiceNo,
+                    "supplierName" to supplierName,
+                    "supplierId" to supplierId,
+                    "dueDate" to scheduledTs,
+                    "termDays" to termDays,
+                    "state" to if (holdNewStock) BatchState.HOLD.name else BatchState.OPEN.name
+                )
+                batchData["salePrice"] = batchSalePrice
+                trx.set(batchRef, batchData)
+                val targetBatchId = batchRef.id
 
                 val movement = mutableMapOf<String, Any>(
                     "sku" to sku,
@@ -213,9 +190,12 @@ class ScheduledStockPostingWorker(
                     "unitCost" to unitCost,
                     "createdAt" to nowField,
                     "refId" to purchaseId,
-                    "note" to "Auto post jatuh tempo"
+                    "note" to "Auto post jatuh tempo",
+                    "batchId" to targetBatchId
                 )
-                targetBatchId?.let { movement["batchId"] = it }
+                if (holdNewStock) {
+                    movement["note"] = "Auto post tertahan menunggu stok lama habis"
+                }
                 trx.set(mvRef, movement)
 
                 if (purchaseId.isNotBlank()) {
@@ -230,7 +210,8 @@ class ScheduledStockPostingWorker(
                 trx.update(docRef, mapOf(
                     "status" to "posted",
                     "postedAt" to nowField,
-                    "notificationSent" to false
+                    "notificationSent" to false,
+                    "held" to holdNewStock
                 ))
 
                 null
@@ -240,16 +221,20 @@ class ScheduledStockPostingWorker(
             return Result.retry()
         }
 
-        val notified = StockNotificationHelper.notifyStockPosted(
-            applicationContext,
-            db,
-            docId,
-            productName,
-            qty,
-            scheduledTs,
-            sku,
-            purchaseId.takeIf { it.isNotBlank() }
-        )
+        val notified = if (!holdNewStockResult) {
+            StockNotificationHelper.notifyStockPosted(
+                applicationContext,
+                db,
+                docId,
+                productName,
+                qty,
+                scheduledTs,
+                sku,
+                purchaseId.takeIf { it.isNotBlank() }
+            )
+        } else {
+            false
+        }
         if (notified) {
             try {
                 docRef.update("notificationSent", true).await()

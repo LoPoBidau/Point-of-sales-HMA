@@ -39,27 +39,33 @@ service cloud.firestore {
 
       allow update: if (
         isCashierLike() &&
-        let changed = request.resource.data.diff(resource.data).changedKeys();
-        changed.hasOnly([
-          'stock','updatedAt','stockLayers','inbound','salePrice','lastCost','stagedSalePrice','stagedLastCost','stagedOldQty'
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'stock','updatedAt','stockLayers','inbound',
+          'salePrice','lastCost','stagedSalePrice','stagedLastCost','stagedOldQty','stagedIncomingQty'
         ]) &&
-        (!changed.hasAny(['salePrice']) ||
-          (resource.data.stagedSalePrice is int &&
-           request.resource.data.salePrice == resource.data.stagedSalePrice &&
-           !('stagedSalePrice' in request.resource.data.keys()))
+        (
+          !request.resource.data.diff(resource.data).changedKeys().hasAny(['salePrice']) ||
+          (
+            resource.data.stagedSalePrice is int &&
+            request.resource.data.salePrice == resource.data.stagedSalePrice &&
+            !('stagedSalePrice' in request.resource.data.keys())
+          )
         ) &&
-        (!changed.hasAny(['lastCost']) ||
-          (resource.data.stagedLastCost is int &&
-           request.resource.data.lastCost == resource.data.stagedLastCost &&
-           !('stagedLastCost' in request.resource.data.keys()))
+        (
+          !request.resource.data.diff(resource.data).changedKeys().hasAny(['lastCost']) ||
+          (
+            resource.data.stagedLastCost is int &&
+            request.resource.data.lastCost == resource.data.stagedLastCost &&
+            !('stagedLastCost' in request.resource.data.keys())
+          )
         )
       ) || (
         isOwnerOrSuper() &&
         request.resource.data.diff(resource.data).changedKeys().hasOnly([
           'name','nameLowercase','categoryId','categoryName','salePrice',
           'images','trackStock','lastCost','stock','updatedAt','isActive',
-          'type','inbound','stockLayers','stagedSalePrice','stagedLastCost','stagedOldQty'
-        ])
+          'type','inbound','stockLayers','stagedSalePrice','stagedLastCost','stagedOldQty','stagedIncomingQty'
+        ]
       );
 
       allow delete: if isOwnerOrSuper();
@@ -84,7 +90,7 @@ service cloud.firestore {
         && (!('state' in request.resource.data) || request.resource.data.state is string);
       allow update: if isAdminLike()
         && request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'remainingQty','unitCost','receivedAt',
+          'remainingQty','unitCost','receivedAt','activatedAt',
           'purchaseId','invoiceNo','supplierName','supplierId',
           'dueDate','termDays','state','salePrice'
         ])
@@ -227,6 +233,3 @@ service cloud.firestore {
     }
   }
 }
-
-
-

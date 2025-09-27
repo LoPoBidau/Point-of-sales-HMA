@@ -13,6 +13,7 @@ import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierPaymentBinding
 import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
+import com.example.pos_hma.util.StockNotificationHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -144,6 +145,40 @@ class AdminCashierPaymentFragment : Fragment() {
         }
 
         fun proceed(fifoRefsBySku: Map<String, List<DocumentReference>>) {
+            data class BatchConsumption(
+                val ref: DocumentReference?,
+                val consumed: Long,
+                val newRemaining: Long,
+                val unitCost: Long,
+                val salePrice: Long?
+            )
+
+            data class Plan(
+                val ref: DocumentReference,
+                val sku: String,
+                val name: String,
+                val qty: Long,
+                val unitPrice: Long,
+                val newStock: Long,
+                val avgUnitCost: Long,
+                val consumptions: List<BatchConsumption>,
+                val stagedSalePrice: Long?,
+                val stagedLastCost: Long?,
+                val stagedOldQty: Long,
+                val stagedIncomingQty: Long,
+                val holdBatchRefs: List<DocumentReference>
+            )
+
+            data class StageNotice(
+                val sku: String,
+                val productName: String,
+                val newSalePrice: Long?,
+                val newLastCost: Long?,
+                val incomingQty: Long
+            )
+
+            val stageNotices = mutableListOf<StageNotice>()
+
             db.runTransaction { trx ->
                 val cSnap = trx.get(counterRef)
                 val last = cSnap.getLong("last") ?: 0L
@@ -152,28 +187,6 @@ class AdminCashierPaymentFragment : Fragment() {
                 val docId = String.format("%s-%04d", prefix, next)
 
                 val saleRef = db.collection("sales").document(docId)
-
-                data class BatchConsumption(
-                    val ref: DocumentReference?,
-                    val consumed: Long,
-                    val newRemaining: Long,
-                    val unitCost: Long,
-                    val salePrice: Long?
-                )
-
-                data class Plan(
-                    val ref: DocumentReference,
-                    val sku: String,
-                    val name: String,
-                    val qty: Long,
-                    val unitPrice: Long,
-                    val newStock: Long,
-                    val avgUnitCost: Long,
-                    val consumptions: List<BatchConsumption>,
-                    val stagedSalePrice: Long?,
-                    val stagedLastCost: Long?,
-                    val stagedOldQty: Long
-                )
 
                 val plans = mutableListOf<Plan>()
                 val items = mutableListOf<Map<String, Any>>()
@@ -195,6 +208,7 @@ class AdminCashierPaymentFragment : Fragment() {
 
                             val batchRefs = fifoRefsBySku[sku].orEmpty()
                             val consumptions = mutableListOf<BatchConsumption>()
+                            val holdRefs = mutableListOf<DocumentReference>()
                             var remaining = qty
                             var firstBefore: DocumentSnapshot? = null
                             var firstAfter: DocumentSnapshot? = null
@@ -210,6 +224,11 @@ class AdminCashierPaymentFragment : Fragment() {
                                     val batchSnap = trx.get(ref)
                                     val remainingQty = batchSnap.getLong("remainingQty") ?: 0L
                                     if (remainingQty <= 0L) continue
+                                    val state = batchSnap.getString("state") ?: BatchState.OPEN.name
+                                    if (state.equals(BatchState.HOLD.name, ignoreCase = true)) {
+                                        holdRefs += ref
+                                        continue
+                                    }
                                     if (firstBefore == null) firstBefore = batchSnap
 
                                     val unitCostBatch = batchSnap.getLong("unitCost") ?: 0L
@@ -240,6 +259,7 @@ class AdminCashierPaymentFragment : Fragment() {
                             val stagedSalePrice = snap.getLong("stagedSalePrice")
                             val stagedLastCost = snap.getLong("stagedLastCost")
                             val stagedOldQty = snap.getLong("stagedOldQty") ?: 0L
+                            val stagedIncomingQty = snap.getLong("stagedIncomingQty") ?: 0L
                             plans += Plan(
                                 ref = pRef,
                                 sku = sku,
@@ -251,7 +271,9 @@ class AdminCashierPaymentFragment : Fragment() {
                                 consumptions = consumptions,
                                 stagedSalePrice = stagedSalePrice,
                                 stagedLastCost = stagedLastCost,
-                                stagedOldQty = stagedOldQty
+                                stagedOldQty = stagedOldQty,
+                                stagedIncomingQty = stagedIncomingQty,
+                                holdBatchRefs = holdRefs.toList()
                             )
 
                             items += mapOf(
@@ -276,8 +298,8 @@ class AdminCashierPaymentFragment : Fragment() {
                 }
 
                 plans.forEach { pl ->
+                    var nextStock = pl.newStock
                     val productUpdates = mutableMapOf<String, Any>(
-                        "stock" to pl.newStock,
                         "updatedAt" to now
                     )
 
@@ -293,6 +315,12 @@ class AdminCashierPaymentFragment : Fragment() {
                             }
                         }
                         if (remainingOld <= 0) {
+                            val incomingQty = pl.stagedIncomingQty.coerceAtLeast(0L)
+                            if (incomingQty > 0L) {
+                                nextStock = incomingQty
+                            }
+                            productUpdates["stagedIncomingQty"] = FieldValue.delete()
+                            stageNotices += StageNotice(pl.sku, pl.name, pl.stagedSalePrice, pl.stagedLastCost, incomingQty)
                             pl.stagedSalePrice?.let { if (it > 0) productUpdates["salePrice"] = it }
                             pl.stagedLastCost?.let { if (it > 0) productUpdates["lastCost"] = it }
                             productUpdates["stagedSalePrice"] = FieldValue.delete()
@@ -300,9 +328,17 @@ class AdminCashierPaymentFragment : Fragment() {
                             if (!productUpdates.containsKey("stagedOldQty")) {
                                 productUpdates["stagedOldQty"] = FieldValue.delete()
                             }
+                            pl.holdBatchRefs.forEach { ref ->
+                                val activation = mutableMapOf<String, Any>(
+                                    "state" to BatchState.OPEN.name,
+                                    "activatedAt" to now
+                                )
+                                trx.update(ref, activation)
+                            }
                         }
                     }
 
+                    productUpdates["stock"] = nextStock
                     trx.update(pl.ref, productUpdates)
 
                     for (cons in pl.consumptions) {
@@ -341,6 +377,20 @@ class AdminCashierPaymentFragment : Fragment() {
 
                 Pair(noNota, saleRef.id)
             }.addOnSuccessListener { (noNota, docId) ->
+                if (stageNotices.isNotEmpty()) {
+                    val ctx = requireContext().applicationContext
+                    stageNotices.forEach { notice: StageNotice ->
+                        StockNotificationHelper.notifyStageActivated(
+                            ctx,
+                            db,
+                            notice.sku,
+                            notice.productName,
+                            notice.newSalePrice,
+                            notice.newLastCost,
+                            notice.incomingQty
+                        )
+                    }
+                }
                 onSaleCommitted(noNota, docId, paid, due)
             }.addOnFailureListener { e ->
                 showProcessingOverlay(false)

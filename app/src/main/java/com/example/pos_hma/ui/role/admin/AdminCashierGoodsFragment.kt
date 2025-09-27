@@ -213,6 +213,15 @@ private class GoodsAdapter(
             b.tvBadge.text = if (out) "Stok Habis" else "Stok Tersedia"
             b.tvBadge.setBackgroundResource(if (out) R.drawable.bg_badge_red else R.drawable.bg_badge_green)
 
+            // Hide pending button in cashier view
+            b.btnPending.visibility = View.GONE
+            val params = b.btnAdd.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
+            params.startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            params.endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
+            params.startToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.UNSET
+            params.endToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.UNSET
+            b.btnAdd.layoutParams = params
+
             // This fragment uses adjust request, not delete/receive like super admin
             b.btnDelete.visibility = View.GONE
             b.btnAdd.text = "Ajukan\nPenyesuaian"
