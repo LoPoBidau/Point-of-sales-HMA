@@ -25,6 +25,7 @@ import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.ListenerRegistration
 import com.example.pos_hma.worker.ScheduledStockPostingWorker
 import com.google.firebase.Timestamp
 import java.text.NumberFormat
@@ -63,6 +64,16 @@ class SuperAdminReportFragment : Fragment() {
 
         inner class VH(val b: ItemReportTabBinding) : RecyclerView.ViewHolder(b.root)
 
+
+        private var purchaseListener: ListenerRegistration? = null
+        private var purchaseHolder: VH? = null
+
+        private fun clearPurchaseListener() {
+            purchaseListener?.remove()
+            purchaseListener = null
+        }
+
+
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
             val b = ItemReportTabBinding.inflate(LayoutInflater.from(parent.context), parent, false)
             return VH(b)
@@ -70,12 +81,24 @@ class SuperAdminReportFragment : Fragment() {
 
         override fun getItemCount() = titles.size
 
+
+        override fun onViewRecycled(holder: VH) {
+            if (holder == purchaseHolder) {
+                clearPurchaseListener()
+                purchaseHolder = null
+            }
+            super.onViewRecycled(holder)
+        }
+
         override fun onBindViewHolder(holder: VH, position: Int) {
             val title = titles[position]
             holder.b.tvTitle.text = title
             when (title) {
                 "Penjualan" -> bindSales(holder)
-                "Pembelian" -> bindPurchases(holder)
+                "Pembelian" -> {
+                    purchaseHolder = holder
+                    bindPurchases(holder)
+                }
                 else -> {
                     holder.b.tvDesc.visibility = View.VISIBLE
                     holder.b.tvSummary.visibility = View.GONE
@@ -219,6 +242,7 @@ class SuperAdminReportFragment : Fragment() {
 
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
             val data = mutableListOf<SaleRow>()
+
             val adapter = object : RecyclerView.Adapter<SaleVH>() {
                 override fun onCreateViewHolder(p: ViewGroup, vt: Int): SaleVH =
                     SaleVH(ItemSaleRowBinding.inflate(LayoutInflater.from(ctx), p, false))
@@ -407,6 +431,9 @@ class SuperAdminReportFragment : Fragment() {
             val dfDate = SimpleDateFormat("dd MMM yyyy", localeId)
             val dfDateTime = SimpleDateFormat("dd MMM yyyy HH:mm", localeId)
 
+
+            clearPurchaseListener()
+
             holder.b.tvTitle.visibility = View.GONE
             holder.b.tvDesc.visibility = View.GONE
             holder.b.tvSummary.visibility = View.GONE
@@ -457,6 +484,12 @@ class SuperAdminReportFragment : Fragment() {
             var statusFilter = PurchaseStatusFilter.ALL
             val ensuredPendingIds = mutableSetOf<String>()
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
+
+
+            fun setSearchControlsEnabled(enabled: Boolean) {
+                holder.b.btnSearchSaleId.isEnabled = enabled
+                holder.b.etSearchSaleId.isEnabled = enabled
+            }
 
             fun computeStatus(due: Date?): StatusInfo {
                 val today = Calendar.getInstance().apply {
@@ -706,13 +739,20 @@ class SuperAdminReportFragment : Fragment() {
                 }
             }
 
+
+            fun statusSortKey(priority: Int): Int = when (priority) {
+                1 -> 0
+                0 -> 1
+                else -> 2
+            }
+
             fun applyRows(
                 newRows: List<Row>,
                 emptyMessage: String? = null,
                 infoMessage: String? = null,
                 contextLabel: String? = null
             ) {
-                masterRows = newRows.sortedWith(compareBy<Row> { it.statusPriority }
+                masterRows = newRows.sortedWith(compareBy<Row> { statusSortKey(it.statusPriority) }
                     .thenBy { it.dueDate ?: Date(Long.MAX_VALUE) }
                     .thenByDescending { it.createdAt?.time ?: Long.MIN_VALUE })
                 lastEmptyMessage = emptyMessage
@@ -733,98 +773,110 @@ class SuperAdminReportFragment : Fragment() {
             }
             holder.b.chipGroupPurchaseStatus.check(holder.b.chipStatusAll.id)
 
-            fun loadRecent() {
+            fun listenRecent() {
                 holder.b.tilSearchSaleId.error = null
                 val contextLabel = "Menampilkan 300 pembelian terbaru"
-                db.collection("purchases")
+                clearPurchaseListener()
+                purchaseListener = db.collection("purchases")
                     .orderBy("date", Query.Direction.DESCENDING)
                     .limit(300)
-                    .get()
-                    .addOnSuccessListener { snap ->
-                        val data = snap.documents.map { mapDocToRow(it) }
+                    .addSnapshotListener { snap, e ->
+                        if (e != null) {
+                            applyRows(
+                                emptyList(),
+                                e.message ?: "Gagal memuat data pembelian",
+                                contextLabel = contextLabel
+                            )
+                            setSearchControlsEnabled(true)
+                            return@addSnapshotListener
+                        }
+                        val docs = snap?.documents.orEmpty()
+                        val mapped = docs.map { mapDocToRow(it) }
                         applyRows(
-                            data,
+                            mapped,
                             emptyMessage = "Belum ada data pembelian.",
                             contextLabel = contextLabel
                         )
+                        setSearchControlsEnabled(true)
                     }
-                    .addOnFailureListener { e ->
-                        applyRows(
-                            emptyList(),
-                            e.message ?: "Gagal memuat data pembelian",
-                            contextLabel = contextLabel
-                        )
-                    }
+                if (purchaseListener == null) {
+                    setSearchControlsEnabled(true)
+                }
+            }
+
+            fun listenInvoiceByNumber(label: String, keys: List<String>) {
+                clearPurchaseListener()
+                if (keys.isEmpty()) {
+                    applyRows(
+                        emptyList(),
+                        emptyMessage = "Invoice $label tidak ditemukan",
+                        contextLabel = "Hasil pencarian invoice $label"
+                    )
+                    setSearchControlsEnabled(true)
+                    return
+                }
+                purchaseListener = try {
+                    db.collection("purchases")
+                        .whereIn("invoiceNo", keys)
+                        .limit(20)
+                        .addSnapshotListener { snap, e ->
+                            if (e != null) {
+                                applyRows(
+                                    emptyList(),
+                                    e.message ?: "Gagal mencari invoice",
+                                    contextLabel = "Hasil pencarian invoice $label"
+                                )
+                                setSearchControlsEnabled(true)
+                                return@addSnapshotListener
+                            }
+                            val docs = snap?.documents.orEmpty()
+                            val mapped = docs.map { mapDocToRow(it) }
+                            val info = if (mapped.isNotEmpty()) {
+                                "Menampilkan ${mapped.size} invoice dengan nomor $label"
+                            } else null
+                            applyRows(
+                                mapped,
+                                emptyMessage = "Invoice $label tidak ditemukan",
+                                infoMessage = info,
+                                contextLabel = "Hasil pencarian invoice $label"
+                            )
+                            setSearchControlsEnabled(true)
+                        }
+                } catch (ex: Exception) {
+                    applyRows(
+                        emptyList(),
+                        ex.message ?: "Gagal mencari invoice",
+                        contextLabel = "Hasil pencarian invoice $label"
+                    )
+                    null
+                }
+                if (purchaseListener == null) {
+                    setSearchControlsEnabled(true)
+                }
             }
 
             fun searchInvoice(rawInput: String) {
                 val queryString = rawInput.trim()
                 if (queryString.isEmpty()) {
-                    loadRecent()
+                    listenRecent()
                     return
                 }
                 holder.b.tilSearchSaleId.error = null
-
-                holder.b.btnSearchSaleId.isEnabled = false
-                holder.b.etSearchSaleId.isEnabled = false
-
                 val candidates = linkedSetOf(
                     queryString,
                     queryString.uppercase(localeId),
                     queryString.lowercase(localeId)
                 ).filter { it.isNotBlank() }
-
-                fun resetControls() {
-                    holder.b.btnSearchSaleId.isEnabled = true
-                    holder.b.etSearchSaleId.isEnabled = true
+                if (candidates.isEmpty()) {
+                    listenRecent()
+                    return
                 }
-
-                fun handleResult(label: String, mapped: List<Row>) {
-                    val info = if (mapped.isNotEmpty()) {
-                        "Menampilkan ${mapped.size} invoice dengan nomor $label"
-                    } else null
-                    applyRows(
-                        mapped,
-                        emptyMessage = "Invoice $label tidak ditemukan",
-                        infoMessage = info,
-                        contextLabel = "Hasil pencarian invoice $label"
-                    )
-                    resetControls()
-                }
-
-                fun handleError(message: String) {
-                    applyRows(
-                        emptyList(),
-                        message,
-                        contextLabel = "Hasil pencarian invoice $queryString"
-                    )
-                    resetControls()
-                }
-
-                fun searchAt(index: Int) {
-                    if (index >= candidates.size) {
-                        handleResult(queryString, emptyList())
-                        return
-                    }
-                    val target = candidates[index]
-                    db.collection("purchases")
-                        .whereEqualTo("invoiceNo", target)
-                        .limit(5)
-                        .get()
-                        .addOnSuccessListener { snap ->
-                            if (snap.isEmpty) {
-                                searchAt(index + 1)
-                            } else {
-                                handleResult(target, snap.documents.map { mapDocToRow(it) })
-                            }
-                        }
-                        .addOnFailureListener { e -> handleError(e.message ?: "Gagal mencari invoice") }
-                }
-
-                searchAt(0)
+                setSearchControlsEnabled(false)
+                listenInvoiceByNumber(queryString, candidates)
             }
 
-            loadRecent()
+
+            listenRecent()
 
             holder.b.btnSearchSaleId.setOnClickListener {
                 searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
