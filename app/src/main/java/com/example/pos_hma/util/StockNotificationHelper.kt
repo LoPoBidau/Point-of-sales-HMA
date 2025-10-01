@@ -40,6 +40,11 @@ object StockNotificationHelper {
         return "$productName bertambah ${numberFormat.format(qty)} unit."
     }
 
+    // Ditambahkan: Fungsi untuk membuat pesan notifikasi stok ditahan
+    private fun buildHeldMessage(productName: String, qty: Long): String {
+        return "Stok $productName sebanyak ${numberFormat.format(qty)} unit telah diterima namun ditahan. Stok akan tersedia setelah stok lama habis."
+    }
+
     private fun persistInApp(
         db: FirebaseFirestore,
         docKey: String,
@@ -47,10 +52,13 @@ object StockNotificationHelper {
         qty: Long,
         dueDate: Timestamp?,
         sku: String,
-        invoiceNo: String?
+        invoiceNo: String?,
+        isHeld: Boolean = false // Ditambahkan: Parameter untuk menandai stok ditahan
     ) {
-        val title = "Stok otomatis ditambahkan"
-        val message = buildMessage(productName, qty)
+        // Diubah: Judul dan pesan notifikasi disesuaikan jika stok ditahan
+        val title = if (isHeld) "Stok baru ditahan" else "Stok otomatis ditambahkan"
+        val message = if (isHeld) buildHeldMessage(productName, qty) else buildMessage(productName, qty)
+
         val data = mutableMapOf<String, Any>(
             "type" to "STOCK_POSTED",
             "title" to title,
@@ -73,7 +81,8 @@ object StockNotificationHelper {
         context: Context,
         docKey: String,
         productName: String,
-        qty: Long
+        qty: Long,
+        isHeld: Boolean = false // Ditambahkan: Parameter untuk menandai stok ditahan
     ): Boolean {
         val notifier = NotificationManagerCompat.from(context)
         if (!notifier.areNotificationsEnabled()) return false
@@ -85,8 +94,9 @@ object StockNotificationHelper {
             .setDestination(R.id.superAdminInventoryFragment)
             .createPendingIntent()
 
-        val title = "Stok otomatis ditambahkan"
-        val message = buildMessage(productName, qty)
+        // Diubah: Judul dan pesan notifikasi disesuaikan jika stok ditahan
+        val title = if (isHeld) "Stok baru ditahan" else "Stok otomatis ditambahkan"
+        val message = if (isHeld) buildHeldMessage(productName, qty) else buildMessage(productName, qty)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -162,6 +172,21 @@ object StockNotificationHelper {
         } catch (_: SecurityException) {
             false
         }
+    }
+
+    // Ditambahkan: Fungsi notifikasi untuk stok yang ditahan
+    fun notifyStockHeld(
+        context: Context,
+        db: FirebaseFirestore,
+        docKey: String,
+        productName: String,
+        qty: Long,
+        dueDate: Timestamp?,
+        sku: String,
+        invoiceNo: String?
+    ): Boolean {
+        persistInApp(db, docKey, productName, qty, dueDate, sku, invoiceNo, isHeld = true)
+        return showSystemNotification(context, docKey, productName, qty, isHeld = true)
     }
 
     fun notifyStockPosted(
