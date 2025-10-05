@@ -1,0 +1,28 @@
+﻿{
+    "users":  [
+                  {
+                      "localId":  "03jxZUYlvIP0Gid7UjuvxzMWDCO2",
+                      "email":  "kasirhma1@gmail.com",
+                      "emailVerified":  false,
+                      "lastSignedInAt":  "1759405229589",
+                      "createdAt":  "1755337173278",
+                      "disabled":  false,
+                      "providerUserInfo":  [
+
+                                           ],
+                      "password":  "Poshma@2025"
+                  },
+                  {
+                      "localId":  "ptUkREeZLJbdqK20705ALFRpjg22",
+                      "email":  "ownerhma@gmail.com",
+                      "emailVerified":  false,
+                      "lastSignedInAt":  "1759405272433",
+                      "createdAt":  "1755337153492",
+                      "disabled":  false,
+                      "providerUserInfo":  [
+
+                                           ],
+                      "password":  "Poshma@2025"
+                  }
+              ]
+}

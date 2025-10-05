@@ -65,7 +65,7 @@ service cloud.firestore {
           'name','nameLowercase','categoryId','categoryName','salePrice',
           'images','trackStock','lastCost','stock','updatedAt','isActive',
           'type','inbound','stockLayers','stagedSalePrice','stagedLastCost','stagedOldQty','stagedIncomingQty'
-        ]
+        ])
       );
 
       allow delete: if isOwnerOrSuper();
@@ -152,19 +152,21 @@ service cloud.firestore {
           'invoiceNo','dueDate',
           'supplierId','supplierName','supplierPhone','supplierAddress',
           'totalCost','termDays','dueReminderSent','note',
-          'stockPosted','stockPostedAt','pendingStockId','createdAt','updatedAt'
+          'stockPosted','stockPostedAt','pendingStockId','createdAt','updatedAt','scheduledAt'
         ])
         && (!('stockPosted' in request.resource.data) || request.resource.data.stockPosted is bool)
         && (!('stockPostedAt' in request.resource.data) || request.resource.data.stockPostedAt is timestamp || request.resource.data.stockPostedAt == null)
+        && (!('scheduledAt' in request.resource.data) || request.resource.data.scheduledAt is timestamp || request.resource.data.scheduledAt == null)
         && (!('pendingStockId' in request.resource.data) || request.resource.data.pendingStockId is string || request.resource.data.pendingStockId == null);
       allow update: if isAdminLike()
         && request.resource.data.diff(resource.data).changedKeys().hasOnly([
           'items','totalCost','updatedAt','dueDate','termDays','dueReminderSent','note',
           'supplierId','supplierName','supplierPhone','supplierAddress',
-          'stockPosted','stockPostedAt','pendingStockId'
+          'stockPosted','stockPostedAt','pendingStockId','scheduledAt'
         ])
         && (!('stockPosted' in request.resource.data) || request.resource.data.stockPosted is bool)
         && (!('stockPostedAt' in request.resource.data) || request.resource.data.stockPostedAt is timestamp || request.resource.data.stockPostedAt == null)
+        && (!('scheduledAt' in request.resource.data) || request.resource.data.scheduledAt is timestamp || request.resource.data.scheduledAt == null)
         && (!('pendingStockId' in request.resource.data) || request.resource.data.pendingStockId is string || request.resource.data.pendingStockId == null);
       allow delete: if isOwnerOrSuper();
     }
@@ -233,3 +235,4 @@ service cloud.firestore {
     }
   }
 }
+

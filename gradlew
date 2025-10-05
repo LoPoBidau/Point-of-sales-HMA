@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+codex resume 0199a9f4-f8c5-77b2-9ff7-e1c15115159a#!/usr/bin/env sh
 
 #
 # Copyright 2015 the original author or authors.

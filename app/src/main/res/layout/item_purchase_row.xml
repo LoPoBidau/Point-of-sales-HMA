@@ -66,13 +66,28 @@
             android:layout_marginTop="2dp"
             android:text="Barang: -"
             android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
-
         <TextView
-            android:id="@+id/tvDue"
+            android:id="@+id/tvDueDate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:text="Jatuh Tempo: -"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
+
+        <TextView
+            android:id="@+id/tvDueTime"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Jam Jatuh Tempo: -"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
+
+        <TextView
+            android:id="@+id/tvPurchaseAt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="Pembelian pada: -"
             android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
 
         <TextView

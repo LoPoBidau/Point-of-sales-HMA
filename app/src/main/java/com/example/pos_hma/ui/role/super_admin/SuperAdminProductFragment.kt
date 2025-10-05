@@ -1,6 +1,7 @@
 package com.example.pos_hma.ui.role.super_admin
 
 import android.app.DatePickerDialog
+import android.app.TimePickerDialog
 import android.net.Uri
 import android.os.Bundle
 import android.text.Editable
@@ -26,7 +27,6 @@ import com.example.pos_hma.data.InventoryMovement
 import com.example.pos_hma.data.Product
 import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.databinding.*
-import com.example.pos_hma.worker.ScheduledStockPostingWorker
 import com.example.pos_hma.util.StockNotificationHelper
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
@@ -215,7 +215,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 catFilterList.clear(); catFilterList.addAll(list)
                 activeCategoryIds = list.map { it.id }.toMutableSet()
                 val names = mutableListOf("Semua").apply { addAll(list.map { it.name }) }
-                b.actCategory.setSimpleItems(names.toTypedArray())
+
+                // PERBAIKAN: Gunakan ArrayAdapter
+                val categoryAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, names)
+                b.actCategory.setAdapter(categoryAdapter)
+
                 val idx = if (prevId != null) list.indexOfFirst { it.id == prevId } else -1
                 if (idx >= 0) {
                     b.actCategory.setText(names[idx + 1], false)
@@ -261,7 +265,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             catFilterList.clear(); catFilterList.addAll(activeList)
             val names = mutableListOf("Semua").apply { addAll(activeList.map { it.name }) }
             val b = _binding ?: return@addSnapshotListener
-            b.actCategory.setSimpleItems(names.toTypedArray())
+
+            // PERBAIKAN: Gunakan ArrayAdapter
+            val categoryAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, names)
+            b.actCategory.setAdapter(categoryAdapter)
+
             val idx = if (prevId != null) activeList.indexOfFirst { it.id == prevId } else -1
             if (idx >= 0) {
                 b.actCategory.setText(names[idx + 1], false)
@@ -704,7 +712,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             keyListener = null
             isCursorVisible = false
             setOnClickListener { showDropDown() }
-            setSimpleItems(arrayOf("Barang", "Jasa", "Barang & Jasa"))
+            // PERBAIKAN: Gunakan ArrayAdapter
+            val types = arrayOf("Barang", "Jasa", "Barang & Jasa")
+            val typeAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, types)
+            setAdapter(typeAdapter)
+
             val def = when (defaultType.trim().lowercase()) {
                 "barang", "goods" -> "Barang"
                 "jasa", "service" -> "Jasa"
@@ -870,6 +882,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .setPositiveButton("Tutup", null)
             .show()
     }
+
+    // =========================================================================================
+    // MODIFIED SECTION: Pending Queue Dialog Logic
+    // =========================================================================================
 
     private fun openPendingQueueDialog(p: Product) {
         // Inflate layout baru tanpa view binding karena ini file baru
@@ -1334,6 +1350,15 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
         data class SupplierRow(val id: String, val name: String, val term: Long)
         val suppliers = mutableListOf<SupplierRow>()
+        var selectedSupplier: SupplierRow? = null
+        receiveBinding.actSupplier.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun afterTextChanged(s: Editable?) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                selectedSupplier = null
+                receiveBinding.tilSupplier.error = null
+            }
+        })
         db.collection("suppliers").get().addOnSuccessListener { snap ->
             suppliers.clear()
             suppliers.addAll(
@@ -1346,7 +1371,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 }.sortedBy { it.name.lowercase() }
             )
             val names = suppliers.map { it.name }.toTypedArray()
-            receiveBinding.actSupplier.setSimpleItems(names)
+            // PERBAIKAN: Gunakan ArrayAdapter
+            val supplierAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, names)
+            receiveBinding.actSupplier.setAdapter(supplierAdapter)
         }
 
         if (p.lastCost > 0) receiveBinding.etUnitCost.setText(rupiah(p.lastCost))
@@ -1355,8 +1382,15 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         receiveBinding.etSalePrice.attachRupiahFormatter()
 
         val localeId = Locale("in", "ID")
-        val dfIso = SimpleDateFormat("yyyy-MM-dd", localeId).apply { isLenient = false }
-        var selectedDue: Date? = null
+        val dfDate = SimpleDateFormat("yyyy-MM-dd", localeId).apply { isLenient = false }
+        val dfTime = SimpleDateFormat("HH:mm", localeId).apply { isLenient = false }
+        val selectedDateTimeCal = Calendar.getInstance().apply {
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+            add(Calendar.MINUTE, 5)
+        }
+        receiveBinding.etDueDate.setText(dfDate.format(selectedDateTimeCal.time))
+        receiveBinding.etDueTime.setText(dfTime.format(selectedDateTimeCal.time))
 
         fun refreshSalePriceUi() {
             val update = receiveBinding.rbUpdateSalePrice.isChecked
@@ -1373,10 +1407,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         }
 
         fun refreshModeUi() {
-            val actual = receiveBinding.rbActual.isChecked
-            receiveBinding.groupPurchase.visibility = if (actual) View.GONE else View.VISIBLE
-            receiveBinding.tvActualInfo.visibility = if (actual) View.VISIBLE else View.GONE
-            if (actual) {
+            val isInvoiceMode = receiveBinding.rbInvoice.isChecked
+            receiveBinding.groupPurchase.visibility = if (isInvoiceMode) View.VISIBLE else View.GONE
+            receiveBinding.tvActualInfo.visibility = if (isInvoiceMode) View.GONE else View.VISIBLE
+            if (!isInvoiceMode) {
                 receiveBinding.rgSalePriceMode.check(receiveBinding.rbKeepSalePrice.id)
             }
             refreshSalePriceUi()
@@ -1387,32 +1421,63 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         receiveBinding.rbActual.isChecked = true
         refreshModeUi()
 
+        // Fungsi untuk menampilkan Date Picker
         fun showDatePicker() {
-            val cal = Calendar.getInstance()
-            (selectedDue ?: Date()).let { cal.time = it }
             DatePickerDialog(requireContext(), { _, year, month, dayOfMonth ->
-                val picked = Calendar.getInstance().apply {
-                    set(Calendar.YEAR, year)
-                    set(Calendar.MONTH, month)
-                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
-                    set(Calendar.HOUR_OF_DAY, 23)
-                    set(Calendar.MINUTE, 59)
-                    set(Calendar.SECOND, 59)
+                selectedDateTimeCal.set(Calendar.YEAR, year)
+                selectedDateTimeCal.set(Calendar.MONTH, month)
+                selectedDateTimeCal.set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                selectedDateTimeCal.set(Calendar.SECOND, 0)
+                selectedDateTimeCal.set(Calendar.MILLISECOND, 0)
+                receiveBinding.tilDueDate.error = null
+                receiveBinding.tilDueTime.error = null
+                receiveBinding.etDueDate.setText(dfDate.format(selectedDateTimeCal.time))
+            },
+                selectedDateTimeCal.get(Calendar.YEAR),
+                selectedDateTimeCal.get(Calendar.MONTH),
+                selectedDateTimeCal.get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+        receiveBinding.etDueDate.setOnClickListener { showDatePicker() }
+
+        // Fungsi untuk menampilkan Time Picker
+        fun showTimePicker() {
+            TimePickerDialog(requireContext(), { _, hourOfDay, minute ->
+                selectedDateTimeCal.set(Calendar.HOUR_OF_DAY, hourOfDay)
+                selectedDateTimeCal.set(Calendar.MINUTE, minute)
+                selectedDateTimeCal.set(Calendar.SECOND, 0)
+                selectedDateTimeCal.set(Calendar.MILLISECOND, 0)
+                receiveBinding.tilDueTime.error = null
+                receiveBinding.tilDueDate.error = null
+                receiveBinding.etDueTime.setText(dfTime.format(selectedDateTimeCal.time))
+            },
+                selectedDateTimeCal.get(Calendar.HOUR_OF_DAY),
+                selectedDateTimeCal.get(Calendar.MINUTE),
+                true // 24-hour format
+            ).show()
+        }
+        receiveBinding.etDueTime.setOnClickListener { showTimePicker() }
+
+        receiveBinding.actSupplier.setOnItemClickListener { _, _, position, _ ->
+            val chosenSupplier = suppliers.getOrNull(position)
+            selectedSupplier = chosenSupplier
+            if (chosenSupplier != null) {
+                receiveBinding.tilSupplier.error = null
+                val cal = Calendar.getInstance().apply {
+                    time = Date()
+                    add(Calendar.DAY_OF_YEAR, chosenSupplier.term.toInt())
+                    set(Calendar.HOUR_OF_DAY, selectedDateTimeCal.get(Calendar.HOUR_OF_DAY))
+                    set(Calendar.MINUTE, selectedDateTimeCal.get(Calendar.MINUTE))
+                    set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                selectedDue = picked.time
-                receiveBinding.etDueDate.setText(dfIso.format(picked.time))
-            }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH)).show()
+                selectedDateTimeCal.time = cal.time
+                receiveBinding.tilDueDate.error = null
+                receiveBinding.tilDueTime.error = null
+                receiveBinding.etDueDate.setText(dfDate.format(selectedDateTimeCal.time))
+                receiveBinding.etDueTime.setText(dfTime.format(selectedDateTimeCal.time))
+            }
         }
-
-        receiveBinding.etDueDate.setOnClickListener { showDatePicker() }
-        receiveBinding.etDueDate.setOnLongClickListener {
-            selectedDue = null
-            receiveBinding.etDueDate.text?.clear()
-            receiveBinding.tilDueDate.error = null
-            true
-        }
-
         val receiveDlg = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Tambah stok: ${p.name}")
             .setView(receiveBinding.root)
@@ -1420,8 +1485,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .setPositiveButton("Simpan", null)
             .create()
 
-        currentDialog?.dismiss()
-        currentDialog = receiveDlg
+        currentDialog?.dismiss(); currentDialog = receiveDlg
         receiveDlg.setOnDismissListener { currentDialog = null }
 
         fun promptPriceDialog(force: Boolean, onOk: (Long, Long) -> Unit) {
@@ -1441,8 +1505,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             priceDlg.setOnShowListener {
                 val save = priceDlg.getButton(AlertDialog.BUTTON_POSITIVE)
                 save.setOnClickListener {
-                    priceBinding.tilUnitCost.error = null
-                    priceBinding.tilNewSalePrice.error = null
+                    priceBinding.tilUnitCost.error = null; priceBinding.tilNewSalePrice.error = null
                     val unitCost = priceBinding.etUnitCost.text.asCleanLongOrNull() ?: 0L
                     val salePrice = priceBinding.etNewSalePrice.text.asCleanLongOrNull() ?: 0L
                     var ok = true
@@ -1461,16 +1524,14 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 receiveBinding.tilQty.error = null
                 val qty = receiveBinding.etQty.text?.toString()?.toLongOrNull() ?: 0L
                 if (qty <= 0) {
-                    receiveBinding.tilQty.error = "Qty wajib"
-                    return@setOnClickListener
+                    receiveBinding.tilQty.error = "Qty wajib"; return@setOnClickListener
                 }
 
                 if (receiveBinding.rbActual.isChecked) {
                     receiveDlg.dismiss()
                     val baseCost = p.lastCost.takeIf { it > 0 } ?: 0L
                     val baseSale = p.salePrice.takeIf { it > 0 } ?: 0L
-                    val needPrice = baseCost <= 0 || baseSale <= 0
-                    if (needPrice) {
+                    if (baseCost <= 0 || baseSale <= 0) {
                         promptPriceDialog(force = true) { unitCost, sale ->
                             addActualStock(p, qty, unitCost, sale, anchorView)
                         }
@@ -1490,69 +1551,87 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
                 receiveBinding.tilUnitCost.error = null
                 receiveBinding.tilDueDate.error = null
+                receiveBinding.tilDueTime.error = null
+                receiveBinding.tilSupplier.error = null
 
                 val unitCost = receiveBinding.etUnitCost.text.asCleanLongOrNull()
                 if (unitCost == null || unitCost <= 0) {
-                    receiveBinding.tilUnitCost.error = "Wajib"
-                    return@setOnClickListener
+                    receiveBinding.tilUnitCost.error = "Wajib"; return@setOnClickListener
                 }
-
-                val unitCostValue = unitCost
 
                 val supplierInput = receiveBinding.actSupplier.text?.toString()?.trim().orEmpty()
-                val chosenSupplier = suppliers.firstOrNull { it.name.equals(supplierInput, ignoreCase = true) }
-                val supplierId = chosenSupplier?.id
-                val supplierName = chosenSupplier?.name ?: supplierInput
+                if (supplierInput.isBlank()) {
+                    receiveBinding.tilSupplier.error = "Wajib"; return@setOnClickListener
+                }
+                val chosenSupplier = selectedSupplier?.takeIf { it.name.equals(supplierInput, ignoreCase = true) }
+                    ?: suppliers.firstOrNull { it.name.equals(supplierInput, ignoreCase = true) }
+                if (chosenSupplier == null) {
+                    receiveBinding.tilSupplier.error = "Pilih supplier dari daftar"; return@setOnClickListener
+                }
+                selectedSupplier = chosenSupplier
+                receiveBinding.tilSupplier.error = null
 
-                var dueDate: Date? = selectedDue
-                if (dueDate == null) {
-                    val dueText = receiveBinding.etDueDate.text?.toString()?.trim().orEmpty()
-                    if (dueText.isNotEmpty()) {
-                        try {
-                            val parsed = dfIso.parse(dueText) ?: throw IllegalArgumentException()
-                            dueDate = parsed
-                        } catch (_: Exception) {
-                            receiveBinding.tilDueDate.error = "Format tanggal salah (yyyy-MM-dd)"
-                            return@setOnClickListener
-                        }
-                    }
+                val dueDateText = receiveBinding.etDueDate.text?.toString()?.trim().orEmpty()
+                if (dueDateText.isBlank()) {
+                    receiveBinding.tilDueDate.error = "Wajib"; return@setOnClickListener
                 }
-                if (dueDate == null && chosenSupplier != null && chosenSupplier.term > 0) {
-                    val cal = Calendar.getInstance()
-                    cal.time = Date()
-                    cal.add(Calendar.DAY_OF_YEAR, chosenSupplier.term.toInt())
-                    cal.set(Calendar.HOUR_OF_DAY, 23)
-                    cal.set(Calendar.MINUTE, 59)
-                    cal.set(Calendar.SECOND, 59)
-                    cal.set(Calendar.MILLISECOND, 0)
-                    dueDate = cal.time
+                val baseDate = try {
+                    dfDate.parse(dueDateText)
+                } catch (_: Exception) {
+                    receiveBinding.tilDueDate.error = "Format tanggal salah (yyyy-MM-dd)"; return@setOnClickListener
                 }
+
+                val dueTimeText = receiveBinding.etDueTime.text?.toString()?.trim().orEmpty()
+                if (dueTimeText.isBlank()) {
+                    receiveBinding.tilDueTime.error = "Wajib"; return@setOnClickListener
+                }
+                val timeParts = dueTimeText.split(":")
+                val hour = timeParts.getOrNull(0)?.toIntOrNull()
+                val minute = timeParts.getOrNull(1)?.toIntOrNull()
+                if (timeParts.size != 2 || hour == null || minute == null || hour !in 0..23 || minute !in 0..59) {
+                    receiveBinding.tilDueTime.error = "Format jam salah (HH:mm)"; return@setOnClickListener
+                }
+
+                val dueCalendar = Calendar.getInstance().apply {
+                    time = baseDate
+                    set(Calendar.HOUR_OF_DAY, hour)
+                    set(Calendar.MINUTE, minute)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val dueDate = dueCalendar.time
+                if (dueDate.time <= System.currentTimeMillis()) {
+                    receiveBinding.tilDueTime.error = "Waktu harus lebih dari sekarang"; return@setOnClickListener
+                }
+                receiveBinding.tilDueDate.error = null
+                receiveBinding.tilDueTime.error = null
+                selectedDateTimeCal.time = dueDate
+
 
                 val salePrice = if (receiveBinding.rbUpdateSalePrice.isChecked) {
                     val entered = receiveBinding.etSalePrice.text.asCleanLongOrNull()
                     if (entered == null || entered <= 0) {
-                        receiveBinding.tilSalePrice.error = "Wajib"
-                        return@setOnClickListener
+                        receiveBinding.tilSalePrice.error = "Wajib"; return@setOnClickListener
                     }
                     receiveBinding.tilSalePrice.error = null
                     entered
                 } else {
                     val current = p.salePrice.takeIf { it > 0 } ?: 0L
-                    if (current > 0) current else unitCostValue
+                    if (current > 0) current else unitCost
                 }
 
                 receiveDlg.dismiss()
-                val dueTs = dueDate?.let { com.google.firebase.Timestamp(it) }
+                val dueTs = com.google.firebase.Timestamp(dueDate)
                 receiveStockAndUpdatePrice(
                     sku = p.sku.ifBlank { p.id },
                     productName = p.name,
                     qty = qty,
-                    unitCost = unitCostValue,
+                    unitCost = unitCost,
                     newSalePrice = salePrice,
                     dueDate = dueTs,
-                    supplierName = supplierName.ifBlank { null },
-                    supplierId = supplierId,
-                    supplierTermDays = chosenSupplier?.term,
+                    supplierName = chosenSupplier.name,
+                    supplierId = chosenSupplier.id,
+                    supplierTermDays = chosenSupplier.term,
                     anchorView = anchorView
                 )
             }
@@ -1560,6 +1639,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
         receiveDlg.show()
     }
+
 
     private fun addActualStock(
         product: Product,
@@ -1740,7 +1820,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     "termDays" to termDays,
                     "dueReminderSent" to false,
                     "createdAt" to now,
-                    "updatedAt" to now
+                    "updatedAt" to now,
+                    "scheduledAt" to scheduledTimestamp
                 )
                 if (delayStock) {
                     purchaseData["stockPosted"] = false
@@ -1853,15 +1934,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     currentDialog?.dismiss()
                     val locale = Locale("in", "ID")
                     val humanDate = try {
-                        SimpleDateFormat("dd MMM yyyy", locale).format(scheduledTimestamp.toDate())
+                        SimpleDateFormat("dd MMM yyyy HH:mm", locale).format(scheduledTimestamp.toDate())
                     } catch (_: Throwable) {
-                        SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(scheduledTimestamp.toDate())
+                        SimpleDateFormat("dd MMM yyyy HH:mm", Locale.getDefault()).format(scheduledTimestamp.toDate())
                     }
                     toast("Stok akan otomatis ditambah pada $humanDate. Invoice ${result.invoiceNo}.")
-                    pendingDocument?.let { doc ->
-                        val ctx = requireContext().applicationContext
-                        ScheduledStockPostingWorker.enqueue(ctx, doc.id, scheduledTimestamp)
-                    }
                 } else {
                     val staged = result.stagedSalePrice
                     val base = if (staged != null && staged > 0) {
@@ -1897,23 +1974,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     }
 
     private fun shouldDelayStockPosting(dueTs: com.google.firebase.Timestamp?): Boolean {
-        dueTs ?: return false
-        val dueDate = dueTs.toDate()
-        if (dueDate.time <= System.currentTimeMillis()) return false
-        val dueCal = Calendar.getInstance().apply {
-            time = dueDate
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val todayCal = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        return dueCal.after(todayCal)
+        val dueDate = dueTs?.toDate() ?: return false
+        val nowMillis = System.currentTimeMillis()
+        val dueMillis = dueDate.time
+        return dueMillis > nowMillis
     }
 
     private fun animateStockReceiveSuccess(anchorView: View?, targetMenuId: Int = R.id.superAdminReportFragment) {
@@ -2102,3 +2166,4 @@ private class ProductsAdapter(
         h.btnDelete.setOnClickListener { onDelete(product) }
     }
 }
+

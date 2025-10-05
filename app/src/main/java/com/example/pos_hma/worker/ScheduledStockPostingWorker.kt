@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.workDataOf
@@ -87,16 +88,14 @@ class ScheduledStockPostingWorker(
             return Result.success()
         }
 
-        // Dihapus: Pengecekan waktu yang terlalu ketat
-        /*
         val nowMillis = System.currentTimeMillis()
-        val dueMillis = scheduledTs.toDate().time
-        if (dueMillis - nowMillis > TimeUnit.MINUTES.toMillis(1)) {
-            Log.d(TAG, "Jadwal $docId masih ${dueMillis - nowMillis} ms ke depan, jadwalkan ulang")
+        val scheduledMillis = scheduledTs.toDate().time
+        if (scheduledMillis > nowMillis) {
+            val remaining = scheduledMillis - nowMillis
+            Log.d(TAG, "Jadwal $docId masih $remaining ms ke depan, jadwalkan ulang")
             enqueue(applicationContext, docId, scheduledTs)
             return Result.success()
         }
-        */
 
         val sku = snapshot.getString("sku").orEmpty()
         if (sku.isBlank()) {
@@ -234,7 +233,7 @@ class ScheduledStockPostingWorker(
                 qty,
                 scheduledTs,
                 sku,
-                purchaseId.takeIf { it.isNotBlank() }
+                invoiceNo.takeIf { it.isNotBlank() }
             )
         } else {
             StockNotificationHelper.notifyStockPosted(
@@ -245,7 +244,7 @@ class ScheduledStockPostingWorker(
                 qty,
                 scheduledTs,
                 sku,
-                purchaseId.takeIf { it.isNotBlank() }
+                invoiceNo.takeIf { it.isNotBlank() }
             )
         }
 
@@ -268,11 +267,14 @@ class ScheduledStockPostingWorker(
         fun enqueue(context: Context, docId: String, scheduledAt: Timestamp) {
             val delay = maxOf(0L, scheduledAt.toDate().time - System.currentTimeMillis())
             val data = workDataOf(KEY_DOC_ID to docId)
-            val request = OneTimeWorkRequestBuilder<ScheduledStockPostingWorker>()
+            val builder = OneTimeWorkRequestBuilder<ScheduledStockPostingWorker>()
                 .setInputData(data)
                 .setInitialDelay(delay, TimeUnit.MILLISECONDS)
                 .addTag("pending_stock_$docId")
-                .build()
+            if (delay == 0L) {
+                builder.setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            }
+            val request = builder.build()
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "pending_stock_$docId",
                 ExistingWorkPolicy.REPLACE,
@@ -281,3 +283,4 @@ class ScheduledStockPostingWorker(
         }
     }
 }
+

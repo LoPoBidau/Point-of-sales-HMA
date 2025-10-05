@@ -1,11 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:id="@+id/rootScroll"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:tag="dialog_receive_stock">
+    android:layout_height="wrap_content">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -17,177 +14,176 @@
             android:id="@+id/tvProductName"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingBottom="8dp"
-            android:text="Product"
-            android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6"
-            android:textColor="?attr/colorOnBackground"
+            android:text="Nama Produk"
+            android:textAppearance="?attr/textAppearanceTitleMedium"
             android:textStyle="bold" />
-
-        <RadioGroup
-            android:id="@+id/rgMode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:orientation="vertical">
-
-            <com.google.android.material.radiobutton.MaterialRadioButton
-                android:id="@+id/rbActual"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:text="Stok Barang Aktual" />
-
-            <com.google.android.material.radiobutton.MaterialRadioButton
-                android:id="@+id/rbPurchase"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Pembelian Barang" />
-        </RadioGroup>
 
         <com.google.android.material.textfield.TextInputLayout
             android:id="@+id/tilQty"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="Qty diterima">
+            android:layout_marginTop="16dp"
+            android:hint="Jumlah Stok Masuk">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/etQty"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:inputType="number"
-                android:maxLines="1" />
+                android:inputType="number" />
         </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Mode Penerimaan Stok"
+            android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+        <RadioGroup
+            android:id="@+id/rgMode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <RadioButton
+                android:id="@+id/rbActual"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Stok Aktual (Langsung Masuk)" />
+
+            <RadioButton
+                android:id="@+id/rbInvoice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Terima Stok (Invoice)" />
+        </RadioGroup>
 
         <TextView
             android:id="@+id/tvActualInfo"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Stok akan langsung bertambah tanpa catatan pembelian."
-            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
-            android:textColor="?attr/colorOnSurfaceVariant" />
+            android:text="Harga beli &amp; jual akan ditanyakan setelah klik Simpan jika belum ada."
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:visibility="gone" />
 
         <LinearLayout
             android:id="@+id/groupPurchase"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:orientation="vertical"
             android:visibility="gone">
 
             <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/tilUnitCost"
+                android:id="@+id/tilSupplier"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Harga beli per unit (Rp)">
+                android:layout_marginTop="8dp"
+                android:hint="Supplier">
+
+                <AutoCompleteTextView
+                    android:id="@+id/actSupplier"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilDueDate"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="1"
+                    android:hint="Tgl Jatuh Tempo">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etDueDate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:focusable="false"
+                        android:inputType="none" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/tilDueTime"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:hint="Jam Posting">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etDueTime"
+                        android:layout_width="wrap_content"
+                        android:minWidth="100dp"
+                        android:clickable="true"
+                        android:focusable="false"
+                        android:inputType="none"
+                        android:layout_height="wrap_content"/>
+                </com.google.android.material.textfield.TextInputLayout>
+            </LinearLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tilUnitCost"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:hint="Harga Beli / Unit (Rp)">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etUnitCost"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:maxLines="1" />
+                    android:inputType="number" />
             </com.google.android.material.textfield.TextInputLayout>
-
-            <TextView
-                android:id="@+id/tvInvoiceInfo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="Nomor invoice akan dibuat otomatis saat disimpan."
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
-                android:textColor="?attr/colorOnSurfaceVariant" />
-
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/tilSupplier"
-                style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="Supplier (pilih / ketik)">
-
-                <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                    android:id="@+id/actSupplier"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="text"
-                    android:maxLines="1" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/tilDueDate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:hint="Jatuh tempo (yyyy-MM-dd)">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/etDueDate"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:clickable="true"
-                    android:focusable="false"
-                    android:inputType="text"
-                    android:maxLines="1" />
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <TextView
-                android:id="@+id/tvDueDateHint"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Kosongkan untuk pakai termin pembayaran supplier"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
-                android:textColor="?attr/colorOnSurfaceVariant" />
-
-        
-            <TextView
-                android:id="@+id/tvSalePriceSection"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Harga jual"
-                android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
-                android:textStyle="bold" />
 
             <RadioGroup
                 android:id="@+id/rgSalePriceMode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:checkedButton="@id/rbKeepSalePrice"
                 android:orientation="vertical">
 
-                <com.google.android.material.radiobutton.MaterialRadioButton
+                <RadioButton
                     android:id="@+id/rbKeepSalePrice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:checked="true"
-                    android:text="Gunakan harga jual sekarang" />
+                    android:text="Gunakan harga jual saat ini" />
 
-                <com.google.android.material.radiobutton.MaterialRadioButton
+                <RadioButton
                     android:id="@+id/rbUpdateSalePrice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Isi harga jual baru" />
+                    android:text="Perbarui harga jual" />
             </RadioGroup>
 
             <com.google.android.material.textfield.TextInputLayout
                 android:id="@+id/tilSalePrice"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:enabled="false"
-                android:hint="Harga jual (Rp)">
+                android:layout_marginStart="32dp"
+                android:hint="Harga Jual Baru / Unit (Rp)">
 
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etSalePrice"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:enabled="false"
-                    android:inputType="number"
-                    android:maxLines="1" />
+                    android:inputType="number" />
             </com.google.android.material.textfield.TextInputLayout>
 
         </LinearLayout>
-
     </LinearLayout>
 </ScrollView>
+

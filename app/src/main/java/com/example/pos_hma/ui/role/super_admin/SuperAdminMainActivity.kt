@@ -1,4 +1,4 @@
-﻿package com.example.pos_hma.ui.role.super_admin
+package com.example.pos_hma.ui.role.super_admin
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -29,7 +29,6 @@ import androidx.navigation.NavOptions
 import com.example.pos_hma.R
 import com.example.pos_hma.databinding.ActivitySuperAdminMainBinding
 import com.example.pos_hma.ui.login.LoginActivity
-import com.example.pos_hma.worker.ScheduledStockPostingWorker
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
 import com.example.pos_hma.utils.NetworkUtil
@@ -218,7 +217,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
 
         tvEmail.text = user.email ?: "-"
 
-        tvRole.text = "Loadingâ€¦"
+        tvRole.text = "Loading…"
         user.getIdToken(false)
             .addOnSuccessListener { tok ->
                 val r = normalize(tok.claims["role"] as? String)
@@ -547,9 +546,12 @@ class SuperAdminMainActivity : AppCompatActivity() {
                 .whereEqualTo("status", "pending")
                 .get()
                 .addOnSuccessListener { snap ->
-                    for (doc in snap.documents) {
-                        val ts = doc.getTimestamp("scheduledAt") ?: doc.getTimestamp("dueDate") ?: continue
-                        ScheduledStockPostingWorker.enqueue(applicationContext, doc.id, ts)
+                    val pendingCount = snap.size()
+                    if (pendingCount > 0) {
+                        Log.d(
+                            "SuperAdminMainActivity",
+                            "Server scheduler akan memproses $pendingCount pending stock secara otomatis"
+                        )
                     }
                 }
                 .addOnFailureListener { e ->
@@ -566,5 +568,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
         } else super.onSupportNavigateUp()
     }
 }
+
+
 
 

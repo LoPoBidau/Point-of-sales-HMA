@@ -10,9 +10,9 @@
               <option name="connection">
                 <ConnectionSetting>
                   <option name="appId" value="com.example.pos_hma" />
-                  <option name="mobileSdkAppId" value="1:342812088855:android:3c94e8d7d13def75e0da52" />
-                  <option name="projectId" value="washcarhma-pos" />
-                  <option name="projectNumber" value="342812088855" />
+                  <option name="mobileSdkAppId" value="1:304107903959:android:573dabc4c18129c8644992" />
+                  <option name="projectId" value="complete-octane-470215-f6" />
+                  <option name="projectNumber" value="304107903959" />
                 </ConnectionSetting>
               </option>
               <option name="signal" value="SIGNAL_UNSPECIFIED" />

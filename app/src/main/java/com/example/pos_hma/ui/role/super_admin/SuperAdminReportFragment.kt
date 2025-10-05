@@ -7,6 +7,7 @@ import android.content.res.ColorStateList
 import android.view.ViewGroup
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.util.Log
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -22,7 +23,6 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
-import com.example.pos_hma.worker.ScheduledStockPostingWorker
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -430,6 +430,7 @@ class SuperAdminReportFragment : Fragment() {
             val nf = NumberFormat.getInstance(localeId)
             val dfDate = SimpleDateFormat("dd MMM yyyy", localeId)
             val dfDateTime = SimpleDateFormat("dd MMM yyyy HH:mm", localeId)
+            val dfTime = SimpleDateFormat("HH:mm", localeId)
 
 
             clearPurchaseListener()
@@ -463,6 +464,7 @@ class SuperAdminReportFragment : Fragment() {
                 val supplierName: String,
                 val productSummary: String,
                 val dueDate: Date?,
+                val scheduledAt: Date?,
                 val createdAt: Date?,
                 val totalCost: Long,
                 val items: List<Map<String, Any?>>,
@@ -551,6 +553,7 @@ class SuperAdminReportFragment : Fragment() {
                 val invoice = doc.getString("invoiceNo")?.takeIf { it.isNotBlank() } ?: "-"
                 val supplier = doc.getString("supplierName")?.takeIf { it.isNotBlank() } ?: "-"
                 val due = doc.getTimestamp("dueDate")?.toDate()
+                val scheduled = doc.getTimestamp("scheduledAt")?.toDate() ?: due
                 val created = doc.getTimestamp("date")?.toDate()
                 val total = doc.getLong("totalCost") ?: items.fold(0L) { acc, item ->
                     val qty = (item["qty"] as? Number)?.toLong() ?: 0L
@@ -566,6 +569,7 @@ class SuperAdminReportFragment : Fragment() {
                     supplierName = supplier,
                     productSummary = productSummary,
                     dueDate = due,
+                    scheduledAt = scheduled,
                     createdAt = created,
                     totalCost = total,
                     items = items,
@@ -584,8 +588,9 @@ class SuperAdminReportFragment : Fragment() {
                 val detailBinding = DialogPurchaseDetailBinding.inflate(LayoutInflater.from(ctx))
                 detailBinding.tvDialogInvoice.text = row.invoiceNo
                 detailBinding.tvDialogSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
-                detailBinding.tvDialogDate.text = "Tanggal: ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}"
+                detailBinding.tvDialogDate.text = "Pembelian pada: ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}"
                 detailBinding.tvDialogDue.text = "Jatuh Tempo: ${row.dueDate?.let { dfDate.format(it) } ?: "-"}"
+                detailBinding.tvDialogDueTime.text = "Jam Jatuh Tempo: ${row.scheduledAt?.let { dfTime.format(it) } ?: "-"}"
                 detailBinding.tvDialogTotal.text = "Total: Rp ${nf.format(row.totalCost)}"
                 detailBinding.tvDialogStatusTitle.text = row.statusTitle
                 detailBinding.tvDialogStatusDetail.text = row.statusDetail
@@ -644,8 +649,12 @@ class SuperAdminReportFragment : Fragment() {
 
                     b.tvSupplier.text = if (row.supplierName.isBlank()) "Supplier: -" else "Supplier: ${row.supplierName}"
                     b.tvProduct.text = "Barang: ${row.productSummary}"
-                    val dueText = row.dueDate?.let { dfDate.format(it) } ?: "-"
-                    b.tvDue.text = "Jatuh Tempo: $dueText"
+                    val dueDateText = row.dueDate?.let { dfDate.format(it) } ?: "-"
+                    val dueTimeText = row.scheduledAt?.let { dfTime.format(it) } ?: "-"
+                    val purchaseAtText = row.createdAt?.let { dfDateTime.format(it) } ?: "-"
+                    b.tvDueDate.text = "Jatuh Tempo: $dueDateText"
+                    b.tvDueTime.text = "Jam Jatuh Tempo: $dueTimeText"
+                    b.tvPurchaseAt.text = "Pembelian pada: $purchaseAtText"
                     b.tvTotal.text = "Total: Rp ${nf.format(row.totalCost)}"
 
                     b.root.setOnClickListener { showDetail(row) }
@@ -690,14 +699,12 @@ class SuperAdminReportFragment : Fragment() {
 
             fun ensureDueAutoPosting(source: List<Row>) {
                 if (source.isEmpty()) return
-                val appCtx = holder.itemView.context.applicationContext
-                val now = System.currentTimeMillis()
-                source.forEach { row ->
-                    val pendingId = row.pendingStockId
-                    val due = row.dueDate
-                    if (!row.stockPosted && !pendingId.isNullOrBlank() && due != null && due.time <= now && ensuredPendingIds.add(pendingId)) {
-                        ScheduledStockPostingWorker.enqueue(appCtx, pendingId, Timestamp(due))
-                    }
+                val pendingAuto = source.count { !it.stockPosted && !it.pendingStockId.isNullOrBlank() }
+                if (pendingAuto > 0) {
+                    Log.d(
+                        "SuperAdminReport",
+                        "Menunggu scheduler server mem-posting $pendingAuto pembelian"
+                    )
                 }
             }
 
@@ -899,3 +906,4 @@ class SuperAdminReportFragment : Fragment() {
 
     }
 }
+

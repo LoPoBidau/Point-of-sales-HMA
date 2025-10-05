@@ -8,7 +8,6 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
-import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 object PendingStockProcessor {
@@ -86,10 +85,10 @@ object PendingStockProcessor {
         }
 
         val nowMillis = System.currentTimeMillis()
-        val dueMillis = scheduledTs.toDate().time
-        if (dueMillis - nowMillis > TimeUnit.MINUTES.toMillis(1)) {
-            Log.d(TAG, "Jadwal $docId masih ${dueMillis - nowMillis} ms ke depan, jadwalkan ulang ($source)")
-            ScheduledStockPostingWorker.enqueue(context, docId, scheduledTs)
+        val scheduledMillis = scheduledTs.toDate().time
+        if (scheduledMillis > nowMillis) {
+            val remaining = scheduledMillis - nowMillis
+            Log.d(TAG, "Jadwal $docId masih $remaining ms ke depan, menunggu scheduler server ($source)")
             return Outcome.SUCCESS
         }
 
@@ -266,8 +265,9 @@ object PendingStockProcessor {
     fun reenqueueIfFuture(context: Context, docId: String, ts: Timestamp?) {
         ts ?: return
         val delay = max(0L, ts.toDate().time - System.currentTimeMillis())
-        if (delay > TimeUnit.MINUTES.toMillis(1)) {
-            ScheduledStockPostingWorker.enqueue(context, docId, ts)
+        if (delay > 0L) {
+            Log.d(TAG, "Server akan memproses $docId pada ${ts.toDate()}")
         }
     }
 }
+
