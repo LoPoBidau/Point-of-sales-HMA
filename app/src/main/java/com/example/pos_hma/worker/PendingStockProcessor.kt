@@ -3,7 +3,7 @@ package com.example.pos_hma.worker
 import android.content.Context
 import android.util.Log
 import com.example.pos_hma.data.BatchState
-import com.example.pos_hma.util.StockNotificationHelper
+import com.example.pos_hma.utils.StockNotificationHelper
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore

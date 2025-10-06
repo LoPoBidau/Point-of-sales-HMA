@@ -1,4 +1,4 @@
-package com.example.pos_hma.util
+package com.example.pos_hma.utils
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -23,7 +23,8 @@ object StockNotificationHelper {
 
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ?: return
         val existing = manager.getNotificationChannel(CHANNEL_ID)
         if (existing != null) return
         val channel = NotificationChannel(
@@ -85,7 +86,13 @@ object StockNotificationHelper {
         isHeld: Boolean = false // Ditambahkan: Parameter untuk menandai stok ditahan
     ): Boolean {
         val notifier = NotificationManagerCompat.from(context)
-        if (!notifier.areNotificationsEnabled()) return false
+        if (!notifier.areNotificationsEnabled()) {
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.getSharedPreferences("notif_prefs", Context.MODE_PRIVATE)
+                    .edit().putBoolean("needs_notif_permission", true).apply()
+            }
+            return false
+        }
 
         ensureChannel(context)
 
@@ -151,7 +158,13 @@ object StockNotificationHelper {
             .set(data, SetOptions.merge())
 
         val notifier = NotificationManagerCompat.from(context)
-        if (!notifier.areNotificationsEnabled()) return false
+        if (!notifier.areNotificationsEnabled()) {
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.getSharedPreferences("notif_prefs", Context.MODE_PRIVATE)
+                    .edit().putBoolean("needs_notif_permission", true).apply()
+            }
+            return false
+        }
         ensureChannel(context)
         val pendingIntent = NavDeepLinkBuilder(context)
             .setGraph(R.navigation.nav_super_admin)

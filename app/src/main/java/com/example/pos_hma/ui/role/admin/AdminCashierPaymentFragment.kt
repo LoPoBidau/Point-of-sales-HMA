@@ -13,7 +13,7 @@ import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierPaymentBinding
 import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
-import com.example.pos_hma.util.StockNotificationHelper
+import com.example.pos_hma.utils.StockNotificationHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue

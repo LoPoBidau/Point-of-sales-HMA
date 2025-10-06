@@ -8,6 +8,8 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.Menu
@@ -72,7 +74,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
         }
 
         setSupportActionBar(binding.toolbar)
-        maybeRequestPostNotificationsFirstRun()
+        maybeRequestPostNotifications()
 
         ensureRoleAllowedOrExit(setOf("owner", "super-admin", "superadmin")) {
             val host = supportFragmentManager.findFragmentById(R.id.nav_host_owner) as NavHostFragment
@@ -155,6 +157,18 @@ class SuperAdminMainActivity : AppCompatActivity() {
         maybeNotifyMonthlySummary()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            val pref = getSharedPreferences("notif_prefs", MODE_PRIVATE)
+            val flagged = pref.getBoolean("needs_notif_permission", false)
+            if (!canPostNotifications() || flagged) {
+                pref.edit().putBoolean("needs_notif_permission", false).apply()
+                maybeRequestPostNotifications(force = true)
+            }
+        }
+    }
+
     override fun onDestroy() {
         regPending?.remove(); regPending = null
         regNotif?.remove(); regNotif = null
@@ -217,7 +231,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
 
         tvEmail.text = user.email ?: "-"
 
-        tvRole.text = "Loading…"
+        tvRole.text = "Loading..."
         user.getIdToken(false)
             .addOnSuccessListener { tok ->
                 val r = normalize(tok.claims["role"] as? String)
@@ -389,7 +403,11 @@ class SuperAdminMainActivity : AppCompatActivity() {
         if (canPostNotifications()) {
             try {
                 NotificationManagerCompat.from(this).notify(d.id.hashCode(), notif)
-            } catch (_: SecurityException) { /* ignore if permission denied */ }
+            } catch (_: SecurityException) {
+                maybeRequestPostNotifications(force = true)
+            }
+        } else {
+            maybeRequestPostNotifications(force = true)
         }
 
         // Persist to in-app notifications list for Super Admin
@@ -460,7 +478,10 @@ class SuperAdminMainActivity : AppCompatActivity() {
     }
 
     private fun sendMonthlySummaryNotification(omzet: Long, laba: Long) {
-        if (!canPostNotifications()) return
+        if (!canPostNotifications()) {
+            maybeRequestPostNotifications(force = true)
+            return
+        }
         val nf = java.text.NumberFormat.getInstance(java.util.Locale("in","ID"))
         val text = "Omzet: Rp ${nf.format(omzet)}  |  Laba: Rp ${nf.format(laba)}"
         val pi = NavDeepLinkBuilder(this)
@@ -519,26 +540,54 @@ class SuperAdminMainActivity : AppCompatActivity() {
         } else true
     }
 
-    private fun maybeRequestPostNotificationsFirstRun() {
+    private fun maybeRequestPostNotifications(force: Boolean = false) {
         if (android.os.Build.VERSION.SDK_INT < 33) return
-        if (canPostNotifications()) return
+        if (canPostNotifications()) {
+            getSharedPreferences("notif_prefs", MODE_PRIVATE).edit().putBoolean("needs_notif_permission", false).apply()
+            return
+        }
+
         val pref = getSharedPreferences("sa_prefs", MODE_PRIVATE)
-        val shown = pref.getBoolean("notif_perm_prompted", false)
-        if (shown) return
-        MaterialAlertDialogBuilder(this)
-            .setTitle("Izinkan Notifikasi")
-            .setMessage("Aktifkan notifikasi agar Anda tidak melewatkan permintaan penyesuaian stok dan ringkasan penting.")
-            .setNegativeButton("Nanti") { _, _ ->
-                pref.edit().putBoolean("notif_perm_prompted", true).apply()
-            }
+        val lastPrompt = pref.getLong("notif_perm_last_prompt", 0L)
+        if (!force) {
+            val cooldown = 6 * 60 * 60 * 1000L // 6 hours
+            if (System.currentTimeMillis() - lastPrompt < cooldown) return
+        }
+        pref.edit().putLong("notif_perm_last_prompt", System.currentTimeMillis()).apply()
+
+        val builder = MaterialAlertDialogBuilder(this)
+            .setTitle("Aktifkan Notifikasi")
+            .setMessage("Aktifkan notifikasi agar Anda tidak melewatkan permintaan penyesuaian stok, ringkasan, dan info penting lainnya.")
+            .setNegativeButton("Nanti", null)
             .setPositiveButton("Izinkan") { _, _ ->
-                pref.edit().putBoolean("notif_perm_prompted", true).apply()
                 try { notifPermLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) } catch (_: Throwable) {}
             }
-            .show()
+
+        val shouldShowSettings = !shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS)
+        if (shouldShowSettings) {
+            builder.setNeutralButton("Pengaturan") { _, _ -> openNotificationSettings() }
+        }
+
+        builder.show()
     }
 
     
+
+    private fun openNotificationSettings() {
+        val intent = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+            }
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+        }
+        try {
+            startActivity(intent)
+        } catch (_: Exception) { }
+    }
+
 
     private fun reschedulePendingStockReceipts() {
         try {
@@ -568,7 +617,4 @@ class SuperAdminMainActivity : AppCompatActivity() {
         } else super.onSupportNavigateUp()
     }
 }
-
-
-
 

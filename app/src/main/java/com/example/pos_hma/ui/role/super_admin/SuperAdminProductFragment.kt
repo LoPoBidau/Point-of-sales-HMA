@@ -27,7 +27,7 @@ import com.example.pos_hma.data.InventoryMovement
 import com.example.pos_hma.data.Product
 import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.databinding.*
-import com.example.pos_hma.util.StockNotificationHelper
+import com.example.pos_hma.utils.StockNotificationHelper
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.color.MaterialColors

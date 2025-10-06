@@ -13,7 +13,7 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.example.pos_hma.util.StockNotificationHelper
+import com.example.pos_hma.utils.StockNotificationHelper
 import com.example.pos_hma.data.BatchState
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
