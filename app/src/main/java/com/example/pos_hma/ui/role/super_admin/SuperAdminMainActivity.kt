@@ -22,6 +22,9 @@ import androidx.activity.OnBackPressedCallback
 import androidx.core.app.NotificationManagerCompat
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.navigation.NavController
 import androidx.navigation.NavDeepLinkBuilder
 import androidx.navigation.fragment.NavHostFragment
@@ -65,6 +68,26 @@ class SuperAdminMainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySuperAdminMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        val baseToolbarPadding = binding.toolbar.paddingTop
+        val baseBottomPadding = binding.bottomNav.paddingBottom
+        val baseContentPadding = binding.navHostOwner.paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = baseToolbarPadding + systemBars.top)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = baseBottomPadding + systemBars.bottom)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.navHostOwner) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = baseContentPadding + systemBars.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.root)
 
         // Jika tidak ada internet, kembali ke login
         if (!NetworkUtil.isOnline(this)) {
@@ -617,4 +640,3 @@ class SuperAdminMainActivity : AppCompatActivity() {
         } else super.onSupportNavigateUp()
     }
 }
-

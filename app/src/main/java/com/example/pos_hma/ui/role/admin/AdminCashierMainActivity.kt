@@ -13,7 +13,9 @@ import androidx.navigation.NavOptions
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.navigateUp
 import androidx.navigation.ui.setupActionBarWithNavController
-import androidx.navigation.ui.setupWithNavController
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import com.example.pos_hma.R
 import com.example.pos_hma.databinding.ActivityAdminCashierMainBinding
 import com.example.pos_hma.ui.login.LoginActivity
@@ -38,6 +40,27 @@ class AdminCashierMainActivity : AppCompatActivity() {
 
         binding = ActivityAdminCashierMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        val baseToolbarPadding = binding.toolbar.paddingTop
+        val baseBottomPadding = binding.bottomNav.paddingBottom
+        val baseContentPadding = binding.navHostCashier.paddingBottom
+
+        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = baseToolbarPadding + systemBars.top)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = baseBottomPadding + systemBars.bottom)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.navHostCashier) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = baseContentPadding + systemBars.bottom)
+            insets
+        }
+        ViewCompat.requestApplyInsets(binding.root)
 
         // Jika tidak ada internet, kembali ke login
         if (!NetworkUtil.isOnline(this)) {
@@ -175,7 +198,7 @@ class AdminCashierMainActivity : AppCompatActivity() {
         val btnLogout = v.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnLogouts)
 
         tvEmail.text = user.email ?: "-"
-        tvRole.text = "Loading…"
+        tvRole.text = "Loading..."
 
         user.getIdToken(false)
             .addOnSuccessListener { tok ->

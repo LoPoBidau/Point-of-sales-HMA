@@ -13,3 +13,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Secrets exports (Firebase imports)
+auth-users-*.json
+*-auth-config.json
+complete-octane-config.json
+
