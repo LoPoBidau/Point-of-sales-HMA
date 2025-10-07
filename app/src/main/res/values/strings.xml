@@ -1,4 +1,4 @@
-<resources>
+﻿<resources>
     <string name="app_name">POS-HMA</string>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
@@ -44,4 +44,7 @@
         libero vel nunc consequat, quis tincidunt nisl eleifend. Cras bibendum enim a justo luctus
         vestibulum. Fusce dictum libero quis erat maximus, vitae volutpat diam dignissim.
     </string>
+    <string name="payment_success">Pembayaran Berhasil</string>
+    <string name="action_print_receipt">Cetak Nota</string>
+    <string name="action_save_and_back">Simpan Transaksi dan Kembali ke Katalog</string>
 </resources>

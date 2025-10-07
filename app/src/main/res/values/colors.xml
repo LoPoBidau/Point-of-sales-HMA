@@ -1,4 +1,4 @@
-<resources>
+﻿<resources>
     <color name="md_theme_primary">#1B1B1B</color>
     <color name="md_theme_onPrimary">#FFFFFF</color>
     <color name="md_theme_primaryContainer">#303030</color>
@@ -140,4 +140,5 @@
     <color name="md_theme_surfaceContainer_highContrast">#E5E2E1</color>
     <color name="md_theme_surfaceContainerHigh_highContrast">#D7D4D3</color>
     <color name="md_theme_surfaceContainerHighest_highContrast">#C9C6C5</color>
+    <color name="green_success">#2E7D32</color>
 </resources>

@@ -1,124 +1,95 @@
-package com.example.pos_hma.ui.role.admin
+﻿package com.example.pos_hma.ui.role.admin
 
+import android.Manifest
+import android.bluetooth.BluetoothAdapter
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.print.PrintManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import androidx.fragment.app.Fragment
-import androidx.navigation.fragment.findNavController
-import com.example.pos_hma.R
-import androidx.core.app.ActivityCompat
-import android.Manifest
-import android.bluetooth.BluetoothAdapter
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
-import com.example.pos_hma.print.DirectEscPosPrinter
-import com.example.pos_hma.ui.role.admin.print.SimpleReceiptPrintAdapter
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
+import androidx.fragment.app.Fragment
+import androidx.navigation.fragment.findNavController
+import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierReceiptBinding
+import com.example.pos_hma.print.DirectEscPosPrinter
 import com.example.pos_hma.ui.role.admin.print.CenteredReceiptPrintAdapter
 import com.example.pos_hma.utils.PrintersPref
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-
 
 class AdminCashierReceiptFragment : Fragment() {
 
     private var _b: FragmentAdminCashierReceiptBinding? = null
     private val b get() = _b!!
-    private val BT_REQ = 201
 
+    private val btRequestCode = 201
+    private var currentSaleId: String = "-"
+    private var receiptPrinterPayload: String = ""
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _b = FragmentAdminCashierReceiptBinding.inflate(inflater, container, false)
         return b.root
-        b.btnPrint.setOnClickListener {
-            val receiptText = b.tvReceipt.text.toString()
-
-            // TODO: simpan MAC di Settings/SharedPreferences
-            val printerMac = "00:11:22:33:44:55" // ganti dengan MAC printermu
-
-            // Minta izin BLUETOOTH_CONNECT di Android 12+
-            if (android.os.Build.VERSION.SDK_INT >= 31 &&
-                ActivityCompat.checkSelfPermission(
-                    requireContext(),
-                    Manifest.permission.BLUETOOTH_CONNECT
-                )
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 101)
-                return@setOnClickListener
-            }
-
-            DirectEscPosPrinter.print(
-                requireContext(),
-                printerMac,
-                receiptText,
-                onSuccess = { toast("Terkirim ke printer") },
-                onError = {
-                    // fallback opsional ke PrintManager jika gagal
-                    val pm =
-                        requireContext().getSystemService(Context.PRINT_SERVICE) as android.print.PrintManager
-                    pm.print(
-                        "Struk-${
-                            b.tvSaleId.text
-                        }", SimpleReceiptPrintAdapter(requireContext(), receiptText), null
-                    )
-                }
-            )
-        }
-
     }
 
-    override fun onViewCreated(v: View, s: Bundle?) {
-        // Nonaktifkan tombol back fisik di halaman Struk
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+
+        // pad top based on status bar height
+        val baseTopPadding = b.root.paddingTop
+        ViewCompat.setOnApplyWindowInsetsListener(b.root) { v, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.updatePadding(top = baseTopPadding + systemBars.top)
+            insets
+        }
+        ViewCompat.requestApplyInsets(b.root)
+
+        // Disable back button while on receipt screen
         requireActivity().onBackPressedDispatcher.addCallback(
             viewLifecycleOwner,
             object : OnBackPressedCallback(true) {
-                override fun handleOnBackPressed() {
-                    // Dibiarkan kosong agar tidak kembali ke layar manapun
-                }
+                override fun handleOnBackPressed() { /* block back */ }
             }
         )
 
-        val saleId = arguments?.getString("saleId") ?: "-" // this holds No. Nota string now
-        val textUI = arguments?.getCharSequence("receiptScreen") ?: ""
-        val textPDF = arguments?.getString("receiptPrinter") ?: textUI.toString()
+        currentSaleId = arguments?.getString("saleId") ?: "-"
+        val textUi = arguments?.getCharSequence("receiptScreen") ?: ""
+        receiptPrinterPayload = arguments?.getString("receiptPrinter") ?: textUi.toString()
 
-        b.tvTitle.text = "Nota"
-        b.tvSaleId.text = "No. Nota: $saleId"
-        b.tvReceipt.text = textUI   // sudah rapi & bold untuk judul
+        b.tvReceipt.text = textUi
 
-        b.btnPrint.setOnClickListener { printReceipt(saleId, textPDF) }
+        b.btnPrint.setOnClickListener { startDirectPrint() }
         b.btnSaveAndBackToCatalog.setOnClickListener {
             val nav = findNavController()
-            val popped =
-                nav.popBackStack(com.example.pos_hma.R.id.adminCashierCatalogFragment, false)
-            if (!popped) nav.navigate(com.example.pos_hma.R.id.adminCashierCatalogFragment)
+            val popped = nav.popBackStack(R.id.adminCashierCatalogFragment, false)
+            if (!popped) nav.navigate(R.id.adminCashierCatalogFragment)
         }
-        b.btnPrint.setOnClickListener { startDirectPrint() }
     }
+
     private fun startDirectPrint() {
-        // Minta izin Android 12+
         if (Build.VERSION.SDK_INT >= 31 &&
-            ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.BLUETOOTH_CONNECT)
-            != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), BT_REQ)
+            ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), btRequestCode)
             return
         }
 
-        val text = b.tvReceipt.text.toString()  // ini sudah dari ReceiptFormatter.buildForScreen/Printer
+        val textForPrinter = if (receiptPrinterPayload.isNotBlank()) receiptPrinterPayload else b.tvReceipt.text.toString()
         val savedMac = PrintersPref.getMac(requireContext())
         if (savedMac.isNullOrBlank()) {
             showBtPicker { mac ->
                 PrintersPref.saveMac(requireContext(), mac)
-                doPrint(mac, text)
+                doPrint(mac, textForPrinter)
             }
         } else {
-            doPrint(savedMac, text)
+            doPrint(savedMac, textForPrinter)
         }
     }
 
@@ -126,11 +97,12 @@ class AdminCashierReceiptFragment : Fragment() {
         DirectEscPosPrinter.print(
             requireContext(),
             mac,
-            // Penting: untuk printer gunakan versi "printer", bukan yang di-stylize.
-            // Jika yang kamu tampilkan di layar pakai buildForScreen(), buat lagi:
-            text = if (text.isBlank()) " " else text,
+            if (text.isBlank()) " " else text,
             onSuccess = { toast("Terkirim ke printer") },
-            onError = { toast("Gagal cetak: ${it.message}") }
+            onError = {
+                toast("Gagal cetak: ${it.message}")
+                printReceipt(currentSaleId, text)
+            }
         )
     }
 
@@ -138,7 +110,10 @@ class AdminCashierReceiptFragment : Fragment() {
     private fun showBtPicker(onPicked: (String) -> Unit) {
         val adapter = BluetoothAdapter.getDefaultAdapter()
         val bonded = adapter?.bondedDevices?.toList().orEmpty()
-        if (bonded.isEmpty()) { toast("Tidak ada printer terpasang (pairing dulu)"); return }
+        if (bonded.isEmpty()) {
+            toast("Tidak ada printer terpasang (pairing dulu)")
+            return
+        }
 
         val labels = bonded.map { "${it.name} (${it.address})" }.toTypedArray()
         MaterialAlertDialogBuilder(requireContext())
@@ -149,29 +124,27 @@ class AdminCashierReceiptFragment : Fragment() {
     }
 
     private fun printReceipt(saleId: String, text: String) {
-        val pm =
-            requireContext().getSystemService(Context.PRINT_SERVICE) as android.print.PrintManager
+        val pm = requireContext().getSystemService(Context.PRINT_SERVICE) as PrintManager
         pm.print(
             "Struk-$saleId",
-            CenteredReceiptPrintAdapter(
-                requireContext(),
-                text,
-                desiredContentWidthMm = 72f
-            ), // 58f utk 58mm
+            CenteredReceiptPrintAdapter(requireContext(), text, desiredContentWidthMm = 72f),
             null
         )
     }
 
-    private fun toast(s: String) =
-        android.widget.Toast.makeText(requireContext(), s, android.widget.Toast.LENGTH_SHORT).show()
-
-    override fun onDestroyView() {
-        _b = null; super.onDestroyView()
+    private fun toast(message: String) {
+        android.widget.Toast.makeText(requireContext(), message, android.widget.Toast.LENGTH_SHORT).show()
     }
-    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, res: IntArray) {
-        super.onRequestPermissionsResult(code, perms, res)
-        if (code == BT_REQ && res.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == btRequestCode && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             startDirectPrint()
         }
+    }
+
+    override fun onDestroyView() {
+        _b = null
+        super.onDestroyView()
     }
 }
