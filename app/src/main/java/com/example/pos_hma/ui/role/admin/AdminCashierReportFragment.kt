@@ -17,6 +17,7 @@ import com.google.android.material.datepicker.MaterialDatePicker
 import android.view.inputmethod.EditorInfo
 import android.view.KeyEvent
 import com.google.android.material.textfield.TextInputLayout
+import androidx.core.view.doOnLayout
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -230,13 +231,17 @@ class AdminCashierReportFragment : Fragment() {
                 paid = doc.getLong("paid") ?: (doc.getLong("total") ?: 0L)
             )
             val svc = doc.getLong("serviceFee") ?: 0L
-            val receiptForScreen = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForScreen(store, saleInfo, items, serviceFee = svc)
-            val receiptForPrinter = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForPrinter(store, saleInfo, items, serviceFee = svc)
+            val payload = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.Payload(
+                store = store,
+                sale = saleInfo,
+                items = items,
+                serviceFee = svc
+            )
+            val receiptForPrinter = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForPrinter(payload)
             // Tampilkan dialog struk rapi (bukan navigate ke halaman terpisah)
             if (!isAdded) return@addOnSuccessListener
             val ctx = requireContext()
             val tv = android.widget.TextView(ctx).apply {
-                text = receiptForScreen
                 typeface = android.graphics.Typeface.MONOSPACE
                 textAlignment = android.view.View.TEXT_ALIGNMENT_VIEW_START
                 gravity = android.view.Gravity.START
@@ -244,21 +249,34 @@ class AdminCashierReportFragment : Fragment() {
                 setTextIsSelectable(true)
                 setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
             }
+            val screenTextFallback = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForScreen(payload)
+            tv.text = screenTextFallback
+            tv.doOnLayout { view ->
+                val textView = view as android.widget.TextView
+                val columns = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.estimateColumns(textView)
+                textView.text = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForScreen(payload, columns)
+            }
             val container = android.widget.LinearLayout(ctx).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
-                gravity = android.view.Gravity.CENTER
+                gravity = android.view.Gravity.START
                 setPadding(24, 24, 24, 24)
                 addView(
                     tv,
                     android.widget.LinearLayout.LayoutParams(
-                        android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                        android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                         android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                    ).apply { gravity = android.view.Gravity.CENTER }
+                    ).apply { gravity = android.view.Gravity.START }
                 )
             }
             val scroll = android.widget.ScrollView(ctx).apply {
-                addView(container)
+                isFillViewport = true
+                val params = android.widget.FrameLayout.LayoutParams(
+                    android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+                addView(container, params)
             }
+            lastReceiptToPrint = receiptForPrinter
             com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
                 .setView(scroll)
                 .setPositiveButton("Cetak") { _, _ ->

@@ -80,11 +80,12 @@
     <com.google.android.material.card.MaterialCardView
         android:id="@+id/cartBar"
         android:layout_width="match_parent"
-        android:layout_height="72dp"
+        android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:layout_marginStart="12dp"
         android:layout_marginEnd="12dp"
-        android:layout_marginBottom="12dp"
+        android:layout_marginBottom="8dp"
+        app:cardUseCompatPadding="false"
         app:cardCornerRadius="12dp"
         app:cardElevation="6dp">
 
@@ -93,7 +94,10 @@
             android:layout_height="match_parent"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:padding="12dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp">
 
             <LinearLayout
                 android:layout_width="0dp"

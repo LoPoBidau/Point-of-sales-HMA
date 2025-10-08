@@ -23,6 +23,7 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
+import androidx.core.view.doOnLayout
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -170,17 +171,16 @@ class SuperAdminReportFragment : Fragment() {
                         paid = doc.getLong("paid") ?: (doc.getLong("total") ?: 0L)
                     )
                     val svc = doc.getLong("serviceFee") ?: 0L
-                    val withCost = ReceiptFormatter.buildForScreen(
-                        store,
-                        saleInfo,
-                        items,
+                    val payload = ReceiptFormatter.Payload(
+                        store = store,
+                        sale = saleInfo,
+                        items = items,
                         serviceFee = svc,
                         totalCost = if (goods.isNotEmpty() && totalQty > 1L) totalCost else null,
                         unitCost = unitCostSingle
                     )
 
                     val content = android.widget.TextView(ctx).apply {
-                        text = withCost
                         typeface = android.graphics.Typeface.MONOSPACE
                         textAlignment = android.view.View.TEXT_ALIGNMENT_VIEW_START
                         gravity = android.view.Gravity.START
@@ -188,20 +188,32 @@ class SuperAdminReportFragment : Fragment() {
                         setTextIsSelectable(true)
                         setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
                     }
+                    val fallbackScreen = ReceiptFormatter.buildForScreen(payload)
+                    content.text = fallbackScreen
+                    content.doOnLayout { view ->
+                        val textView = view as android.widget.TextView
+                        val columns = ReceiptFormatter.estimateColumns(textView)
+                        textView.text = ReceiptFormatter.buildForScreen(payload, columns)
+                    }
                     val container = android.widget.LinearLayout(ctx).apply {
                         orientation = android.widget.LinearLayout.VERTICAL
-                        gravity = android.view.Gravity.CENTER
+                        gravity = android.view.Gravity.START
                         setPadding(24, 24, 24, 24)
                         addView(
                             content,
                             android.widget.LinearLayout.LayoutParams(
-                                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                                android.widget.LinearLayout.LayoutParams.MATCH_PARENT,
                                 android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-                            ).apply { gravity = android.view.Gravity.CENTER }
+                            ).apply { gravity = android.view.Gravity.START }
                         )
                     }
                     val scroll = android.widget.ScrollView(ctx).apply {
-                        addView(container)
+                        isFillViewport = true
+                        val params = android.widget.FrameLayout.LayoutParams(
+                            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+                        )
+                        addView(container, params)
                     }
                     MaterialAlertDialogBuilder(ctx)
                         .setView(scroll)

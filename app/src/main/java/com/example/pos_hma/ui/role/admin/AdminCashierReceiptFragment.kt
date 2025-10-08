@@ -15,6 +15,7 @@ import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.updatePadding
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
@@ -22,6 +23,7 @@ import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierReceiptBinding
 import com.example.pos_hma.print.DirectEscPosPrinter
 import com.example.pos_hma.ui.role.admin.print.CenteredReceiptPrintAdapter
+import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.example.pos_hma.utils.PrintersPref
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
@@ -33,6 +35,8 @@ class AdminCashierReceiptFragment : Fragment() {
     private val btRequestCode = 201
     private var currentSaleId: String = "-"
     private var receiptPrinterPayload: String = ""
+    private var receiptPayload: ReceiptFormatter.Payload? = null
+    private var lastRenderedColumns: Int = -1
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _b = FragmentAdminCashierReceiptBinding.inflate(inflater, container, false)
@@ -62,8 +66,40 @@ class AdminCashierReceiptFragment : Fragment() {
         currentSaleId = arguments?.getString("saleId") ?: "-"
         val textUi = arguments?.getCharSequence("receiptScreen") ?: ""
         receiptPrinterPayload = arguments?.getString("receiptPrinter") ?: textUi.toString()
+        receiptPayload = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arguments?.getSerializable("receiptPayload", ReceiptFormatter.Payload::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            arguments?.getSerializable("receiptPayload") as? ReceiptFormatter.Payload
+        }
+        receiptPayload?.let { payload ->
+            receiptPrinterPayload = ReceiptFormatter.buildForPrinter(payload)
+        }
 
-        b.tvReceipt.text = textUi
+        if (receiptPayload != null) {
+            b.tvReceipt.text = textUi
+            b.tvReceipt.doOnLayout { view ->
+                val payload = receiptPayload ?: return@doOnLayout
+                val tv = view as android.widget.TextView
+                val columns = ReceiptFormatter.estimateColumns(tv)
+                if (columns > 0 && (columns != lastRenderedColumns || tv.text.isNullOrBlank() || tv.text == textUi)) {
+                    lastRenderedColumns = columns
+                    tv.text = ReceiptFormatter.buildForScreen(payload, columns)
+                }
+            }
+            b.tvReceipt.addOnLayoutChangeListener { view, left, _, right, _, oldLeft, _, oldRight, _ ->
+                if (right - left == oldRight - oldLeft) return@addOnLayoutChangeListener
+                val payload = receiptPayload ?: return@addOnLayoutChangeListener
+                val tv = view as android.widget.TextView
+                val columns = ReceiptFormatter.estimateColumns(tv)
+                if (columns > 0 && columns != lastRenderedColumns) {
+                    lastRenderedColumns = columns
+                    tv.text = ReceiptFormatter.buildForScreen(payload, columns)
+                }
+            }
+        } else {
+            b.tvReceipt.text = textUi
+        }
 
         b.btnPrint.setOnClickListener { startDirectPrint() }
         b.btnSaveAndBackToCatalog.setOnClickListener {
@@ -147,4 +183,5 @@ class AdminCashierReceiptFragment : Fragment() {
         _b = null
         super.onDestroyView()
     }
+
 }

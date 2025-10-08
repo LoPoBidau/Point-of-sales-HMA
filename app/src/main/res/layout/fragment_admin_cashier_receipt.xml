@@ -10,6 +10,7 @@
         android:id="@+id/ivSuccess"
         android:layout_width="72dp"
         android:layout_height="72dp"
+        android:layout_marginTop="24dp"
         android:contentDescription="@string/payment_success"
         app:srcCompat="@drawable/ic_check_success"
         app:tint="@color/green_success"
@@ -42,9 +43,6 @@
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_gravity="top|center_horizontal"
-            android:maxWidth="360dp"
-            android:minWidth="260dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="3dp">
 
@@ -52,20 +50,24 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
-                android:padding="16dp">
+                android:fillViewport="true"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="18dp"
+                android:paddingBottom="18dp">
 
                 <LinearLayout
-                    android:layout_width="wrap_content"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:gravity="top|center_horizontal"
-                    android:layout_gravity="center_horizontal">
+                    android:layout_gravity="top|start"
+                    android:gravity="top|start"
+                    android:orientation="vertical">
 
                     <TextView
                         android:id="@+id/tvReceipt"
-                        android:layout_width="wrap_content"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_gravity="center_horizontal"
+                        android:layout_gravity="start"
                         android:fontFamily="monospace"
                         android:gravity="start"
                         android:includeFontPadding="false"
@@ -83,12 +85,11 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="@string/action_print_receipt"
+        android:layout_marginBottom="8dp"
         app:layout_constraintBottom_toTopOf="@id/btnSaveAndBackToCatalog"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.5"
-        app:layout_constraintTop_toBottomOf="@id/receiptContainer"
-        android:layout_marginBottom="8dp" />
+        app:layout_constraintHorizontal_bias="0.5" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/btnSaveAndBackToCatalog"

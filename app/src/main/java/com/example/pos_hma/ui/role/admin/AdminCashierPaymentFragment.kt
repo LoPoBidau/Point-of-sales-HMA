@@ -13,6 +13,7 @@ import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierPaymentBinding
 import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
+import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.Payload
 import com.example.pos_hma.utils.StockNotificationHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
@@ -434,8 +435,14 @@ class AdminCashierPaymentFragment : Fragment() {
         val saleInfo = ReceiptFormatter.SaleInfo(saleId = noNota, date = java.util.Date(), total = total, paid = paid)
 
         val svc = cartVm.serviceFee.value ?: 0L
-        val receiptForScreen  = ReceiptFormatter.buildForScreen(store, saleInfo, items, serviceFee = svc)
-        val receiptForPrinter = ReceiptFormatter.buildForPrinter(store, saleInfo, items, serviceFee = svc)
+        val payload = Payload(
+            store = store,
+            sale = saleInfo,
+            items = items,
+            serviceFee = svc
+        )
+        val receiptForScreen = ReceiptFormatter.buildForScreen(payload)
+        val receiptForPrinter = ReceiptFormatter.buildForPrinter(payload)
 
         cartVm.clear()
         showSuccessThenNavigate(Bundle().apply {
@@ -443,6 +450,7 @@ class AdminCashierPaymentFragment : Fragment() {
             putString("saleDocId", docId)
             putCharSequence("receiptScreen", receiptForScreen)
             putString("receiptPrinter", receiptForPrinter)
+            putSerializable("receiptPayload", payload)
         })
     }
 
