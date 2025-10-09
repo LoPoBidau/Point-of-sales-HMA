@@ -39,6 +39,14 @@ class AdminCashierReportFragment : Fragment() {
     // For direct Bluetooth ESC/POS printing from dialog
     private val BT_REQ = 202
     private var lastReceiptToPrint: String? = null
+    private val requiredBtPermissions: Array<String> by lazy {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            arrayOf(
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+                android.Manifest.permission.BLUETOOTH_SCAN
+            )
+        } else emptyArray()
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
         _b = FragmentAdminCashierReportBinding.inflate(inflater, container, false)
@@ -316,10 +324,8 @@ class AdminCashierReportFragment : Fragment() {
     // ===== Direct Bluetooth ESC/POS printing helpers (dialog) =====
     private fun startDirectPrintFromDialog(text: String) {
         lastReceiptToPrint = text
-        if (android.os.Build.VERSION.SDK_INT >= 31 &&
-            androidx.core.content.ContextCompat.checkSelfPermission(requireContext(), android.Manifest.permission.BLUETOOTH_CONNECT)
-            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT), BT_REQ)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && !hasAllBtPermissions()) {
+            requestPermissions(requiredBtPermissions, BT_REQ)
             return
         }
 
@@ -345,6 +351,10 @@ class AdminCashierReportFragment : Fragment() {
     }
 
     private fun showBtPicker(onPicked: (String) -> Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && !hasAllBtPermissions()) {
+            requestPermissions(requiredBtPermissions, BT_REQ)
+            return
+        }
         val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
         val bonded = adapter?.bondedDevices?.toList().orEmpty()
         if (bonded.isEmpty()) { toast("Tidak ada printer terpasang (pairing dulu)"); return }
@@ -362,8 +372,15 @@ class AdminCashierReportFragment : Fragment() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == BT_REQ && grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == BT_REQ && hasAllBtPermissions()) {
             lastReceiptToPrint?.let { startDirectPrintFromDialog(it) }
+        }
+    }
+
+    private fun hasAllBtPermissions(): Boolean {
+        if (requiredBtPermissions.isEmpty()) return true
+        return requiredBtPermissions.all {
+            androidx.core.content.ContextCompat.checkSelfPermission(requireContext(), it) == android.content.pm.PackageManager.PERMISSION_GRANTED
         }
     }
 }

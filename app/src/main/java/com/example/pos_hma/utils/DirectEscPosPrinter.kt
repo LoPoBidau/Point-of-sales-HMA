@@ -30,10 +30,16 @@ object DirectEscPosPrinter {
         onSuccess: () -> Unit = {},
         onError: (Throwable) -> Unit = {}
     ) {
-        if (Build.VERSION.SDK_INT >= 31 &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT)
-            != PackageManager.PERMISSION_GRANTED) {
-            onError(SecurityException("Izin BLUETOOTH_CONNECT belum diberikan")); return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val missing = listOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN
+            ).firstOrNull {
+                ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+            }
+            if (missing != null) {
+                onError(SecurityException("Izin $missing belum diberikan")); return
+            }
         }
 
         Thread {
@@ -54,21 +60,24 @@ object DirectEscPosPrinter {
 
                 // Kirim dalam potongan kecil untuk printer yang buffer-nya kecil
                 val data = text.replace("\n", "\r\n").toByteArray(Charset.forName("windows-1252"))
-                val chunk = 512
+                val chunk = 128
                 var off = 0
                 while (off < data.size) {
                     val end = (off + chunk).coerceAtMost(data.size)
                     os.write(data, off, end - off)
                     os.flush()
                     off = end
-                    Thread.sleep(10)
+                    Thread.sleep(20)
                 }
+
+                Thread.sleep(120)
 
                 // Feed beberapa baris + partial cut (jika ada cutter)
                 os.write(byteArrayOf(0x0A, 0x0A, 0x0A))      // feed 3 baris
                 os.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00))// GS V 66 0 (partial cut)
 
                 os.flush()
+                Thread.sleep(80)
                 os.close()
                 socket.close()
 

@@ -33,6 +33,14 @@ class AdminCashierReceiptFragment : Fragment() {
     private val b get() = _b!!
 
     private val btRequestCode = 201
+    private val requiredBtPermissions: Array<String> by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN
+            )
+        } else emptyArray()
+    }
     private var currentSaleId: String = "-"
     private var receiptPrinterPayload: String = ""
     private var receiptPayload: ReceiptFormatter.Payload? = null
@@ -110,10 +118,8 @@ class AdminCashierReceiptFragment : Fragment() {
     }
 
     private fun startDirectPrint() {
-        if (Build.VERSION.SDK_INT >= 31 &&
-            ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), btRequestCode)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasAllBtPermissions()) {
+            requestPermissions(requiredBtPermissions, btRequestCode)
             return
         }
 
@@ -142,8 +148,12 @@ class AdminCashierReceiptFragment : Fragment() {
         )
     }
 
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN])
     private fun showBtPicker(onPicked: (String) -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasAllBtPermissions()) {
+            requestPermissions(requiredBtPermissions, btRequestCode)
+            return
+        }
         val adapter = BluetoothAdapter.getDefaultAdapter()
         val bonded = adapter?.bondedDevices?.toList().orEmpty()
         if (bonded.isEmpty()) {
@@ -174,7 +184,7 @@ class AdminCashierReceiptFragment : Fragment() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == btRequestCode && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == btRequestCode && hasAllBtPermissions()) {
             startDirectPrint()
         }
     }
@@ -182,6 +192,13 @@ class AdminCashierReceiptFragment : Fragment() {
     override fun onDestroyView() {
         _b = null
         super.onDestroyView()
+    }
+
+    private fun hasAllBtPermissions(): Boolean {
+        if (requiredBtPermissions.isEmpty()) return true
+        return requiredBtPermissions.all {
+            ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED
+        }
     }
 
 }
