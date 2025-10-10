@@ -1,4 +1,4 @@
-﻿<resources>
+<resources>
     <string name="app_name">POS-HMA</string>
     <!-- TODO: Remove or change this placeholder text -->
     <string name="hello_blank_fragment">Hello blank fragment</string>
@@ -47,4 +47,10 @@
     <string name="payment_success">Pembayaran Berhasil</string>
     <string name="action_print_receipt">Cetak Nota</string>
     <string name="action_save_and_back">Simpan Transaksi dan Kembali ke Katalog</string>
+    <string name="action_save_and_print">Simpan Transaksi dan Cetak Nota</string>
+    <string name="receipt_status_ready">Cetak nota untuk menyelesaikan transaksi.</string>
+    <string name="receipt_status_printing">Mencetak nota</string>
+    <string name="receipt_status_success">Print berhasil, menyimpan transaksi</string>
+    <string name="receipt_status_error">Gagal cetak: %1$s</string>
+    <string name="receipt_overlay_title">Simpan &amp; Cetak Nota</string>
 </resources>

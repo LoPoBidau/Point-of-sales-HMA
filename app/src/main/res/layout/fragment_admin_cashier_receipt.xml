@@ -35,8 +35,9 @@
         android:layout_width="0dp"
         android:layout_height="0dp"
         android:layout_marginTop="16dp"
+        android:layout_marginBottom="16dp"
         app:layout_constraintTop_toBottomOf="@id/tvSuccessTitle"
-        app:layout_constraintBottom_toTopOf="@id/btnPrint"
+        app:layout_constraintBottom_toTopOf="@id/btnSaveAndPrint"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -52,8 +53,8 @@
                 android:clipToPadding="false"
                 android:fillViewport="true"
                 android:paddingStart="12dp"
-                android:paddingEnd="12dp"
                 android:paddingTop="18dp"
+                android:paddingEnd="12dp"
                 android:paddingBottom="18dp">
 
                 <LinearLayout
@@ -79,24 +80,57 @@
             </ScrollView>
         </com.google.android.material.card.MaterialCardView>
     </FrameLayout>
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnPrint"
+    <FrameLayout
+        android:id="@+id/printingOverlay"
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="@string/action_print_receipt"
-        android:layout_marginBottom="8dp"
-        app:layout_constraintBottom_toTopOf="@id/btnSaveAndBackToCatalog"
+        android:layout_height="0dp"
+        android:background="@android:color/transparent"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintHorizontal_bias="0.5" />
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#99000000" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <ImageView
+                android:id="@+id/ivPrinting"
+                android:layout_width="88dp"
+                android:layout_height="88dp"
+                android:contentDescription="@string/receipt_overlay_title"
+                app:srcCompat="@drawable/ic_printer"
+                app:tint="@android:color/white" />
+
+            <TextView
+                android:id="@+id/tvPrintingStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="@string/receipt_status_printing"
+                android:textAppearance="@style/TextAppearance.Material3.TitleLarge"
+                android:textColor="@android:color/white" />
+        </LinearLayout>
+    </FrameLayout>
 
     <com.google.android.material.button.MaterialButton
-        android:id="@+id/btnSaveAndBackToCatalog"
+        android:id="@+id/btnSaveAndPrint"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:layout_marginBottom="16dp"
-        android:text="@string/action_save_and_back"
+        android:text="@string/action_save_and_print"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
