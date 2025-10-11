@@ -17,7 +17,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -70,12 +69,14 @@ dependencies {
 
     // Lain-lain
     implementation ("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
-    implementation("io.coil-kt:coil:2.6.0")
+    implementation ("io.coil-kt:coil:2.6.0")
+    implementation ("com.github.PhilJay:MPAndroidChart:v3.1.0")
     // Lottie for JSON animations
     implementation("com.github.LottieFiles:dotlottie-android:0.5.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("de.hdodenhof:circleimageview:3.1.0")
+    implementation("com.github.PhilJay:MPAndroidChart:3.1.0")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
