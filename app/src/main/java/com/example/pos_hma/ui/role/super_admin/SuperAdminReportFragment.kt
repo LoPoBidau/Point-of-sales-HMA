@@ -1,4 +1,4 @@
-package com.example.pos_hma.ui.role.super_admin
+﻿package com.example.pos_hma.ui.role.super_admin
 
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -18,12 +18,16 @@ import com.example.pos_hma.databinding.DialogPurchaseDetailBinding
 import com.example.pos_hma.databinding.ItemPurchaseDetailItemBinding
 import com.example.pos_hma.databinding.ItemReportTabBinding
 import com.example.pos_hma.databinding.ItemSaleRowBinding
+import com.example.pos_hma.databinding.ItemStockMovementBinding
+import com.example.pos_hma.databinding.ItemFifoBatchBinding
+import com.example.pos_hma.data.BatchState
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import androidx.core.view.doOnLayout
+import androidx.core.view.isVisible
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -32,6 +36,7 @@ import com.google.firebase.Timestamp
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.abs
 
 class SuperAdminReportFragment : Fragment() {
 
@@ -69,6 +74,9 @@ class SuperAdminReportFragment : Fragment() {
         private var purchaseListener: ListenerRegistration? = null
         private var purchaseHolder: VH? = null
 
+        private var stockHolder: VH? = null
+        private var stockToken: Int = 0
+
         private fun clearPurchaseListener() {
             purchaseListener?.remove()
             purchaseListener = null
@@ -88,8 +96,52 @@ class SuperAdminReportFragment : Fragment() {
                 clearPurchaseListener()
                 purchaseHolder = null
             }
+            if (holder == stockHolder) {
+                stockHolder = null
+            }
             super.onViewRecycled(holder)
         }
+
+        private fun isStockRequestValid(holder: VH, token: Int): Boolean =
+            holder == stockHolder && token == stockToken
+
+        private data class ProductSummary(
+            val sku: String,
+            val name: String,
+            val stock: Long,
+            val lastCost: Long
+        )
+
+        private data class MovementRow(
+            val productName: String,
+            val sku: String,
+            val qty: Long,
+            val unitCost: Long,
+            val totalCost: Long,
+            val note: String?,
+            val type: String,
+            val isInbound: Boolean,
+            val timestamp: Date?
+        )
+
+        private enum class FifoType { INVOICE, HOLD }
+        private enum class StockView { SUMMARY, FIFO }
+
+        private data class PendingRow(
+            val sku: String,
+            val productName: String,
+            val invoiceNo: String,
+            val supplierName: String?,
+            val qty: Long,
+            val unitCost: Long?,
+            val salePrice: Long?,
+            val dueDate: Date?,
+            val scheduledAt: Date?,
+            val receivedAt: Date?,
+            val status: String?,
+            val type: FifoType,
+            val sortTime: Long
+        )
 
         override fun onBindViewHolder(holder: VH, position: Int) {
             val title = titles[position]
@@ -101,26 +153,22 @@ class SuperAdminReportFragment : Fragment() {
                     bindPurchases(holder)
                 }
                 else -> {
-                    holder.b.tvDesc.visibility = View.VISIBLE
-                    holder.b.tvSummary.visibility = View.GONE
-                    holder.b.rvSales.visibility = View.GONE
-                    holder.b.searchRow.visibility = View.GONE
-                    holder.b.chipGroupRange.visibility = View.GONE
-                    holder.b.chipGroupPurchaseStatus.visibility = View.GONE
-                    holder.b.filterCard.visibility = View.GONE
-                    holder.b.tvDesc.text = "Nilai persediaan, pergerakan stok, valuasi FIFO. (coming soon)"
+                    stockHolder = holder
+                    bindStockValuation(holder)
                 }
             }
         }
 
         private fun bindSales(holder: VH) {
             val ctx = holder.itemView.context
+            holder.b.toggleStockView.visibility = View.GONE
             val db = FirebaseFirestore.getInstance()
             val nf = NumberFormat.getInstance(Locale("in","ID"))
             val df = SimpleDateFormat("dd MMM yy HH:mm", Locale("in","ID"))
             val dfMonth = SimpleDateFormat("MMMM yyyy", Locale("in","ID"))
             val dfDay = SimpleDateFormat("dd MMM yy", Locale("in","ID"))
 
+            holder.b.toggleStockView.visibility = View.GONE
             holder.b.tvDesc.visibility = View.GONE
             holder.b.tvTitle.visibility = View.GONE
             holder.b.tvSummary.visibility = View.GONE
@@ -912,10 +960,401 @@ class SuperAdminReportFragment : Fragment() {
             }
         }
 
+        private fun bindStockValuation(holder: VH) {
+            val ctx = holder.itemView.context
+            val localeId = Locale("in", "ID")
+            val db = FirebaseFirestore.getInstance()
+            val nf = NumberFormat.getInstance(localeId)
+            val dfDateTime = SimpleDateFormat("dd MMM yyyy HH:mm", localeId)
+            val dfDate = SimpleDateFormat("dd MMM yyyy", localeId)
+            val token = ++stockToken
+
+            holder.b.filterCard.visibility = View.VISIBLE
+            holder.b.searchRow.visibility = View.GONE
+            holder.b.chipGroupRange.visibility = View.GONE
+            holder.b.chipGroupPurchaseStatus.visibility = View.GONE
+            holder.b.toggleStockView.visibility = View.VISIBLE
+
+            holder.b.rvSales.visibility = View.GONE
+            holder.b.tvDesc.visibility = View.VISIBLE
+            holder.b.tvDesc.text = "Memuat ringkasan stok..."
+            holder.b.tvSummary.visibility = View.GONE
+            holder.b.tvPendingTitle.visibility = View.GONE
+            holder.b.rvPendingQueue.visibility = View.GONE
+            holder.b.tvPendingStatus.visibility = View.GONE
+            holder.b.tvPendingStatus.text = "Memuat antrean FIFO..."
+
+            class MovementVH(private val binding: ItemStockMovementBinding) :
+                RecyclerView.ViewHolder(binding.root) {
+                fun bind(row: MovementRow) {
+                    val productLabel = if (row.productName.equals(row.sku, ignoreCase = true)) {
+                        row.productName
+                    } else {
+                        "${row.productName} (${row.sku})"
+                    }
+                    binding.tvProduct.text = productLabel
+                    val direction = if (row.isInbound) "Masuk" else "Keluar"
+                    val typeLabel = when (row.type.uppercase(localeId)) {
+                        "PURCHASE" -> "Pembelian"
+                        "SALE" -> "Penjualan"
+                        "ADJUSTMENT" -> "Penyesuaian"
+                        "TRANSFER" -> "Transfer"
+                        else -> row.type.ifBlank { "-" }.replaceFirstChar {
+                            if (it.isLowerCase()) it.titlecase(localeId) else it.toString()
+                        }
+                    }
+                    binding.tvType.text = "$direction · $typeLabel"
+                    val inboundColor = MaterialColors.getColor(
+                        binding.tvType,
+                        com.google.android.material.R.attr.colorPrimary
+                    )
+                    val outboundColor = MaterialColors.getColor(
+                        binding.tvType,
+                        com.google.android.material.R.attr.colorError
+                    )
+                    binding.tvType.setTextColor(if (row.isInbound) inboundColor else outboundColor)
+                    binding.tvQty.text = "Qty: ${nf.format(row.qty)} unit"
+                    val unitCostText = if (row.unitCost > 0) {
+                        "Modal/unit: Rp ${nf.format(row.unitCost)}"
+                    } else {
+                        "Modal/unit: -"
+                    }
+                    val totalCostText = if (row.totalCost > 0) {
+                        "Nilai total: Rp ${nf.format(row.totalCost)}"
+                    } else ""
+                    binding.tvCost.text = if (totalCostText.isNotBlank()) {
+                        "$unitCostText · $totalCostText"
+                    } else unitCostText
+                    val note = row.note?.takeIf { it.isNotBlank() }
+                    binding.tvNote.isVisible = note != null
+                    if (note != null) binding.tvNote.text = "Catatan: $note"
+                    val tsLabel = row.timestamp?.let { dfDateTime.format(it) } ?: "-"
+                    binding.tvTimestamp.text = "Dicatat: $tsLabel"
+                }
+            }
+
+            val movementRows = mutableListOf<MovementRow>()
+            val movementAdapter = object : RecyclerView.Adapter<MovementVH>() {
+                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): MovementVH {
+                    val binding = ItemStockMovementBinding.inflate(
+                        LayoutInflater.from(parent.context),
+                        parent,
+                        false
+                    )
+                    return MovementVH(binding)
+                }
+
+                override fun onBindViewHolder(holder: MovementVH, position: Int) {
+                    holder.bind(movementRows[position])
+                }
+
+                override fun getItemCount(): Int = movementRows.size
+            }
+            if (holder.b.rvSales.layoutManager !is LinearLayoutManager) {
+                holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
+            }
+            holder.b.rvSales.adapter = movementAdapter
+
+            holder.b.tvPendingTitle.visibility = View.VISIBLE
+            holder.b.tvPendingStatus.visibility = View.VISIBLE
+            holder.b.tvPendingStatus.text = "Memuat antrean FIFO..."
+            holder.b.rvPendingQueue.visibility = View.GONE
+
+            class PendingVH(private val binding: ItemFifoBatchBinding) :
+                RecyclerView.ViewHolder(binding.root) {
+                fun bind(row: PendingRow) {
+                    val productLabel = if (row.productName.equals(row.sku, ignoreCase = true)) {
+                        row.productName
+                    } else {
+                        "${row.productName} (${row.sku})"
+                    }
+                    binding.tvTitle.text = when (row.type) {
+                        FifoType.INVOICE -> if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Invoice tertunda"
+                        FifoType.HOLD -> if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Stok tertahan"
+                    }
+                    binding.tvProduct.text = "Barang: $productLabel"
+                    binding.tvSupplier.text = "Supplier: ${row.supplierName?.takeIf { it.isNotBlank() } ?: "-"}"
+                    binding.tvQty.text = "Qty ${nf.format(row.qty)} unit"
+                    val costText = row.unitCost?.takeIf { it > 0 }
+                        ?.let { "Modal/unit: Rp ${nf.format(it)}" } ?: "Modal/unit: -"
+                    val saleText = row.salePrice?.takeIf { it > 0 }
+                        ?.let { "Harga jual/unit: Rp ${nf.format(it)}" } ?: "Harga jual/unit: -"
+                    binding.tvCost.text = costText
+                    binding.tvSale.text = saleText
+                    when (row.type) {
+                        FifoType.INVOICE -> {
+                            val schedule = row.scheduledAt?.let { dfDateTime.format(it) } ?: "-"
+                            val due = row.dueDate?.let { dfDate.format(it) } ?: "-"
+                            binding.tvDue.text = "Jadwal posting: $schedule | Jatuh tempo: $due"
+                            val statusPretty = when (row.status?.lowercase(localeId)) {
+                                "processing" -> "Sedang diproses"
+                                else -> "Menunggu"
+                            }
+                            binding.tvStatus.text = "Status: $statusPretty"
+                        }
+                        FifoType.HOLD -> {
+                            val received = row.receivedAt?.let { dfDateTime.format(it) } ?: "-"
+                            binding.tvDue.text = "Diterima: $received"
+                            binding.tvStatus.text = "Status: Menunggu stok lama habis"
+                        }
+                    }
+                }
+            }
+
+            val pendingRows = mutableListOf<PendingRow>()
+            val pendingAdapter = object : RecyclerView.Adapter<PendingVH>() {
+                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PendingVH {
+                    val binding = ItemFifoBatchBinding.inflate(
+                        LayoutInflater.from(parent.context),
+                        parent,
+                        false
+                    )
+                    return PendingVH(binding)
+                }
+
+                override fun onBindViewHolder(holder: PendingVH, position: Int) {
+                    holder.bind(pendingRows[position])
+                }
+
+                override fun getItemCount(): Int = pendingRows.size
+            }
+            if (holder.b.rvPendingQueue.layoutManager !is LinearLayoutManager) {
+                holder.b.rvPendingQueue.layoutManager = LinearLayoutManager(ctx)
+            }
+            holder.b.rvPendingQueue.adapter = pendingAdapter
+
+            var currentView = StockView.SUMMARY
+
+            fun applySections() {
+                val showSummary = currentView == StockView.SUMMARY
+                holder.b.rvSales.isVisible = showSummary && movementRows.isNotEmpty()
+                holder.b.tvDesc.isVisible = showSummary
+                holder.b.tvSummary.isVisible = showSummary && holder.b.tvSummary.text.isNotBlank()
+                holder.b.tvPendingTitle.isVisible = !showSummary
+                holder.b.rvPendingQueue.isVisible = !showSummary && pendingRows.isNotEmpty()
+                holder.b.tvPendingStatus.isVisible = !showSummary && pendingRows.isEmpty()
+            }
+
+            holder.b.toggleStockView.addOnButtonCheckedListener { _, checkedId, isChecked ->
+                if (!isChecked) return@addOnButtonCheckedListener
+                currentView = if (checkedId == holder.b.btnStockFifo.id) StockView.FIFO else StockView.SUMMARY
+                applySections()
+            }
+            holder.b.toggleStockView.check(holder.b.btnStockSummary.id)
+
+            val productMap = mutableMapOf<String, ProductSummary>()
+            var detailStarted = false
+
+            fun loadMovements(productLookup: Map<String, ProductSummary>) {
+                db.collection("inventory_movements")
+                    .orderBy("createdAt", Query.Direction.DESCENDING)
+                    .limit(150)
+                    .get()
+                    .addOnSuccessListener { snap ->
+                        if (!isStockRequestValid(holder, token)) return@addOnSuccessListener
+                        movementRows.clear()
+                        var totalIn = 0L
+                        var totalOut = 0L
+                        snap.documents.forEach { doc ->
+                            val sku = doc.getString("sku") ?: return@forEach
+                            val qtyRaw = doc.getLong("qtyDelta") ?: 0L
+                            if (qtyRaw == 0L) return@forEach
+                            val inbound = qtyRaw >= 0
+                            val qty = abs(qtyRaw)
+                            if (inbound) totalIn += qty else totalOut += qty
+                            val summary = productLookup[sku]
+                            val name = summary?.name ?: sku
+                            val unitCost = doc.getLong("unitCost") ?: summary?.lastCost ?: 0L
+                            val note = doc.getString("note") ?: doc.getString("refId")
+                            val type = doc.getString("type") ?: "-"
+                            val ts = doc.getTimestamp("createdAt")?.toDate()
+                            val totalCost = unitCost * qty
+                            movementRows += MovementRow(
+                                productName = name,
+                                sku = sku,
+                                qty = qty,
+                                unitCost = unitCost,
+                                totalCost = totalCost,
+                                note = note,
+                                type = type,
+                                isInbound = inbound,
+                                timestamp = ts
+                            )
+                        }
+                        movementAdapter.notifyDataSetChanged()
+                        if (movementRows.isEmpty()) {
+                            holder.b.tvDesc.text = "Belum ada pergerakan stok."
+                        } else {
+                            val summaryLine = "Stok masuk: ${nf.format(totalIn)} | Stok keluar: ${nf.format(totalOut)}"
+                            holder.b.tvDesc.text = "Riwayat pergerakan stok terbaru (maks 150 entri).\n$summaryLine"
+                        }
+                        applySections()
+                    }
+                    .addOnFailureListener { e ->
+                        if (!isStockRequestValid(holder, token)) return@addOnFailureListener
+                        val msg = e.localizedMessage ?: "Gagal memuat pergerakan stok."
+                        holder.b.tvDesc.text = msg
+                        applySections()
+                    }
+            }
+
+            fun loadFifoQueue(productLookup: Map<String, ProductSummary>) {
+                pendingRows.clear()
+                pendingAdapter.notifyDataSetChanged()
+                var pendingRemaining = 2
+                var pendingError: String? = null
+
+                fun complete() {
+                    pendingRemaining--
+                    if (pendingRemaining > 0) return
+                    if (!isStockRequestValid(holder, token)) return
+                    if (pendingRows.isNotEmpty()) {
+                        pendingRows.sortBy { it.sortTime }
+                    }
+                    pendingAdapter.notifyDataSetChanged()
+                    holder.b.tvPendingStatus.text = pendingError ?: "Tidak ada antrean stok"
+                    applySections()
+                }
+
+                db.collection("pending_stock_receipts")
+                    .whereIn("status", listOf("pending", "processing"))
+                    .limit(100)
+                    .get()
+                    .addOnSuccessListener { snap ->
+                        if (!isStockRequestValid(holder, token)) return@addOnSuccessListener
+                        snap.documents.forEach { doc ->
+                            val sku = doc.getString("sku") ?: return@forEach
+                            val qty = doc.getLong("qty") ?: 0L
+                            if (qty <= 0L) return@forEach
+                            val name = doc.getString("productName") ?: productLookup[sku]?.name ?: sku
+                            val invoiceNo = doc.getString("invoiceNo") ?: doc.id.takeLast(6)
+                            val supplier = doc.getString("supplierName")
+                            val unitCost = doc.getLong("unitCost")
+                            val salePrice = doc.getLong("newSalePrice")
+                            val dueDate = doc.getTimestamp("dueDate")?.toDate()
+                            val scheduledAt = doc.getTimestamp("scheduledAt")?.toDate()
+                                ?: doc.getTimestamp("createdAt")?.toDate()
+                            val status = doc.getString("status")
+                            val sortTime = (scheduledAt ?: dueDate ?: Date()).time
+                            pendingRows += PendingRow(
+                                sku = sku,
+                                productName = name,
+                                invoiceNo = invoiceNo,
+                                supplierName = supplier,
+                                qty = qty,
+                                unitCost = unitCost,
+                                salePrice = salePrice,
+                                dueDate = dueDate,
+                                scheduledAt = scheduledAt,
+                                receivedAt = null,
+                                status = status,
+                                type = FifoType.INVOICE,
+                                sortTime = sortTime
+                            )
+                        }
+                        complete()
+                    }
+                    .addOnFailureListener { e ->
+                        if (!isStockRequestValid(holder, token)) return@addOnFailureListener
+                        pendingError = (pendingError?.plus("\n") ?: "") +
+                                (e.localizedMessage ?: "Gagal memuat antrian invoice.")
+                        complete()
+                    }
+
+                db.collection("stock_batches")
+                    .whereEqualTo("state", BatchState.HOLD.name)
+                    .limit(100)
+                    .get()
+                    .addOnSuccessListener { snap ->
+                        if (!isStockRequestValid(holder, token)) return@addOnSuccessListener
+                        snap.documents.forEach { doc ->
+                            val sku = doc.getString("sku") ?: return@forEach
+                            val remaining = doc.getLong("remainingQty")
+                                ?: doc.getLong("receivedQty") ?: 0L
+                            if (remaining <= 0L) return@forEach
+                            val name = doc.getString("productName") ?: productLookup[sku]?.name ?: sku
+                            val invoiceNo = doc.getString("invoiceNo")
+                                ?: doc.getString("purchaseId") ?: doc.id.takeLast(6)
+                            val supplier = doc.getString("supplierName")
+                            val unitCost = doc.getLong("unitCost")
+                            val salePrice = doc.getLong("salePrice")
+                            val receivedAt = doc.getTimestamp("receivedAt")?.toDate()
+                            val sortTime = (receivedAt ?: Date()).time
+                            pendingRows += PendingRow(
+                                sku = sku,
+                                productName = name,
+                                invoiceNo = invoiceNo,
+                                supplierName = supplier,
+                                qty = remaining,
+                                unitCost = unitCost,
+                                salePrice = salePrice,
+                                dueDate = null,
+                                scheduledAt = null,
+                                receivedAt = receivedAt,
+                                status = doc.getString("state"),
+                                type = FifoType.HOLD,
+                                sortTime = sortTime
+                            )
+                        }
+                        complete()
+                    }
+                    .addOnFailureListener { e ->
+                        if (!isStockRequestValid(holder, token)) return@addOnFailureListener
+                        pendingError = (pendingError?.plus("\n") ?: "") +
+                                (e.localizedMessage ?: "Gagal memuat stok tertahan.")
+                        complete()
+                    }
+            }
+            fun startDetailLoads() {
+                if (detailStarted) return
+                detailStarted = true
+                loadMovements(productMap)
+                loadFifoQueue(productMap)
+            }
+
+            db.collection("products")
+                .whereEqualTo("trackStock", true)
+                .limit(500)
+                .get()
+                .addOnSuccessListener { snap ->
+                    if (!isStockRequestValid(holder, token)) return@addOnSuccessListener
+                    var totalQty = 0L
+                    var totalValue = 0L
+                    snap.documents.forEach { doc ->
+                        val sku = doc.getString("sku") ?: doc.id
+                        val name = doc.getString("name") ?: sku
+                        val stock = doc.getLong("stock") ?: 0L
+                        val lastCost = doc.getLong("lastCost") ?: 0L
+                        productMap[sku] = ProductSummary(sku, name, stock, lastCost)
+                        totalQty += stock
+                        totalValue += stock * lastCost
+                    }
+                    if (productMap.isNotEmpty()) {
+                        val skuCount = productMap.size
+                        holder.b.tvSummary.visibility = View.VISIBLE
+                        holder.b.tvSummary.text = "Total stok gudang: ${nf.format(totalQty)} unit\nNilai persediaan: Rp ${nf.format(totalValue)} | SKU aktif: ${nf.format(skuCount.toLong())}"
+                    } else {
+                        holder.b.tvSummary.visibility = View.VISIBLE
+                        holder.b.tvSummary.text = "Belum ada produk dengan stok aktif."
+                    }
+                    holder.b.tvDesc.text = "Riwayat pergerakan stok terbaru (maks 150 entri)."
+                    startDetailLoads()
+                    applySections()
+                }
+                .addOnFailureListener { e ->
+                    if (!isStockRequestValid(holder, token)) return@addOnFailureListener
+                    holder.b.tvDesc.text = e.localizedMessage ?: "Gagal memuat ringkasan stok."
+                    holder.b.tvSummary.visibility = View.GONE
+                    startDetailLoads()
+                    applySections()
+                }
+
 
 
 
 
     }
-}
+} }
+
+
 

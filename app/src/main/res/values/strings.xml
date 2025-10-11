@@ -53,4 +53,6 @@
     <string name="receipt_status_success">Print berhasil, menyimpan transaksi</string>
     <string name="receipt_status_error">Gagal cetak: %1$s</string>
     <string name="receipt_overlay_title">Simpan &amp; Cetak Nota</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_delete">Hapus</string>
 </resources>

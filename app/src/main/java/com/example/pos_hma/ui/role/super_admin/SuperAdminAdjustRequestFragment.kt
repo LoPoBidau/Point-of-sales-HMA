@@ -1,4 +1,4 @@
-﻿package com.example.pos_hma.ui.role.super_admin
+package com.example.pos_hma.ui.role.super_admin
 
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -338,49 +338,42 @@ private class ReqVH(
     val onApprove: (StockAdjustRequest) -> Unit,
     val onReject: (StockAdjustRequest) -> Unit
 ) : RecyclerView.ViewHolder(b.root) {
+
     fun bind(r: StockAdjustRequest) {
-        b.tvTitle.text = r.productName
-        b.tvSub.text = "SKU ${r.sku} â€¢ ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}\nAlasan: ${r.reason}"
+        val locale = java.util.Locale.getDefault()
+        val (statusLabel, badgeRes) = when (r.status.uppercase(locale)) {
+            "PENDING" -> "Pending" to com.example.pos_hma.R.drawable.bg_badge_blue
+            "APPROVED" -> "Disetujui" to com.example.pos_hma.R.drawable.bg_badge_green
+            "REJECTED" -> "Ditolak" to com.example.pos_hma.R.drawable.bg_badge_red
+            else -> r.status.ifBlank { "Tidak diketahui" } to com.example.pos_hma.R.drawable.bg_badge_gray
+        }
+
+        val deltaLabel = buildString {
+            if (r.requestedDelta >= 0) append('+')
+            append(r.requestedDelta)
+        }
+        val reasonText = r.reason.ifBlank { "-" }
+
+        b.tvTitle.text = r.productName.ifBlank { r.sku }
+        b.tvStatusBadge.text = statusLabel
+        b.tvStatusBadge.setBackgroundResource(badgeRes)
+        b.tvSub.text = buildString {
+            append("SKU: ")
+            append(r.sku.ifBlank { "-" })
+            append("\nPerubahan Stok: ")
+            append(deltaLabel)
+            append(" unit")
+            append("\nStatus: ")
+            append(statusLabel)
+            append("\nAlasan: ")
+            append(reasonText)
+        }
+
+        val isPending = r.status.equals("PENDING", ignoreCase = true)
+        b.btnApprove.visibility = if (isPending) View.VISIBLE else View.GONE
+        b.btnReject.visibility = if (isPending) View.VISIBLE else View.GONE
+
         b.btnApprove.setOnClickListener { onApprove(r) }
         b.btnReject.setOnClickListener { onReject(r) }
-        // Localize status text + badge color, and control action button visibility
-        run {
-            val (statusLabel, badgeBg) = when (r.status.uppercase()) {
-                "PENDING" -> "Pending" to com.example.pos_hma.R.drawable.bg_badge_blue
-                "APPROVED" -> "Disetujui" to com.example.pos_hma.R.drawable.bg_badge_green
-                "REJECTED" -> "Ditolak" to com.example.pos_hma.R.drawable.bg_badge_red
-                else -> r.status to com.example.pos_hma.R.drawable.bg_badge_gray
-            }
-            try {
-                b.tvStatusBadge.text = statusLabel
-                b.tvStatusBadge.setBackgroundResource(badgeBg)
-            } catch (_: Throwable) { }
-
-            val isPending = r.status.equals("PENDING", ignoreCase = true)
-            b.btnApprove.visibility = if (isPending) View.VISIBLE else View.GONE
-            b.btnReject.visibility = if (isPending) View.VISIBLE else View.GONE
-            // Update subtitle with localized label
-            val deltaPrefix = if (r.requestedDelta >= 0) "+" else ""
-            b.tvSub.text = "SKU ${r.sku} â€¢ ${deltaPrefix}${r.requestedDelta}  |  Status: ${statusLabel}\nAlasan: ${r.reason}"
-        }
-        // Override subtitle to include status label for clarity
-        b.tvSub.text = "SKU ${r.sku} â€¢ ${if (r.requestedDelta >= 0) "+" else ""}${r.requestedDelta}  |  Status: ${r.status}\nAlasan: ${r.reason}"
-        // Force localized status and badge to be the last applied state
-        run {
-            val (statusLabel2, badgeBg2) = when (r.status.uppercase()) {
-                "PENDING" -> "Pending" to com.example.pos_hma.R.drawable.bg_badge_blue
-                "APPROVED" -> "Disetujui" to com.example.pos_hma.R.drawable.bg_badge_green
-                "REJECTED" -> "Ditolak" to com.example.pos_hma.R.drawable.bg_badge_red
-                else -> r.status to com.example.pos_hma.R.drawable.bg_badge_gray
-            }
-            try {
-                b.tvStatusBadge.text = statusLabel2
-                b.tvStatusBadge.setBackgroundResource(badgeBg2)
-            } catch (_: Throwable) { }
-            val deltaPrefix2 = if (r.requestedDelta >= 0) "+" else ""
-            b.tvSub.text = "SKU ${r.sku} â€¢ ${deltaPrefix2}${r.requestedDelta}  |  Status: ${statusLabel2}\nAlasan: ${r.reason}"
-        }
     }
 }
-
-

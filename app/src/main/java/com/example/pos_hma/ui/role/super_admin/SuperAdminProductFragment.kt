@@ -11,6 +11,8 @@ import android.view.*
 import android.widget.*
 import android.graphics.drawable.GradientDrawable
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
+import androidx.core.view.isVisible
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -37,6 +39,7 @@ import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.*
 import com.google.firebase.storage.FirebaseStorage
+import java.io.File
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -108,9 +111,31 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     // image picker utk form
     private var selectedImageUri: Uri? = null
     private var formImgPreview: ImageView? = null
+    private var formRemoveImageButton: ImageButton? = null
     private val pickImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) { selectedImageUri = uri; formImgPreview?.load(uri) }
+        if (uri != null) {
+            selectedImageUri = uri
+            formImgPreview?.let {
+                it.load(uri)
+                it.alpha = 1f
+            }
+            formRemoveImageButton?.isVisible = true
+        }
     }
+    private var cameraTempUri: Uri? = null
+    private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && cameraTempUri != null) {
+            selectedImageUri = cameraTempUri
+            formImgPreview?.let {
+                it.load(cameraTempUri)
+                it.alpha = 1f
+            }
+            formRemoveImageButton?.isVisible = true
+        } else {
+            cameraTempUri = null
+        }
+    }
+
 
     // kategori
     private val catFilterList = mutableListOf<Category>()
@@ -118,6 +143,19 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private var selectedFilterCategory: Category? = null
     private var categoriesReg: ListenerRegistration? = null
     private var activeCategoryIds: MutableSet<String> = mutableSetOf()
+
+    private fun createTempImageUri(): Uri? {
+        return try {
+            val context = requireContext()
+            val file = File.createTempFile("product_${System.currentTimeMillis()}", ".jpg", context.cacheDir)
+            FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file).also {
+                cameraTempUri = it
+            }
+        } catch (e: Exception) {
+            toast("Tidak dapat mengakses kamera: ${e.localizedMessage ?: "Unknown error"}")
+            null
+        }
+    }
 
     private lateinit var adapter: ProductsAdapter
     private var forTypeTab: String = "goods" // "goods" or "service"
@@ -435,8 +473,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     // ================= FORM PRODUK =================
     private fun openForm(p: Product?) {
         selectedImageUri = null
+        cameraTempUri = null
         val form = DialogProductFormBinding.inflate(layoutInflater)
         formImgPreview = form.imgPreview
+        formRemoveImageButton = form.btnRemoveImage
+        form.btnRemoveImage.isVisible = false
 
         // Field kategori: non-keyboard, klik => buka dialog
         val actCat = (form.actCategory as MaterialAutoCompleteTextView).apply {
@@ -473,10 +514,16 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
             if (p.images.firstOrNull().isNullOrBlank()) {
                 form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
-            } else { form.imgPreview.alpha = 1f; form.imgPreview.load(p.images.first()) }
+                form.btnRemoveImage.isVisible = false
+            } else {
+                form.imgPreview.alpha = 1f
+                form.imgPreview.load(p.images.first())
+                form.btnRemoveImage.isVisible = true
+            }
         } else {
             // Non-editing: lock to current tab type
             form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
+            form.btnRemoveImage.isVisible = false
             if (forTypeTab == "service") {
                 // Service tab: create service only
                 form.swService.visibility = View.GONE
@@ -554,10 +601,20 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         form.etInitCost.attachRupiahFormatter()
 
         // Foto
-        form.btnPickImage.setOnClickListener { pickImage.launch("image/*") }
+        form.btnPickImage.setOnClickListener {
+            pickImage.launch("image/*")
+        }
+        form.btnTakePhoto.setOnClickListener {
+            val uri = createTempImageUri() ?: return@setOnClickListener
+            takePhoto.launch(uri)
+        }
         form.btnRemoveImage.setOnClickListener {
             selectedImageUri = null
-            form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
+            cameraTempUri = null
+            form.imgPreview.setImageResource(R.drawable.store)
+            form.imgPreview.alpha = .25f
+            form.btnRemoveImage.isVisible = false
+            formRemoveImageButton?.isVisible = false
         }
 
         // Build dialog & tombol SIMPAN
@@ -569,7 +626,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .create()
 
         currentDialog?.dismiss(); currentDialog = dlg
-        dlg.setOnDismissListener { currentDialog = null }
+        dlg.setOnDismissListener {
+            currentDialog = null
+            formImgPreview = null
+            formRemoveImageButton = null
+        }
 
         dlg.setOnShowListener {
             val btn = dlg.getButton(AlertDialog.BUTTON_POSITIVE)

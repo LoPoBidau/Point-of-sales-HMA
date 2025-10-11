@@ -9,17 +9,37 @@
 
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/cardImage"
-            android:layout_width="match_parent" android:layout_height="180dp"
+            android:layout_width="match_parent"
+            android:layout_height="180dp"
             app:cardCornerRadius="12dp"
             app:strokeWidth="0dp"
             android:foreground="?android:attr/selectableItemBackground">
 
-            <ImageView
-                android:id="@+id/imgPreview"
-                android:layout_width="match_parent" android:layout_height="match_parent"
-                android:scaleType="fitCenter"
-                android:src="@drawable/store"
-                android:contentDescription="@null"/>
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="match_parent">
+
+                <ImageView
+                    android:id="@+id/imgPreview"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:scaleType="fitCenter"
+                    android:src="@drawable/store"
+                    android:contentDescription="@null" />
+
+                <ImageButton
+                    android:id="@+id/btnRemoveImage"
+                    android:layout_width="40dp"
+                    android:layout_height="40dp"
+                    android:layout_gravity="end|top"
+                    android:layout_margin="8dp"
+                    android:background="@drawable/bg_badge_red"
+                    android:contentDescription="@string/action_delete"
+                    android:padding="8dp"
+                    android:tint="@android:color/white"
+                    android:visibility="gone"
+                    app:srcCompat="@drawable/ic_delete_red" />
+            </FrameLayout>
         </com.google.android.material.card.MaterialCardView>
 
         <!-- error foto -->
@@ -33,18 +53,21 @@
             android:layout_marginTop="4dp"/>
 
         <LinearLayout
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:gravity="end" android:layout_marginTop="8dp">
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:layout_marginTop="8dp">
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnPickImage"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Pilih Foto"/>
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Pilih Foto" />
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/btnRemoveImage"
-                style="?attr/materialButtonOutlinedStyle"
+                android:id="@+id/btnTakePhoto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:text="Hapus Foto"/>
+                android:text="Ambil Foto" />
         </LinearLayout>
 
         <!-- Nama -->
@@ -148,3 +171,4 @@
         </com.google.android.material.textfield.TextInputLayout>
     </LinearLayout>
 </ScrollView>
+

@@ -6,15 +6,18 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.example.pos_hma.R
 import com.example.pos_hma.data.Supplier
 import com.example.pos_hma.databinding.DialogSupplierFormBinding
 import com.example.pos_hma.databinding.FragmentSuperAdminSupplierBinding
 import com.example.pos_hma.databinding.ItemSupplierBinding
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -28,7 +31,8 @@ class SuperAdminSupplierFragment : Fragment() {
     private var reg: ListenerRegistration? = null
     private var requiredAlert: AlertDialog? = null
     private val adapter = SupplierAdapter(
-        onEdit = { openForm(it) }
+        onEdit = { openForm(it) },
+        onDelete = { confirmDelete(it) }
     )
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
@@ -151,11 +155,26 @@ class SuperAdminSupplierFragment : Fragment() {
                 show()
             }
     }
+
+    private fun confirmDelete(s: Supplier) {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Hapus supplier?")
+            .setMessage("Hapus ${s.name}? Data ini tidak dapat dikembalikan.")
+            .setNegativeButton("Batal", null)
+            .setPositiveButton("Hapus") { _, _ ->
+                db.collection("suppliers").document(s.id)
+                    .delete()
+                    .addOnSuccessListener { toast("Supplier dihapus") }
+                    .addOnFailureListener { e -> toast(e.message ?: "Gagal menghapus supplier") }
+            }
+            .show()
+    }
     private fun toast(s: String) = Toast.makeText(requireContext(), s, Toast.LENGTH_LONG).show()
 }
 
 private class SupplierAdapter(
-    val onEdit: (Supplier) -> Unit
+    val onEdit: (Supplier) -> Unit,
+    val onDelete: (Supplier) -> Unit
 ) : ListAdapter<Supplier, SupplierAdapter.VH>(DIFF) {
     companion object {
         val DIFF = object : DiffUtil.ItemCallback<Supplier>() {
@@ -176,7 +195,25 @@ private class SupplierAdapter(
                 append(" hari")
             }
             b.tvSub.text = info
+            val (statusLabel, statusBg, statusColor) = if (s.isActive) {
+                Triple(
+                    "Aktif",
+                    R.drawable.bg_badge_green,
+                    ContextCompat.getColor(b.root.context, android.R.color.white)
+                )
+            } else {
+                Triple(
+                    "Nonaktif",
+                    R.drawable.bg_badge_gray,
+                    MaterialColors.getColor(b.tvStatus, com.google.android.material.R.attr.colorOnSurface)
+                )
+            }
+            b.tvStatus.text = statusLabel
+            b.tvStatus.setBackgroundResource(statusBg)
+            b.tvStatus.setTextColor(statusColor)
             b.root.setOnClickListener { onEdit(s) }
+            b.btnEdit.setOnClickListener { onEdit(s) }
+            b.btnDelete.setOnClickListener { onDelete(s) }
         }
     }
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH =

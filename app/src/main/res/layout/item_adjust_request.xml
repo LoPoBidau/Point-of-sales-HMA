@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:layout_margin="8dp"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="6dp"
     app:cardCornerRadius="12dp"
-    app:cardElevation="0dp"
-    app:strokeWidth="1dp"
-    app:strokeColor="?attr/colorOutline">
+    app:cardElevation="2dp">
 
     <LinearLayout
         android:orientation="vertical" android:padding="12dp"
@@ -19,37 +18,43 @@
 
             <TextView
                 android:id="@+id/tvTitle"
-                android:textStyle="bold"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="16sp"
-                android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1"/>
+                android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/tvStatusBadge"
-                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Pending"
-                android:textColor="#FFFFFF"
+                android:textColor="@android:color/white"
                 android:textStyle="bold"
                 android:textSize="12sp"
-                android:paddingLeft="8dp"
-                android:paddingRight="8dp"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
                 android:paddingTop="4dp"
                 android:paddingBottom="4dp"
-                android:background="@drawable/bg_badge_blue"/>
+                android:background="@drawable/bg_badge_blue" />
 
         </LinearLayout>
 
         <TextView
             android:id="@+id/tvSub"
-            android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:textColor="?android:attr/textColorSecondary"
-            android:layout_marginTop="6dp"/>
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:lineSpacingExtra="4dp"
+            android:textColor="?attr/colorOnSurfaceVariant" />
 
         <LinearLayout
             android:orientation="horizontal"
             android:gravity="end"
             android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="8dp">
+            android:layout_marginTop="16dp">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnReject"
