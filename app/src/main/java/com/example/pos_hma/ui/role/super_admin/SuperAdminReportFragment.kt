@@ -6,8 +6,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.content.res.ColorStateList
 import android.view.ViewGroup
-import android.view.KeyEvent
-import android.view.inputmethod.EditorInfo
 import android.util.Log
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
@@ -548,46 +546,8 @@ class SuperAdminReportFragment : Fragment() {
                 }
             }
 
-            // Search No. Nota
-            holder.b.btnSearchSaleId.setOnClickListener {
-                val id = holder.b.etSearchSaleId.text?.toString()?.trim().orEmpty()
-                if (id.isEmpty()) {
-                    holder.b.tilSearchSaleId.error = "Masukkan No. Nota"
-                } else {
-                    holder.b.tilSearchSaleId.error = null
-                    db.collection("sales").whereEqualTo("noNota", id).limit(1).get()
-                        .addOnSuccessListener { snap ->
-                            val d = snap.documents.firstOrNull()
-                            if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(
-                                ctx,
-                                "No. Nota tidak ditemukan",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                }
-            }
-            holder.b.etSearchSaleId.setOnEditorActionListener { _, actionId, event ->
-                val isSearch =
-                    actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-                if (isSearch) {
-                    val id = holder.b.etSearchSaleId.text?.toString()?.trim().orEmpty()
-                    if (id.isEmpty()) {
-                        holder.b.tilSearchSaleId.error = "Masukkan No. Nota"
-                    } else {
-                        holder.b.tilSearchSaleId.error = null
-                        db.collection("sales").whereEqualTo("noNota", id).limit(1).get()
-                            .addOnSuccessListener { snap ->
-                                val d = snap.documents.firstOrNull()
-                                if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(
-                                    ctx,
-                                    "No. Nota tidak ditemukan",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                    }
-                    true
-                } else false
-            }
+            holder.b.btnSearchSaleId.visibility = View.GONE
+            holder.b.etSearchSaleId.setOnEditorActionListener { _, _, _ -> true }
 
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
             val allSales = mutableListOf<SaleRow>()
@@ -636,10 +596,18 @@ class SuperAdminReportFragment : Fragment() {
                 adapter.notifyDataSetChanged()
             }
 
-            holder.b.etSearchSaleId.addTextChangedListener {
-                holder.b.tilSearchSaleId.error = null
-                applySalesSearch()
+            val saleWatcherExisting = holder.b.etSearchSaleId.getTag(R.id.tag_search_watcher) as? android.text.TextWatcher
+            saleWatcherExisting?.let { holder.b.etSearchSaleId.removeTextChangedListener(it) }
+            val saleWatcher = object : android.text.TextWatcher {
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    holder.b.tilSearchSaleId.error = null
+                    applySalesSearch()
+                }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             }
+            holder.b.etSearchSaleId.addTextChangedListener(saleWatcher)
+            holder.b.etSearchSaleId.setTag(R.id.tag_search_watcher, saleWatcher)
 
             var activeRangeChipId: Int? = null
 
@@ -842,7 +810,7 @@ class SuperAdminReportFragment : Fragment() {
             holder.b.tilSearchSaleId.error = null
             holder.b.tilSearchSaleId.hint = null
             holder.b.etSearchSaleId.hint = "Cari No. Invoice"
-            holder.b.btnSearchSaleId.text = "Cari"
+            holder.b.btnSearchSaleId.visibility = View.GONE
             holder.b.tvKeterangan.visibility = View.GONE
 
             val rows = mutableListOf<PurchaseRow>()
@@ -857,8 +825,7 @@ class SuperAdminReportFragment : Fragment() {
 
 
             fun setSearchControlsEnabled(enabled: Boolean) {
-                holder.b.btnSearchSaleId.isEnabled = enabled
-                holder.b.etSearchSaleId.isEnabled = enabled
+                holder.b.etSearchSaleId.isEnabled = true
             }
 
             fun computeStatus(due: Date?): PurchaseStatusInfo {
@@ -1297,26 +1264,27 @@ class SuperAdminReportFragment : Fragment() {
                     listenRecent()
                     return
                 }
-                setSearchControlsEnabled(false)
                 listenInvoiceByNumber(queryString, candidates)
             }
 
 
             listenRecent()
 
-            holder.b.btnSearchSaleId.setOnClickListener {
-                searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
-            }
-            holder.b.etSearchSaleId.setOnEditorActionListener { _, actionId, event ->
-                val isSearch = actionId == EditorInfo.IME_ACTION_SEARCH ||
-                        (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-                if (isSearch) {
-                    searchInvoice(holder.b.etSearchSaleId.text?.toString().orEmpty())
-                    true
-                } else {
-                    false
+            // search runs realtime as user types
+
+            holder.b.etSearchSaleId.setOnEditorActionListener { _, _, _ -> true }
+
+            val existingWatcher = holder.b.etSearchSaleId.getTag(R.id.tag_search_watcher) as? android.text.TextWatcher
+            if (existingWatcher != null) holder.b.etSearchSaleId.removeTextChangedListener(existingWatcher)
+            val watcher = object : android.text.TextWatcher {
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    searchInvoice(s?.toString().orEmpty())
                 }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             }
+            holder.b.etSearchSaleId.addTextChangedListener(watcher)
+            holder.b.etSearchSaleId.setTag(R.id.tag_search_watcher, watcher)
         }
 
         private fun bindStockValuation(holder: VH) {

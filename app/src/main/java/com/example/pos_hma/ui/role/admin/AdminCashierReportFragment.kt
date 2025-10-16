@@ -29,8 +29,6 @@ import com.google.android.material.color.MaterialColors
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import android.view.inputmethod.EditorInfo
-import android.view.KeyEvent
 import androidx.annotation.RequiresPermission
 import androidx.core.view.isVisible
 import java.text.NumberFormat
@@ -48,7 +46,11 @@ class AdminCashierReportFragment : Fragment() {
     private val dfDay by lazy { SimpleDateFormat("dd MMM yy", Locale("in","ID")) }
 
     private val sales = mutableListOf<SaleRow>()
-    private val adapter = SalesAdapter(sales) { saleId -> onSaleClicked(saleId) }
+    private val filteredSales = mutableListOf<SaleRow>()
+    private val adapter = SalesAdapter { position ->
+        val row = filteredSales.getOrNull(position) ?: return@SalesAdapter
+        onSaleClicked(row.id)
+    }
     private var currentKetPrefix: String = "Semua Transaksi"
 
     // For direct Bluetooth ESC/POS printing from dialog
@@ -92,29 +94,22 @@ class AdminCashierReportFragment : Fragment() {
         setupRangeChips()
         loadAllTransactions()
 
-        // Search No. Nota
-        b.btnSearchSaleId.setOnClickListener {
-            val id = b.etSearchSaleId.text?.toString()?.trim().orEmpty()
-            if (id.isEmpty()) {
-                b.tilSearchSaleId.error = "Masukkan No. Nota"
-            } else {
+        // Search No. Nota kini realtime; tombol Cari tidak diperlukan
+        b.btnSearchSaleId.visibility = View.GONE
+        b.etSearchSaleId.setOnEditorActionListener { _, _, _ -> true }
+
+        val existingWatcher = b.etSearchSaleId.getTag(R.id.tag_search_watcher) as? android.text.TextWatcher
+        if (existingWatcher != null) b.etSearchSaleId.removeTextChangedListener(existingWatcher)
+        val watcher = object : android.text.TextWatcher {
+            override fun afterTextChanged(s: android.text.Editable?) {
                 b.tilSearchSaleId.error = null
-                searchAndOpenReceipt(id)
+                applySalesFilter()
             }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         }
-        b.etSearchSaleId.setOnEditorActionListener { _, actionId, event ->
-            val isSearch = actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
-            if (isSearch) {
-                val id = b.etSearchSaleId.text?.toString()?.trim().orEmpty()
-                if (id.isEmpty()) {
-                    b.tilSearchSaleId.error = "Masukkan No. Nota"
-                } else {
-                    b.tilSearchSaleId.error = null
-                    searchAndOpenReceipt(id)
-                }
-                true
-            } else false
-        }
+        b.etSearchSaleId.addTextChangedListener(watcher)
+        b.etSearchSaleId.setTag(R.id.tag_search_watcher, watcher)
     }
 
     private fun setupRangeChips() {
@@ -235,12 +230,8 @@ class AdminCashierReportFragment : Fragment() {
                 val total = doc.getLong("total") ?: 0L
                 sales += SaleRow(saleId, ts, total, noNota)
             }
-            _b?.let { binding ->
-                currentKetPrefix = label
-                binding.tvKeterangan.visibility = View.VISIBLE
-                binding.tvKeterangan.text = "$currentKetPrefix : ${sales.size}"
-            }
-            adapter.notifyDataSetChanged()
+            currentKetPrefix = label
+            applySalesFilter()
         }
     }
 
@@ -252,6 +243,26 @@ class AdminCashierReportFragment : Fragment() {
         b.chipMonth.isChecked = false
         b.chipCustom.isChecked = false
         loadSalesWithin(null, null, "Semua Transaksi")
+    }
+
+    private fun applySalesFilter() {
+        val query = b.etSearchSaleId.text?.toString()?.trim().orEmpty().lowercase(Locale("in","ID"))
+        filteredSales.clear()
+        if (query.isBlank()) {
+            filteredSales.addAll(sales)
+        } else {
+            filteredSales.addAll(
+                sales.filter { row ->
+                    row.noNota?.lowercase(Locale("in","ID"))?.contains(query) == true ||
+                            row.id.lowercase(Locale("in","ID")).contains(query)
+                }
+            )
+        }
+        _b?.let { binding ->
+            binding.tvKeterangan.visibility = View.VISIBLE
+            binding.tvKeterangan.text = "$currentKetPrefix : ${filteredSales.size}"
+        }
+        adapter.notifyDataSetChanged()
     }
 
     private fun pickDateRange(onPicked: (Date, Date) -> Unit) {
@@ -383,15 +394,6 @@ class AdminCashierReportFragment : Fragment() {
         }
     }
 
-    private fun searchAndOpenReceipt(noNota: String) {
-        // Cari dokumen berdasarkan field noNota
-        db.collection("sales").whereEqualTo("noNota", noNota).limit(1).get().addOnSuccessListener { snap ->
-            val doc = snap.documents.firstOrNull()
-            if (doc != null) onSaleClicked(doc.id)
-            else android.widget.Toast.makeText(requireContext(), "No. Nota tidak ditemukan", android.widget.Toast.LENGTH_SHORT).show()
-        }
-    }
-
     override fun onDestroyView() {
         stopDialogPrinterAnimation()
         printingDialog?.dismiss()
@@ -405,16 +407,17 @@ class AdminCashierReportFragment : Fragment() {
 
     data class SaleRow(val id: String, val date: Date?, val total: Long, val noNota: String?)
 
-    inner class SalesAdapter(private val data: List<SaleRow>, private val onClick: (String) -> Unit) : RecyclerView.Adapter<SalesAdapter.VH>() {
+    inner class SalesAdapter(private val onItemClick: (Int) -> Unit) : RecyclerView.Adapter<SalesAdapter.VH>() {
         inner class VH(val vb: ItemSaleRowBinding) : RecyclerView.ViewHolder(vb.root)
-        override fun onCreateViewHolder(p: ViewGroup, vt: Int): VH = VH(ItemSaleRowBinding.inflate(layoutInflater, p, false))
-        override fun getItemCount() = data.size
+        override fun onCreateViewHolder(p: ViewGroup, vt: Int): VH =
+            VH(ItemSaleRowBinding.inflate(LayoutInflater.from(p.context), p, false))
+        override fun getItemCount() = filteredSales.size
         override fun onBindViewHolder(h: VH, i: Int) {
-            val row = data[i]
+            val row = filteredSales[i]
             h.vb.tvSaleId.text = "No. Nota: ${row.noNota ?: row.id}"
             h.vb.tvDate.text = row.date?.let { df.format(it) } ?: "-"
             h.vb.tvTotal.text = "Total: Rp ${nf.format(row.total)}"
-            h.vb.root.setOnClickListener { onClick(row.id) }
+            h.vb.root.setOnClickListener { onItemClick(i) }
         }
     }
 
