@@ -1,23 +1,38 @@
 package com.example.pos_hma.ui.role.admin
 
+import android.Manifest
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
+import android.bluetooth.BluetoothAdapter
+import android.content.res.ColorStateList
+import android.os.Build
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContextCompat
+import androidx.core.view.doOnLayout
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.navigation.fragment.findNavController
+import com.example.pos_hma.R
+import com.example.pos_hma.databinding.DialogReceiptPrintStatusBinding
 import com.example.pos_hma.databinding.FragmentAdminCashierReportBinding
 import com.example.pos_hma.databinding.ItemSaleRowBinding
+import com.example.pos_hma.print.DirectEscPosPrinter
+import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
+import com.example.pos_hma.utils.PrintersPref
+import com.google.android.material.datepicker.MaterialDatePicker
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.color.MaterialColors
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
-import com.google.android.material.datepicker.MaterialDatePicker
 import android.view.inputmethod.EditorInfo
 import android.view.KeyEvent
-import com.google.android.material.textfield.TextInputLayout
-import androidx.core.view.doOnLayout
+import androidx.annotation.RequiresPermission
+import androidx.core.view.isVisible
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
@@ -38,7 +53,11 @@ class AdminCashierReportFragment : Fragment() {
 
     // For direct Bluetooth ESC/POS printing from dialog
     private val BT_REQ = 202
-    private var lastReceiptToPrint: String? = null
+    private var pendingReceiptToPrint: String? = null
+    private var printingDialog: AlertDialog? = null
+    private var printingBinding: DialogReceiptPrintStatusBinding? = null
+    private var isPrinting = false
+    private var dialogPrinterAnimator: ObjectAnimator? = null
     private val requiredBtPermissions: Array<String> by lazy {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             arrayOf(
@@ -189,7 +208,7 @@ class AdminCashierReportFragment : Fragment() {
             label to c.time
         }
         val items = labels.map { it.first }.toTypedArray()
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+            MaterialAlertDialogBuilder(requireContext())
             .setTitle("Pilih Bulan")
             .setItems(items) { _, which ->
                 val start = labels[which].second
@@ -217,7 +236,7 @@ class AdminCashierReportFragment : Fragment() {
                 val qty = (m["qty"] as? Number)?.toLong() ?: 0L
                 val unitPrice = (m["unitPrice"] as? Number)?.toLong() ?: 0L
                 val isService = (m["isService"] as? Boolean) ?: false
-                com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.Item(
+                ReceiptFormatter.Item(
                     name = name,
                     qty = qty,
                     unitPrice = unitPrice,
@@ -225,27 +244,29 @@ class AdminCashierReportFragment : Fragment() {
                 )
             }
 
-            val store = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.StoreInfo(
+            val store = ReceiptFormatter.StoreInfo(
                 name = "HAGWY MULYA AGUNG BENGKEL",
                 address1 = "JL. APT PRANOTO",
                 address2 = "KOTA SAMARINDA SEBERANG",
                 phone = "0341-8686715"
             )
             val noNota = doc.getString("noNota") ?: saleId
-            val saleInfo = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.SaleInfo(
+            val saleInfo = ReceiptFormatter.SaleInfo(
                 saleId = noNota,
                 date = doc.getTimestamp("createdAt")?.toDate() ?: Date(),
                 total = doc.getLong("total") ?: 0L,
                 paid = doc.getLong("paid") ?: (doc.getLong("total") ?: 0L)
             )
             val svc = doc.getLong("serviceFee") ?: 0L
-            val payload = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.Payload(
+            val svcDesc = doc.getString("serviceDescription")?.trim().orEmpty()
+            val payload = ReceiptFormatter.Payload(
                 store = store,
                 sale = saleInfo,
                 items = items,
-                serviceFee = svc
+                serviceFee = svc,
+                serviceDescription = svcDesc.takeIf { it.isNotEmpty() }
             )
-            val receiptForPrinter = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForPrinter(payload)
+            val receiptForPrinter = ReceiptFormatter.buildForPrinter(payload)
             // Tampilkan dialog struk rapi (bukan navigate ke halaman terpisah)
             if (!isAdded) return@addOnSuccessListener
             val ctx = requireContext()
@@ -257,12 +278,12 @@ class AdminCashierReportFragment : Fragment() {
                 setTextIsSelectable(true)
                 setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
             }
-            val screenTextFallback = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForScreen(payload)
+            val screenTextFallback = ReceiptFormatter.buildForScreen(payload)
             tv.text = screenTextFallback
             tv.doOnLayout { view ->
                 val textView = view as android.widget.TextView
-                val columns = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.estimateColumns(textView)
-                textView.text = com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.buildForScreen(payload, columns)
+                val columns = ReceiptFormatter.estimateColumns(textView)
+                textView.text = ReceiptFormatter.buildForScreen(payload, columns)
             }
             val container = android.widget.LinearLayout(ctx).apply {
                 orientation = android.widget.LinearLayout.VERTICAL
@@ -278,14 +299,16 @@ class AdminCashierReportFragment : Fragment() {
             }
             val scroll = android.widget.ScrollView(ctx).apply {
                 isFillViewport = true
+                isVerticalScrollBarEnabled = true
+                overScrollMode = android.view.View.OVER_SCROLL_ALWAYS
                 val params = android.widget.FrameLayout.LayoutParams(
                     android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                     android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
                 )
                 addView(container, params)
             }
-            lastReceiptToPrint = receiptForPrinter
-            com.google.android.material.dialog.MaterialAlertDialogBuilder(ctx)
+            pendingReceiptToPrint = receiptForPrinter
+            MaterialAlertDialogBuilder(ctx)
                 .setView(scroll)
                 .setPositiveButton("Cetak") { _, _ ->
                     startDirectPrintFromDialog(receiptForPrinter)
@@ -304,7 +327,16 @@ class AdminCashierReportFragment : Fragment() {
         }
     }
 
-    override fun onDestroyView() { _b = null; super.onDestroyView() }
+    override fun onDestroyView() {
+        stopDialogPrinterAnimation()
+        printingDialog?.dismiss()
+        printingDialog = null
+        printingBinding = null
+        pendingReceiptToPrint = null
+        isPrinting = false
+        _b = null
+        super.onDestroyView()
+    }
 
     data class SaleRow(val id: String, val date: Date?, val total: Long, val noNota: String?)
 
@@ -322,49 +354,161 @@ class AdminCashierReportFragment : Fragment() {
     }
 
     // ===== Direct Bluetooth ESC/POS printing helpers (dialog) =====
-    private fun startDirectPrintFromDialog(text: String) {
-        lastReceiptToPrint = text
+    private fun startDirectPrintFromDialog(rawText: String) {
+        val text = rawText.ifBlank { "" }
+        if (text.isBlank()) {
+            toast("Tidak ada data nota untuk dicetak")
+            return
+        }
+        if (isPrinting) return
+        pendingReceiptToPrint = text
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && !hasAllBtPermissions()) {
             requestPermissions(requiredBtPermissions, BT_REQ)
             return
         }
 
-        val savedMac = com.example.pos_hma.utils.PrintersPref.getMac(requireContext())
+        val savedMac = PrintersPref.getMac(requireContext())
         if (savedMac.isNullOrBlank()) {
             showBtPicker { mac ->
-                com.example.pos_hma.utils.PrintersPref.saveMac(requireContext(), mac)
-                doBtPrint(mac, text)
+                PrintersPref.saveMac(requireContext(), mac)
+                beginDirectPrint(mac, text)
             }
         } else {
-            doBtPrint(savedMac, text)
+            beginDirectPrint(savedMac, text)
         }
     }
 
-    private fun doBtPrint(mac: String, text: String) {
-        com.example.pos_hma.print.DirectEscPosPrinter.print(
+    private fun beginDirectPrint(mac: String, text: String) {
+        pendingReceiptToPrint = text
+        val dialogBinding = ensurePrintingDialog()
+        isPrinting = true
+        dialogBinding.progress.isVisible = true
+        dialogBinding.btnRetry.isVisible = false
+        dialogBinding.btnRetry.setOnClickListener(null)
+        dialogBinding.btnClose.isVisible = false
+        dialogBinding.btnClose.setOnClickListener(null)
+        dialogBinding.ivStatus.setImageResource(R.drawable.ic_printer)
+        dialogBinding.ivStatus.imageTintList = ColorStateList.valueOf(
+            MaterialColors.getColor(dialogBinding.ivStatus, com.google.android.material.R.attr.colorPrimary)
+        )
+        dialogBinding.tvStatus.text = getString(R.string.print_status_sending)
+        startDialogPrinterAnimation(dialogBinding)
+
+        DirectEscPosPrinter.print(
             requireContext(),
             mac,
-            if (text.isBlank()) " " else text,
-            onSuccess = { toast("Terkirim ke printer") },
-            onError = { toast("Gagal cetak: ${it.message}") }
+            text.ifBlank { " " },
+            onSuccess = { onPrintSuccess() },
+            onError = { error -> onPrintError(error) }
         )
     }
 
+    private fun onPrintSuccess() {
+        val binding = printingBinding ?: return
+        isPrinting = false
+        pendingReceiptToPrint = null
+        stopDialogPrinterAnimation()
+        binding.progress.isVisible = false
+        binding.ivStatus.setImageResource(R.drawable.ic_check_success)
+        binding.ivStatus.imageTintList = ColorStateList.valueOf(
+            ContextCompat.getColor(requireContext(), R.color.green_success)
+        )
+        binding.tvStatus.text = getString(R.string.print_status_success)
+        binding.btnRetry.isVisible = false
+        binding.btnClose.apply {
+            text = getString(R.string.print_status_close)
+            isVisible = true
+            setOnClickListener { printingDialog?.dismiss() }
+        }
+        toast("Terkirim ke printer")
+        binding.root.postDelayed({ printingDialog?.dismiss() }, 1200)
+    }
+
+    private fun onPrintError(error: Throwable) {
+        val binding = printingBinding ?: return
+        isPrinting = false
+        stopDialogPrinterAnimation()
+        binding.progress.isVisible = false
+        binding.ivStatus.setImageResource(R.drawable.ic_printer)
+        val errorColor = MaterialColors.getColor(binding.ivStatus, com.google.android.material.R.attr.colorError)
+        binding.ivStatus.imageTintList = ColorStateList.valueOf(errorColor)
+        val message = error.message?.takeUnless { it.isBlank() } ?: "-"
+        binding.tvStatus.text = getString(R.string.print_status_failed, message)
+        binding.btnRetry.isVisible = true
+        binding.btnClose.isVisible = true
+        binding.btnRetry.setOnClickListener {
+            val retryText = pendingReceiptToPrint
+            if (retryText.isNullOrBlank()) {
+                printingDialog?.dismiss()
+            } else {
+                printingDialog?.dismiss()
+                startDirectPrintFromDialog(retryText)
+            }
+        }
+        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        toast("Gagal cetak: $message")
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun showBtPicker(onPicked: (String) -> Unit) {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && !hasAllBtPermissions()) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasAllBtPermissions()) {
             requestPermissions(requiredBtPermissions, BT_REQ)
             return
         }
-        val adapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        val adapter = BluetoothAdapter.getDefaultAdapter()
         val bonded = adapter?.bondedDevices?.toList().orEmpty()
-        if (bonded.isEmpty()) { toast("Tidak ada printer terpasang (pairing dulu)"); return }
+        if (bonded.isEmpty()) {
+            toast("Tidak ada printer terpasang (pairing dulu)")
+            return
+        }
 
         val labels = bonded.map { "${it.name} (${it.address})" }.toTypedArray()
-        com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle("Pilih Printer")
             .setItems(labels) { _, which -> onPicked(bonded[which].address) }
             .setNegativeButton("Batal", null)
             .show()
+    }
+
+    private fun ensurePrintingDialog(): DialogReceiptPrintStatusBinding {
+        val current = printingBinding
+        if (current != null) {
+            if (printingDialog?.isShowing != true) printingDialog?.show()
+            return current
+        }
+        val binding = DialogReceiptPrintStatusBinding.inflate(layoutInflater)
+        printingBinding = binding
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setView(binding.root)
+            .setCancelable(false)
+            .create()
+        dialog.setOnDismissListener {
+            stopDialogPrinterAnimation()
+            printingBinding = null
+            printingDialog = null
+            if (!isPrinting) {
+                pendingReceiptToPrint = null
+            }
+        }
+        dialog.show()
+        printingDialog = dialog
+        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        return binding
+    }
+
+    private fun startDialogPrinterAnimation(binding: DialogReceiptPrintStatusBinding) {
+        stopDialogPrinterAnimation()
+        dialogPrinterAnimator = ObjectAnimator.ofFloat(binding.ivStatus, View.ROTATION, 0f, -10f, 10f, 0f).apply {
+            duration = 750
+            repeatCount = ValueAnimator.INFINITE
+            start()
+        }
+    }
+
+    private fun stopDialogPrinterAnimation() {
+        dialogPrinterAnimator?.cancel()
+        dialogPrinterAnimator = null
+        printingBinding?.ivStatus?.rotation = 0f
     }
 
     private fun toast(s: String) =
@@ -372,8 +516,14 @@ class AdminCashierReportFragment : Fragment() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == BT_REQ && hasAllBtPermissions()) {
-            lastReceiptToPrint?.let { startDirectPrintFromDialog(it) }
+        if (requestCode == BT_REQ) {
+            if (hasAllBtPermissions()) {
+                pendingReceiptToPrint?.let { startDirectPrintFromDialog(it) }
+            } else {
+                toast("Izin Bluetooth diperlukan untuk mencetak")
+                pendingReceiptToPrint = null
+                printingDialog?.dismiss()
+            }
         }
     }
 

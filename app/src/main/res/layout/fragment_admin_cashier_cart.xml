@@ -54,20 +54,20 @@
                 <TextView
                     android:id="@+id/tvTotal"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="Rp 0"
-                    android:textStyle="bold"
-                    android:textSize="18sp"/>
+                android:layout_height="wrap_content"
+                android:text="Rp 0"
+                android:textStyle="bold"
+                android:textSize="18sp"/>
 
-                <TextView
-                    android:id="@+id/tvServiceFee"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:text="Biaya Service: Rp 0"
-                    android:visibility="gone"/>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
+            <TextView
+                android:id="@+id/tvServiceFee"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Biaya Jasa: Rp 0"
+                android:visibility="gone"/>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
 
         <!-- Row 1: two outlined actions -->
         <LinearLayout
@@ -84,7 +84,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Tambah Service"/>
+                android:text="Tambah Jasa"/>
 
             <Space android:layout_width="8dp" android:layout_height="1dp"/>
 

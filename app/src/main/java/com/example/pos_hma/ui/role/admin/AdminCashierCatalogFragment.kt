@@ -7,6 +7,7 @@ import android.view.*
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
@@ -295,13 +296,22 @@ class AdminCashierCatalogFragment : Fragment() {
     private fun showServiceFeeDialog() {
         val ctx = requireContext()
         val view = layoutInflater.inflate(R.layout.dialog_service_fee, null, false)
-        val et = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etServiceFee)
-        val current = cartVm.serviceFee.value ?: 0L
-        if (current > 0) et.setText(java.text.NumberFormat.getInstance(ID_LOCALE).format(current))
+        val tilFee = view.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.tilServiceFee)
+        val etFee = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etServiceFee)
+        val tilDesc = view.findViewById<com.google.android.material.textfield.TextInputLayout>(R.id.tilServiceDescription)
+        val etDesc = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etServiceDescription)
+        val currentFee = cartVm.serviceFee.value ?: 0L
+        val formatter = java.text.NumberFormat.getInstance(ID_LOCALE)
+        if (currentFee > 0) etFee.setText(formatter.format(currentFee))
+        val currentDesc = cartVm.serviceDescription.value.orEmpty()
+        if (currentDesc.isNotBlank()) {
+            etDesc.setText(currentDesc)
+            etDesc.setSelection(currentDesc.length)
+        }
 
         // Format ribuan saat mengetik
         var editing = false
-        et.addTextChangedListener(object : android.text.TextWatcher {
+        etFee.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: android.text.Editable?) {
@@ -310,31 +320,61 @@ class AdminCashierCatalogFragment : Fragment() {
                 val raw = s?.toString().orEmpty()
                 val digits = raw.replace("[^\\d]".toRegex(), "")
                 if (digits.isEmpty()) {
-                    et.setText("")
+                    etFee.setText("")
                     editing = false
                     return
                 }
                 val v = digits.toLongOrNull() ?: 0L
-                val formatted = java.text.NumberFormat.getInstance(ID_LOCALE).format(v)
+                val formatted = formatter.format(v)
                 if (formatted != raw) {
-                    et.setText(formatted)
-                    et.setSelection(formatted.length)
+                    etFee.setText(formatted)
+                    etFee.setSelection(formatted.length)
                 }
                 editing = false
             }
         })
+        etDesc.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                tilDesc.error = null
+            }
+        })
 
-        MaterialAlertDialogBuilder(ctx)
-            .setTitle("Biaya Service")
+        val dialog = MaterialAlertDialogBuilder(ctx)
+            .setTitle("Biaya Jasa")
             .setView(view)
             .setNegativeButton("Batal", null)
-            .setPositiveButton("Simpan") { _, _ ->
-            val s = et.text?.toString()?.trim().orEmpty()
-            val digits = s.replace("[^\\d]".toRegex(), "")
-            val v = digits.toLongOrNull() ?: 0L
-            cartVm.setServiceFee(v)
+            .setPositiveButton("Simpan", null)
+            .create()
+
+        dialog.setOnShowListener {
+            val positive = dialog.getButton(androidx.appcompat.app.AlertDialog.BUTTON_POSITIVE)
+            positive.setOnClickListener {
+                tilFee.error = null
+                tilDesc.error = null
+
+                val amountRaw = etFee.text?.toString().orEmpty()
+                val amountDigits = amountRaw.replace("[^\\d]".toRegex(), "")
+                val amount = amountDigits.toLongOrNull() ?: 0L
+                val desc = etDesc.text?.toString()?.trim().orEmpty()
+
+                if (amount > 0L && desc.isBlank()) {
+                    tilDesc.error = "Deskripsi jasa wajib diisi ketika menambahkan jasa"
+                    return@setOnClickListener
+                }
+
+                if (amount > 0L) {
+                    cartVm.setServiceFee(amount)
+                    cartVm.setServiceDescription(desc)
+                } else {
+                    cartVm.clearServiceFee()
+                }
+                dialog.dismiss()
+            }
         }
-        .show()
+
+        dialog.show()
     }
 }
 

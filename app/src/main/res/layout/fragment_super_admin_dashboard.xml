@@ -87,7 +87,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Omzet"
+                            android:text="Omzet Barang"
                             android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
                             android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -98,6 +98,29 @@
                             android:layout_marginTop="4dp"
                             android:text="Rp -"
                             android:textAppearance="@style/TextAppearance.MaterialComponents.Headline5"
+                            android:textStyle="bold" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="12dp"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Pendapatan Jasa"
+                            android:textAppearance="@style/TextAppearance.MaterialComponents.Body2"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+
+                        <TextView
+                            android:id="@+id/tvServiceRevenueValue"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:text="Rp -"
+                            android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6"
                             android:textStyle="bold" />
                     </LinearLayout>
 
@@ -239,7 +262,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Omzet: Rp 0"
+                            android:text="Omzet barang: Rp 0"
                             android:textAppearance="@style/TextAppearance.MaterialComponents.Subtitle1"
                             android:textStyle="bold" />
 
@@ -250,6 +273,14 @@
                             android:text="Transaksi: 0"
                             android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
                     </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvTodayService"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Pendapatan jasa: Rp 0"
+                        android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" />
 
                     <LinearLayout
                         android:layout_width="match_parent"

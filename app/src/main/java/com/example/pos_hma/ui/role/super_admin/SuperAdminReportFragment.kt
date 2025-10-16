@@ -1,6 +1,7 @@
-﻿package com.example.pos_hma.ui.role.super_admin
+package com.example.pos_hma.ui.role.super_admin
 
 import android.os.Bundle
+import android.os.Build
 import android.view.LayoutInflater
 import android.view.View
 import android.content.res.ColorStateList
@@ -8,13 +9,23 @@ import android.view.ViewGroup
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.util.Log
+import android.Manifest
+import android.bluetooth.BluetoothAdapter
+import android.content.pm.PackageManager
+import android.widget.Toast
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.annotation.AttrRes
+import androidx.annotation.RequiresPermission
+import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentSuperAdminReportBinding
 import com.example.pos_hma.databinding.DialogPurchaseDetailBinding
+import com.example.pos_hma.databinding.DialogReceiptPrintStatusBinding
 import com.example.pos_hma.databinding.ItemPurchaseDetailItemBinding
 import com.example.pos_hma.databinding.ItemReportTabBinding
 import com.example.pos_hma.databinding.ItemSaleRowBinding
@@ -26,8 +37,12 @@ import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
+import com.example.pos_hma.print.DirectEscPosPrinter
+import com.example.pos_hma.utils.PrintersPref
 import androidx.core.view.doOnLayout
 import androidx.core.view.isVisible
+import androidx.core.widget.addTextChangedListener
+import androidx.core.content.ContextCompat
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -45,7 +60,100 @@ class SuperAdminReportFragment : Fragment() {
 
     private val tabs = listOf("Penjualan", "Pembelian", "Stok & Valuasi")
 
+    private val btRequestCode = 402
+    private var pendingReceiptToPrint: String? = null
+    private var printingDialog: AlertDialog? = null
+    private var printingBinding: DialogReceiptPrintStatusBinding? = null
+    private var pendingPermissionAction: (() -> Unit)? = null
+    private var isPrinting = false
+    private var dialogPrinterAnimator: ObjectAnimator? = null
+    private val requiredBtPermissions: Array<String> by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            arrayOf(
+                Manifest.permission.BLUETOOTH_CONNECT,
+                Manifest.permission.BLUETOOTH_SCAN
+            )
+        } else emptyArray()
+    }
+
     private enum class PurchaseStatusFilter { ALL, UPCOMING, OVERDUE }
+
+    private data class ProductSummary(
+        val sku: String,
+        val name: String,
+        val stock: Long,
+        val lastCost: Long
+    )
+
+    private data class MovementRow(
+        val productName: String,
+        val sku: String,
+        val qty: Long,
+        val unitCost: Long,
+        val totalCost: Long,
+        val note: String?,
+        val type: String,
+        val isInbound: Boolean,
+        val timestamp: Date?
+    )
+
+    private enum class FifoType { INVOICE, HOLD }
+    private enum class StockView { SUMMARY, FIFO }
+
+    private data class PendingRow(
+        val sku: String,
+        val productName: String,
+        val invoiceNo: String,
+        val supplierName: String?,
+        val qty: Long,
+        val unitCost: Long?,
+        val salePrice: Long?,
+        val dueDate: Date?,
+        val scheduledAt: Date?,
+        val receivedAt: Date?,
+        val status: String?,
+        val type: FifoType,
+        val sortTime: Long
+    )
+
+    private data class SaleRow(
+        val id: String,
+        val date: Date?,
+        val total: Long,
+        val cost: Long,
+        val unitCost: Long,
+        val hasGoods: Boolean,
+        val noNota: String?
+    )
+
+    private data class PurchaseStatusInfo(
+        val title: String,
+        val detail: String,
+        @AttrRes val badgeColorAttr: Int,
+        @AttrRes val badgeTextColorAttr: Int,
+        @AttrRes val strokeColorAttr: Int,
+        val priority: Int
+    )
+
+    private data class PurchaseRow(
+        val doc: DocumentSnapshot,
+        val invoiceNo: String,
+        val supplierName: String,
+        val productSummary: String,
+        val dueDate: Date?,
+        val scheduledAt: Date?,
+        val createdAt: Date?,
+        val totalCost: Long,
+        val items: List<Map<String, Any?>>,
+        val statusTitle: String,
+        val statusDetail: String,
+        @AttrRes val badgeColorAttr: Int,
+        @AttrRes val badgeTextColorAttr: Int,
+        @AttrRes val strokeColorAttr: Int,
+        val statusPriority: Int,
+        val stockPosted: Boolean,
+        val pendingStockId: String?
+    )
 
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
@@ -61,11 +169,211 @@ class SuperAdminReportFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        stopDialogPrinterAnimation()
+        printingDialog?.dismiss()
+        printingDialog = null
+        printingBinding = null
+        pendingPermissionAction = null
+        isPrinting = false
+        pendingReceiptToPrint = null
         _binding = null
         super.onDestroyView()
     }
 
-    private class ReportPagerAdapter(private val titles: List<String>) :
+    private fun startDirectPrintFromDialog(rawText: String) {
+        val text = rawText.ifBlank { "" }
+        if (text.isBlank()) {
+            toast("Tidak ada data nota untuk dicetak")
+            return
+        }
+        if (isPrinting) return
+        pendingReceiptToPrint = text
+        ensureBtPermissions {
+            beginPrintWorkflow(text)
+        }
+    }
+
+    private fun ensureBtPermissions(onGranted: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasAllBtPermissions()) {
+            pendingPermissionAction = onGranted
+            requestPermissions(requiredBtPermissions, btRequestCode)
+        } else {
+            onGranted()
+        }
+    }
+
+    @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT])
+    private fun beginPrintWorkflow(text: String) {
+        val savedMac = PrintersPref.getMac(requireContext())
+        if (savedMac.isNullOrBlank()) {
+            showBtPicker { mac ->
+                PrintersPref.saveMac(requireContext(), mac)
+                beginDirectPrint(mac, text)
+            }
+        } else {
+            beginDirectPrint(savedMac, text)
+        }
+    }
+
+    private fun beginDirectPrint(mac: String, text: String) {
+        pendingReceiptToPrint = text
+        val dialogBinding = ensurePrintingDialog()
+        isPrinting = true
+        dialogBinding.progress.isVisible = true
+        dialogBinding.btnRetry.isVisible = false
+        dialogBinding.btnClose.isVisible = false
+        dialogBinding.ivStatus.setImageResource(R.drawable.ic_printer)
+        dialogBinding.ivStatus.imageTintList = ColorStateList.valueOf(
+            MaterialColors.getColor(
+                dialogBinding.ivStatus,
+                com.google.android.material.R.attr.colorPrimary
+            )
+        )
+        dialogBinding.tvStatus.text = getString(R.string.print_status_sending)
+        startDialogPrinterAnimation(dialogBinding)
+
+        DirectEscPosPrinter.print(
+            requireContext(),
+            mac,
+            text.ifBlank { " " },
+            onSuccess = { onPrintSuccess() },
+            onError = { error -> onPrintError(error) }
+        )
+    }
+
+    private fun ensurePrintingDialog(): DialogReceiptPrintStatusBinding {
+        val currentBinding = printingBinding
+        if (currentBinding != null) {
+            if (printingDialog?.isShowing != true) printingDialog?.show()
+            return currentBinding
+        }
+        val binding = DialogReceiptPrintStatusBinding.inflate(layoutInflater)
+        printingBinding = binding
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setView(binding.root)
+            .setCancelable(false)
+            .create()
+        dialog.setOnDismissListener {
+            stopDialogPrinterAnimation()
+            printingBinding = null
+            printingDialog = null
+            isPrinting = false
+            pendingReceiptToPrint = null
+        }
+        dialog.show()
+        printingDialog = dialog
+        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        return binding
+    }
+
+    private fun onPrintSuccess() {
+        val binding = printingBinding ?: return
+        isPrinting = false
+        pendingReceiptToPrint = null
+        stopDialogPrinterAnimation()
+        binding.progress.isVisible = false
+        binding.ivStatus.setImageResource(R.drawable.ic_check_success)
+        binding.ivStatus.imageTintList = ColorStateList.valueOf(
+            ContextCompat.getColor(requireContext(), R.color.green_success)
+        )
+        binding.tvStatus.text = getString(R.string.print_status_success)
+        binding.btnRetry.isVisible = false
+        binding.btnClose.apply {
+            text = getString(R.string.print_status_close)
+            isVisible = true
+            setOnClickListener { printingDialog?.dismiss() }
+        }
+        binding.root.postDelayed({ printingDialog?.dismiss() }, 1200)
+        toast("Terkirim ke printer")
+    }
+
+    private fun onPrintError(error: Throwable) {
+        val binding = printingBinding ?: return
+        isPrinting = false
+        stopDialogPrinterAnimation()
+        binding.progress.isVisible = false
+        binding.ivStatus.setImageResource(R.drawable.ic_printer)
+        val errorColor =
+            MaterialColors.getColor(binding.ivStatus, com.google.android.material.R.attr.colorError)
+        binding.ivStatus.imageTintList = ColorStateList.valueOf(errorColor)
+        val message = error.message?.takeUnless { it.isBlank() } ?: "-"
+        binding.tvStatus.text = getString(R.string.print_status_failed, message)
+        binding.btnRetry.isVisible = true
+        binding.btnClose.isVisible = true
+        binding.btnRetry.setOnClickListener {
+            val retryText = pendingReceiptToPrint
+            if (retryText.isNullOrBlank()) {
+                printingDialog?.dismiss()
+                return@setOnClickListener
+            }
+            binding.progress.isVisible = true
+            binding.btnRetry.isVisible = false
+            binding.btnClose.isVisible = false
+            binding.ivStatus.setImageResource(R.drawable.ic_printer)
+            binding.ivStatus.imageTintList = ColorStateList.valueOf(
+                MaterialColors.getColor(
+                    binding.ivStatus,
+                    com.google.android.material.R.attr.colorPrimary
+                )
+            )
+            binding.tvStatus.text = getString(R.string.print_status_sending)
+            ensureBtPermissions { beginPrintWorkflow(retryText) }
+        }
+        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        toast("Gagal cetak: $message")
+    }
+
+    @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN])
+    private fun showBtPicker(onPicked: (String) -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !hasAllBtPermissions()) {
+            ensureBtPermissions { showBtPicker(onPicked) }
+            return
+        }
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        val bonded = adapter?.bondedDevices?.toList().orEmpty()
+        if (bonded.isEmpty()) {
+            toast("Tidak ada printer terpasang (pairing dulu)")
+            return
+        }
+        val labels = bonded.map { "${it.name} (${it.address})" }.toTypedArray()
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Pilih Printer")
+            .setItems(labels) { _, which -> onPicked(bonded[which].address) }
+            .setNegativeButton("Batal", null)
+            .show()
+    }
+
+    private fun hasAllBtPermissions(): Boolean {
+        if (requiredBtPermissions.isEmpty()) return true
+        return requiredBtPermissions.all {
+            ContextCompat.checkSelfPermission(
+                requireContext(),
+                it
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun toast(message: String) {
+        Toast.makeText(requireContext(), message, Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == btRequestCode) {
+            if (hasAllBtPermissions()) {
+                pendingPermissionAction?.invoke()
+            } else {
+                toast("Izin Bluetooth diperlukan untuk mencetak")
+            }
+            pendingPermissionAction = null
+        }
+    }
+
+    private inner class ReportPagerAdapter(private val titles: List<String>) :
         RecyclerView.Adapter<ReportPagerAdapter.VH>() {
 
         inner class VH(val b: ItemReportTabBinding) : RecyclerView.ViewHolder(b.root)
@@ -105,44 +413,6 @@ class SuperAdminReportFragment : Fragment() {
         private fun isStockRequestValid(holder: VH, token: Int): Boolean =
             holder == stockHolder && token == stockToken
 
-        private data class ProductSummary(
-            val sku: String,
-            val name: String,
-            val stock: Long,
-            val lastCost: Long
-        )
-
-        private data class MovementRow(
-            val productName: String,
-            val sku: String,
-            val qty: Long,
-            val unitCost: Long,
-            val totalCost: Long,
-            val note: String?,
-            val type: String,
-            val isInbound: Boolean,
-            val timestamp: Date?
-        )
-
-        private enum class FifoType { INVOICE, HOLD }
-        private enum class StockView { SUMMARY, FIFO }
-
-        private data class PendingRow(
-            val sku: String,
-            val productName: String,
-            val invoiceNo: String,
-            val supplierName: String?,
-            val qty: Long,
-            val unitCost: Long?,
-            val salePrice: Long?,
-            val dueDate: Date?,
-            val scheduledAt: Date?,
-            val receivedAt: Date?,
-            val status: String?,
-            val type: FifoType,
-            val sortTime: Long
-        )
-
         override fun onBindViewHolder(holder: VH, position: Int) {
             val title = titles[position]
             holder.b.tvTitle.text = title
@@ -152,6 +422,7 @@ class SuperAdminReportFragment : Fragment() {
                     purchaseHolder = holder
                     bindPurchases(holder)
                 }
+
                 else -> {
                     stockHolder = holder
                     bindStockValuation(holder)
@@ -163,10 +434,10 @@ class SuperAdminReportFragment : Fragment() {
             val ctx = holder.itemView.context
             holder.b.toggleStockView.visibility = View.GONE
             val db = FirebaseFirestore.getInstance()
-            val nf = NumberFormat.getInstance(Locale("in","ID"))
-            val df = SimpleDateFormat("dd MMM yy HH:mm", Locale("in","ID"))
-            val dfMonth = SimpleDateFormat("MMMM yyyy", Locale("in","ID"))
-            val dfDay = SimpleDateFormat("dd MMM yy", Locale("in","ID"))
+            val nf = NumberFormat.getInstance(Locale("in", "ID"))
+            val df = SimpleDateFormat("dd MMM yy HH:mm", Locale("in", "ID"))
+            val dfMonth = SimpleDateFormat("MMMM yyyy", Locale("in", "ID"))
+            val dfDay = SimpleDateFormat("dd MMM yy", Locale("in", "ID"))
 
             holder.b.toggleStockView.visibility = View.GONE
             holder.b.tvDesc.visibility = View.GONE
@@ -219,11 +490,13 @@ class SuperAdminReportFragment : Fragment() {
                         paid = doc.getLong("paid") ?: (doc.getLong("total") ?: 0L)
                     )
                     val svc = doc.getLong("serviceFee") ?: 0L
+                    val svcDesc = doc.getString("serviceDescription")?.trim().orEmpty()
                     val payload = ReceiptFormatter.Payload(
                         store = store,
                         sale = saleInfo,
                         items = items,
                         serviceFee = svc,
+                        serviceDescription = svcDesc.takeIf { it.isNotEmpty() },
                         totalCost = if (goods.isNotEmpty() && totalQty > 1L) totalCost else null,
                         unitCost = unitCostSingle
                     )
@@ -237,6 +510,7 @@ class SuperAdminReportFragment : Fragment() {
                         setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14f)
                     }
                     val fallbackScreen = ReceiptFormatter.buildForScreen(payload)
+                    val receiptForPrinter = ReceiptFormatter.buildForPrinter(payload)
                     content.text = fallbackScreen
                     content.doOnLayout { view ->
                         val textView = view as android.widget.TextView
@@ -265,7 +539,10 @@ class SuperAdminReportFragment : Fragment() {
                     }
                     MaterialAlertDialogBuilder(ctx)
                         .setView(scroll)
-                        .setPositiveButton("Tutup", null)
+                        .setPositiveButton("Cetak") { _, _ ->
+                            startDirectPrintFromDialog(receiptForPrinter)
+                        }
+                        .setNegativeButton("Tutup", null)
                         .show()
                 }
             }
@@ -277,50 +554,91 @@ class SuperAdminReportFragment : Fragment() {
                     holder.b.tilSearchSaleId.error = "Masukkan No. Nota"
                 } else {
                     holder.b.tilSearchSaleId.error = null
-                    db.collection("sales").whereEqualTo("noNota", id).limit(1).get().addOnSuccessListener { snap ->
-                        val d = snap.documents.firstOrNull()
-                        if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(ctx, "No. Nota tidak ditemukan", android.widget.Toast.LENGTH_SHORT).show()
-                    }
+                    db.collection("sales").whereEqualTo("noNota", id).limit(1).get()
+                        .addOnSuccessListener { snap ->
+                            val d = snap.documents.firstOrNull()
+                            if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(
+                                ctx,
+                                "No. Nota tidak ditemukan",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
                 }
             }
             holder.b.etSearchSaleId.setOnEditorActionListener { _, actionId, event ->
-                val isSearch = actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
+                val isSearch =
+                    actionId == EditorInfo.IME_ACTION_SEARCH || (event?.keyCode == KeyEvent.KEYCODE_ENTER && event.action == KeyEvent.ACTION_DOWN)
                 if (isSearch) {
                     val id = holder.b.etSearchSaleId.text?.toString()?.trim().orEmpty()
                     if (id.isEmpty()) {
                         holder.b.tilSearchSaleId.error = "Masukkan No. Nota"
                     } else {
                         holder.b.tilSearchSaleId.error = null
-                        db.collection("sales").whereEqualTo("noNota", id).limit(1).get().addOnSuccessListener { snap ->
-                            val d = snap.documents.firstOrNull()
-                            if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(ctx, "No. Nota tidak ditemukan", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        db.collection("sales").whereEqualTo("noNota", id).limit(1).get()
+                            .addOnSuccessListener { snap ->
+                                val d = snap.documents.firstOrNull()
+                                if (d != null) fetchAndShow(d.id) else android.widget.Toast.makeText(
+                                    ctx,
+                                    "No. Nota tidak ditemukan",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
                     }
                     true
                 } else false
             }
 
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
-            val data = mutableListOf<SaleRow>()
-
+            val allSales = mutableListOf<SaleRow>()
+            val filteredSales = mutableListOf<SaleRow>()
             val adapter = object : RecyclerView.Adapter<SaleVH>() {
-                override fun onCreateViewHolder(p: ViewGroup, vt: Int): SaleVH =
-                    SaleVH(ItemSaleRowBinding.inflate(LayoutInflater.from(ctx), p, false))
-                override fun getItemCount() = data.size
-                override fun onBindViewHolder(h: SaleVH, i: Int) {
-                    val row = data[i]
-                    h.v.tvSaleId.text = "No. Nota: ${row.noNota ?: row.id}"
-                    h.v.tvDate.text = row.date?.let { df.format(it) } ?: "-"
+                override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SaleVH =
+                    SaleVH(ItemSaleRowBinding.inflate(LayoutInflater.from(ctx), parent, false))
+
+                override fun getItemCount(): Int = filteredSales.size
+
+                override fun onBindViewHolder(holderSale: SaleVH, position: Int) {
+                    val row = filteredSales[position]
+                    holderSale.v.tvSaleId.text = "No. Nota: ${row.noNota ?: row.id}"
+                    holderSale.v.tvDate.text = row.date?.let { df.format(it) } ?: "-"
                     val info = if (row.hasGoods) {
                         "Total: Rp ${nf.format(row.total)}"
                     } else {
                         "Transaksi Jasa - Total: Rp ${nf.format(row.total)}"
                     }
-                    h.v.tvTotal.text = info
-                    h.v.root.setOnClickListener { fetchAndShow(row.id) }
+                    holderSale.v.tvTotal.text = info
+                    holderSale.v.root.setOnClickListener { fetchAndShow(row.id) }
                 }
             }
             holder.b.rvSales.adapter = adapter
+
+            fun CharSequence?.normalizeSaleId(): String =
+                this?.filter { it.isLetterOrDigit() }
+                    ?.toString()
+                    ?.toLowerCase(Locale("in", "ID"))
+                    .orEmpty()
+
+            fun applySalesSearch() {
+                val query = holder.b.etSearchSaleId.text.normalizeSaleId()
+                filteredSales.clear()
+                if (query.isBlank()) {
+                    filteredSales.addAll(allSales)
+                } else {
+                    filteredSales.addAll(
+                        allSales.filter { row ->
+                            val notaNorm = row.noNota?.normalizeSaleId().orEmpty()
+                            val idNorm = row.id.normalizeSaleId()
+                            notaNorm.contains(query) || idNorm.contains(query)
+                        }
+                    )
+                }
+                adapter.notifyDataSetChanged()
+            }
+
+            holder.b.etSearchSaleId.addTextChangedListener {
+                holder.b.tilSearchSaleId.error = null
+                applySalesSearch()
+            }
 
             fun computeRange(which: Int): Pair<Date, Date> {
                 val cal = Calendar.getInstance()
@@ -330,10 +648,15 @@ class SuperAdminReportFragment : Fragment() {
                         cal.firstDayOfWeek = Calendar.MONDAY
                         cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                     }
+
                     holder.b.chipMonth.id -> cal.set(Calendar.DAY_OF_MONTH, 1)
-                    else -> { /* today */ }
+                    else -> { /* today */
+                    }
                 }
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(
+                    Calendar.MINUTE,
+                    0
+                ); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
                 return cal.time to end
             }
 
@@ -346,7 +669,7 @@ class SuperAdminReportFragment : Fragment() {
                     .limit(200)
                     .get()
                     .addOnSuccessListener { snap ->
-                        data.clear()
+                        allSales.clear()
                         var sumOmzet = 0L
                         var sumCost = 0L
                         for (doc in snap.documents) {
@@ -354,31 +677,39 @@ class SuperAdminReportFragment : Fragment() {
                             val total = doc.getLong("total") ?: 0L
                             val noNota = doc.getString("noNota")
                             val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
-                        var cost = 0L
-                        var qtySum = 0L
-                        var hasGoods = false
-                        items.forEach { m ->
-                            val qty = (m["qty"] as? Number)?.toLong() ?: 0L
-                            val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
-                            val isService = (m["isService"] as? Boolean) ?: false
-                            if (!isService) hasGoods = true
-                            if (!isService) {
-                                cost += qty * unitCost
-                                qtySum += qty
+                            var cost = 0L
+                            var qtySum = 0L
+                            var hasGoods = false
+                            items.forEach { m ->
+                                val qty = (m["qty"] as? Number)?.toLong() ?: 0L
+                                val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
+                                val isService = (m["isService"] as? Boolean) ?: false
+                                if (!isService) hasGoods = true
+                                if (!isService) {
+                                    cost += qty * unitCost
+                                    qtySum += qty
+                                }
                             }
+                            val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
+                            allSales += SaleRow(
+                                doc.id,
+                                ts,
+                                total,
+                                cost,
+                                unitCostAvg,
+                                hasGoods,
+                                noNota
+                            )
+                            sumOmzet += total
+                            sumCost += cost
                         }
-                        val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
-                        data += SaleRow(doc.id, ts, total, cost, unitCostAvg, hasGoods, noNota)
-                        sumOmzet += total
-                        sumCost += cost
-                    }
                         holder.b.tvKeterangan.visibility = View.VISIBLE
                         holder.b.tvKeterangan.text = when (rangeChipId) {
-                            holder.b.chipWeek.id -> "Transaksi Minggu Ini : ${data.size}"
-                            holder.b.chipMonth.id -> "Transaksi Pada Bulan (${dfMonth.format(start)}) : ${data.size}"
-                            else -> "Transaksi Hari Ini : ${data.size}"
+                            holder.b.chipWeek.id -> "Transaksi Minggu Ini : ${allSales.size}"
+                            holder.b.chipMonth.id -> "Transaksi Pada Bulan (${dfMonth.format(start)}) : ${allSales.size}"
+                            else -> "Transaksi Hari Ini : ${allSales.size}"
                         }
-                        adapter.notifyDataSetChanged()
+                        applySalesSearch()
                     }
             }
 
@@ -390,38 +721,50 @@ class SuperAdminReportFragment : Fragment() {
                     .limit(200)
                     .get()
                     .addOnSuccessListener { snap ->
-                        data.clear()
+                        allSales.clear()
                         var sumOmzet = 0L
                         var sumCost = 0L
                         for (doc in snap.documents) {
                             val ts = doc.getTimestamp("createdAt")?.toDate()
                             val total = doc.getLong("total") ?: 0L
                             val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
-                        val noNota = doc.getString("noNota")
-                        var cost = 0L
-                        var qtySum = 0L
-                        var hasGoods = false
-                        items.forEach { m ->
-                            val qty = (m["qty"] as? Number)?.toLong() ?: 0L
-                            val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
-                            val isService = (m["isService"] as? Boolean) ?: false
-                            if (!isService) hasGoods = true
-                            if (!isService) {
-                                cost += qty * unitCost
-                                qtySum += qty
+                            val noNota = doc.getString("noNota")
+                            var cost = 0L
+                            var qtySum = 0L
+                            var hasGoods = false
+                            items.forEach { m ->
+                                val qty = (m["qty"] as? Number)?.toLong() ?: 0L
+                                val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
+                                val isService = (m["isService"] as? Boolean) ?: false
+                                if (!isService) hasGoods = true
+                                if (!isService) {
+                                    cost += qty * unitCost
+                                    qtySum += qty
+                                }
                             }
+                            val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
+                            allSales += SaleRow(
+                                doc.id,
+                                ts,
+                                total,
+                                cost,
+                                unitCostAvg,
+                                hasGoods,
+                                noNota
+                            )
+                            sumOmzet += total
+                            sumCost += cost
                         }
-                        val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
-                        data += SaleRow(doc.id, ts, total, cost, unitCostAvg, hasGoods, noNota)
-                        sumOmzet += total
-                        sumCost += cost
-                    }
                         holder.b.tvKeterangan.visibility = View.VISIBLE
                         val endIncl = Date(end.time - 1L)
                         val sameDay = dfDay.format(start) == dfDay.format(endIncl)
-                        val rangeLabel = if (sameDay) dfDay.format(start) else "${dfDay.format(start)} - ${dfDay.format(endIncl)}"
-                        holder.b.tvKeterangan.text = "Transaksi Pada Tanggal (${rangeLabel}) : ${data.size}"
-                        adapter.notifyDataSetChanged()
+                        val rangeLabel =
+                            if (sameDay) dfDay.format(start) else "${dfDay.format(start)} - ${
+                                dfDay.format(endIncl)
+                            }"
+                        holder.b.tvKeterangan.text =
+                            "Transaksi Pada Tanggal (${rangeLabel}) : ${allSales.size}"
+                        applySalesSearch()
                     }
             }
 
@@ -430,29 +773,33 @@ class SuperAdminReportFragment : Fragment() {
                 val id = checkedIds.firstOrNull() ?: holder.b.chipToday.id
                 when (id) {
                     holder.b.chipToday.id, holder.b.chipWeek.id -> load(id)
-                    holder.b.chipMonth.id -> pickMonth(holder) { start, end -> manualLoad(start, end) }
-                    holder.b.chipCustom.id -> pickDateRange(holder) { start, end -> manualLoad(start, end) }
+                    holder.b.chipMonth.id -> pickMonth(holder) { start, end ->
+                        manualLoad(
+                            start,
+                            end
+                        )
+                    }
+
+                    holder.b.chipCustom.id -> pickDateRange(holder) { start, end ->
+                        manualLoad(
+                            start,
+                            end
+                        )
+                    }
                 }
             }
             load(holder.b.chipToday.id)
         }
 
-        data class SaleRow(
-            val id: String,
-            val date: Date?,
-            val total: Long,
-            val cost: Long,           // total biaya modal (untuk laba)
-            val unitCost: Long,       // biaya modal per unit (rata-rata)
-            val hasGoods: Boolean,
-            val noNota: String?
-        )
         inner class SaleVH(val v: ItemSaleRowBinding) : RecyclerView.ViewHolder(v.root)
 
         private fun pickDateRange(holder: VH, onPicked: (Date, Date) -> Unit) {
             val picker = MaterialDatePicker.Builder.dateRangePicker().build()
             picker.addOnPositiveButtonClickListener { range ->
                 val start = Date(range.first ?: return@addOnPositiveButtonClickListener)
-                val endExclusive = Date((range.second ?: return@addOnPositiveButtonClickListener) + 24L*60*60*1000)
+                val endExclusive = Date(
+                    (range.second ?: return@addOnPositiveButtonClickListener) + 24L * 60 * 60 * 1000
+                )
                 onPicked(start, endExclusive)
             }
             val fm = (holder.itemView.context as FragmentActivity).supportFragmentManager
@@ -465,9 +812,12 @@ class SuperAdminReportFragment : Fragment() {
                 val c = (cal.clone() as Calendar).apply {
                     add(Calendar.MONTH, -i)
                     set(Calendar.DAY_OF_MONTH, 1)
-                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(
+                    Calendar.SECOND,
+                    0
+                ); set(Calendar.MILLISECOND, 0)
                 }
-                val label = SimpleDateFormat("MMMM yyyy", Locale("in","ID")).format(c.time)
+                val label = SimpleDateFormat("MMMM yyyy", Locale("in", "ID")).format(c.time)
                 label to c.time
             }
             val items = labels.map { it.first }.toTypedArray()
@@ -509,37 +859,8 @@ class SuperAdminReportFragment : Fragment() {
             holder.b.btnSearchSaleId.text = "Cari"
             holder.b.tvKeterangan.visibility = View.GONE
 
-            data class StatusInfo(
-                val title: String,
-                val detail: String,
-                @AttrRes val badgeColorAttr: Int,
-                @AttrRes val badgeTextColorAttr: Int,
-                @AttrRes val strokeColorAttr: Int,
-                val priority: Int
-            )
-
-            data class Row(
-                val doc: DocumentSnapshot,
-                val invoiceNo: String,
-                val supplierName: String,
-                val productSummary: String,
-                val dueDate: Date?,
-                val scheduledAt: Date?,
-                val createdAt: Date?,
-                val totalCost: Long,
-                val items: List<Map<String, Any?>>,
-                val statusTitle: String,
-                val statusDetail: String,
-                @AttrRes val badgeColorAttr: Int,
-                @AttrRes val badgeTextColorAttr: Int,
-                @AttrRes val strokeColorAttr: Int,
-                val statusPriority: Int,
-                val stockPosted: Boolean,
-                val pendingStockId: String?
-            )
-
-            val rows = mutableListOf<Row>()
-            var masterRows: List<Row> = emptyList()
+            val rows = mutableListOf<PurchaseRow>()
+            var masterRows: List<PurchaseRow> = emptyList()
             var lastEmptyMessage: String? = null
             var lastInfoMessage: String? = null
             var lastContextLabel: String? = null
@@ -553,7 +874,7 @@ class SuperAdminReportFragment : Fragment() {
                 holder.b.etSearchSaleId.isEnabled = enabled
             }
 
-            fun computeStatus(due: Date?): StatusInfo {
+            fun computeStatus(due: Date?): PurchaseStatusInfo {
                 val today = Calendar.getInstance().apply {
                     set(Calendar.HOUR_OF_DAY, 0)
                     set(Calendar.MINUTE, 0)
@@ -561,7 +882,7 @@ class SuperAdminReportFragment : Fragment() {
                     set(Calendar.MILLISECOND, 0)
                 }
                 if (due == null) {
-                    return StatusInfo(
+                    return PurchaseStatusInfo(
                         title = "Tanpa jatuh tempo",
                         detail = "Transaksi tunai / lunas",
                         badgeColorAttr = com.google.android.material.R.attr.colorSurfaceVariant,
@@ -577,9 +898,10 @@ class SuperAdminReportFragment : Fragment() {
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }
-                val diffDays = ((dueCal.timeInMillis - today.timeInMillis) / (24L * 60 * 60 * 1000L)).toInt()
+                val diffDays =
+                    ((dueCal.timeInMillis - today.timeInMillis) / (24L * 60 * 60 * 1000L)).toInt()
                 return when {
-                    diffDays < 0 -> StatusInfo(
+                    diffDays < 0 -> PurchaseStatusInfo(
                         title = "Sudah jatuh tempo",
                         detail = "Terlambat ${-diffDays} hari",
                         badgeColorAttr = com.google.android.material.R.attr.colorError,
@@ -587,7 +909,8 @@ class SuperAdminReportFragment : Fragment() {
                         strokeColorAttr = com.google.android.material.R.attr.colorError,
                         priority = 0
                     )
-                    diffDays == 0 -> StatusInfo(
+
+                    diffDays == 0 -> PurchaseStatusInfo(
                         title = "Sudah jatuh tempo",
                         detail = "Jatuh tempo hari ini",
                         badgeColorAttr = com.google.android.material.R.attr.colorError,
@@ -595,7 +918,8 @@ class SuperAdminReportFragment : Fragment() {
                         strokeColorAttr = com.google.android.material.R.attr.colorError,
                         priority = 0
                     )
-                    else -> StatusInfo(
+
+                    else -> PurchaseStatusInfo(
                         title = "Menunggu jatuh tempo",
                         detail = "Sisa $diffDays hari",
                         badgeColorAttr = com.google.android.material.R.attr.colorSecondary,
@@ -606,10 +930,12 @@ class SuperAdminReportFragment : Fragment() {
                 }
             }
 
-            fun mapDocToRow(doc: DocumentSnapshot): Row {
+            fun mapDocToRow(doc: DocumentSnapshot): PurchaseRow {
                 val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
-                val firstName = (items.firstOrNull()?.get("name") as? String)?.ifBlank { "-" } ?: "-"
-                val productSummary = if (items.size > 1) "$firstName (+${items.size - 1} lainnya)" else firstName
+                val firstName =
+                    (items.firstOrNull()?.get("name") as? String)?.ifBlank { "-" } ?: "-"
+                val productSummary =
+                    if (items.size > 1) "$firstName (+${items.size - 1} lainnya)" else firstName
                 val invoice = doc.getString("invoiceNo")?.takeIf { it.isNotBlank() } ?: "-"
                 val supplier = doc.getString("supplierName")?.takeIf { it.isNotBlank() } ?: "-"
                 val due = doc.getTimestamp("dueDate")?.toDate()
@@ -623,7 +949,7 @@ class SuperAdminReportFragment : Fragment() {
                 val status = computeStatus(due)
                 val stockPosted = doc.getBoolean("stockPosted") ?: false
                 val pendingStockId = doc.getString("pendingStockId")
-                return Row(
+                return PurchaseRow(
                     doc = doc,
                     invoiceNo = invoice,
                     supplierName = supplier,
@@ -644,20 +970,29 @@ class SuperAdminReportFragment : Fragment() {
                 )
             }
 
-            fun showDetail(row: Row) {
+            fun showDetail(row: PurchaseRow) {
                 val detailBinding = DialogPurchaseDetailBinding.inflate(LayoutInflater.from(ctx))
                 detailBinding.tvDialogInvoice.text = row.invoiceNo
-                detailBinding.tvDialogSupplier.text = "Supplier: ${row.supplierName.ifBlank { "-" }}"
-                detailBinding.tvDialogDate.text = "Pembelian pada: ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}"
-                detailBinding.tvDialogDue.text = "Jatuh Tempo: ${row.dueDate?.let { dfDate.format(it) } ?: "-"}"
-                detailBinding.tvDialogDueTime.text = "Jam Jatuh Tempo: ${row.scheduledAt?.let { dfTime.format(it) } ?: "-"}"
+                detailBinding.tvDialogSupplier.text =
+                    "Supplier: ${row.supplierName.ifBlank { "-" }}"
+                detailBinding.tvDialogDate.text =
+                    "Pembelian pada: ${row.createdAt?.let { dfDateTime.format(it) } ?: "-"}"
+                detailBinding.tvDialogDue.text =
+                    "Jatuh Tempo: ${row.dueDate?.let { dfDate.format(it) } ?: "-"}"
+                detailBinding.tvDialogDueTime.text =
+                    "Jam Jatuh Tempo: ${row.scheduledAt?.let { dfTime.format(it) } ?: "-"}"
                 detailBinding.tvDialogTotal.text = "Total: Rp ${nf.format(row.totalCost)}"
                 detailBinding.tvDialogStatusTitle.text = row.statusTitle
                 detailBinding.tvDialogStatusDetail.text = row.statusDetail
 
-                val badgeColor = MaterialColors.getColor(detailBinding.tvDialogStatusTitle, row.badgeColorAttr)
-                val badgeTextColor = MaterialColors.getColor(detailBinding.tvDialogStatusTitle, row.badgeTextColorAttr)
-                detailBinding.tvDialogStatusTitle.backgroundTintList = ColorStateList.valueOf(badgeColor)
+                val badgeColor =
+                    MaterialColors.getColor(detailBinding.tvDialogStatusTitle, row.badgeColorAttr)
+                val badgeTextColor = MaterialColors.getColor(
+                    detailBinding.tvDialogStatusTitle,
+                    row.badgeTextColorAttr
+                )
+                detailBinding.tvDialogStatusTitle.backgroundTintList =
+                    ColorStateList.valueOf(badgeColor)
                 detailBinding.tvDialogStatusTitle.setTextColor(badgeTextColor)
                 detailBinding.tvDialogStatusDetail.setTextColor(badgeColor)
 
@@ -671,13 +1006,19 @@ class SuperAdminReportFragment : Fragment() {
                     container.addView(empty)
                 } else {
                     row.items.forEachIndexed { index, item ->
-                        val itemBinding = ItemPurchaseDetailItemBinding.inflate(LayoutInflater.from(ctx), container, false)
+                        val itemBinding = ItemPurchaseDetailItemBinding.inflate(
+                            LayoutInflater.from(ctx),
+                            container,
+                            false
+                        )
                         val name = (item["name"] as? String)?.ifBlank { "-" } ?: "-"
                         val qty = (item["qty"] as? Number)?.toLong() ?: 0L
                         val cost = (item["unitCost"] as? Number)?.toLong() ?: 0L
                         itemBinding.tvItemName.text = "${index + 1}. $name"
-                        itemBinding.tvItemMeta.text = "Qty ${nf.format(qty)} x Rp ${nf.format(cost)} = Rp ${nf.format(qty * cost)}"
-                        itemBinding.divider.visibility = if (index == row.items.lastIndex) View.GONE else View.VISIBLE
+                        itemBinding.tvItemMeta.text =
+                            "Qty ${nf.format(qty)} x Rp ${nf.format(cost)} = Rp ${nf.format(qty * cost)}"
+                        itemBinding.divider.visibility =
+                            if (index == row.items.lastIndex) View.GONE else View.VISIBLE
                         container.addView(itemBinding.root)
                     }
                 }
@@ -691,23 +1032,26 @@ class SuperAdminReportFragment : Fragment() {
 
             class PurchaseVH(private val b: com.example.pos_hma.databinding.ItemPurchaseRowBinding) :
                 RecyclerView.ViewHolder(b.root) {
-                fun bind(row: Row) {
+                fun bind(row: PurchaseRow) {
                     b.tvInvoice.text = row.invoiceNo
                     b.tvStatusTitle.text = row.statusTitle
                     b.tvStatusDetail.text = row.statusDetail
 
                     val badgeColor = MaterialColors.getColor(b.tvStatusTitle, row.badgeColorAttr)
-                    val badgeTextColor = MaterialColors.getColor(b.tvStatusTitle, row.badgeTextColorAttr)
+                    val badgeTextColor =
+                        MaterialColors.getColor(b.tvStatusTitle, row.badgeTextColorAttr)
                     b.tvStatusTitle.backgroundTintList = ColorStateList.valueOf(badgeColor)
                     b.tvStatusTitle.setTextColor(badgeTextColor)
                     b.tvStatusDetail.setTextColor(badgeColor)
 
                     val strokeColor = MaterialColors.getColor(b.root, row.strokeColorAttr)
-                    val strokeWidth = (b.root.resources.displayMetrics.density * 2f).toInt().coerceAtLeast(2)
+                    val strokeWidth =
+                        (b.root.resources.displayMetrics.density * 2f).toInt().coerceAtLeast(2)
                     b.root.strokeWidth = strokeWidth
                     b.root.setStrokeColor(strokeColor)
 
-                    b.tvSupplier.text = if (row.supplierName.isBlank()) "Supplier: -" else "Supplier: ${row.supplierName}"
+                    b.tvSupplier.text =
+                        if (row.supplierName.isBlank()) "Supplier: -" else "Supplier: ${row.supplierName}"
                     b.tvProduct.text = "Barang: ${row.productSummary}"
                     val dueDateText = row.dueDate?.let { dfDate.format(it) } ?: "-"
                     val dueTimeText = row.scheduledAt?.let { dfTime.format(it) } ?: "-"
@@ -731,13 +1075,14 @@ class SuperAdminReportFragment : Fragment() {
                     return PurchaseVH(row)
                 }
 
-                override fun onBindViewHolder(holder: PurchaseVH, position: Int) = holder.bind(rows[position])
+                override fun onBindViewHolder(holder: PurchaseVH, position: Int) =
+                    holder.bind(rows[position])
 
                 override fun getItemCount(): Int = rows.size
             }
             holder.b.rvSales.adapter = adapter
 
-            fun updateSummary(current: List<Row>) {
+            fun updateSummary(current: List<PurchaseRow>) {
                 if (current.isEmpty()) {
                     holder.b.tvSummary.visibility = View.GONE
                     return
@@ -757,9 +1102,10 @@ class SuperAdminReportFragment : Fragment() {
                 holder.b.tvSummary.text = summaryParts.joinToString(" | ")
             }
 
-            fun ensureDueAutoPosting(source: List<Row>) {
+            fun ensureDueAutoPosting(source: List<PurchaseRow>) {
                 if (source.isEmpty()) return
-                val pendingAuto = source.count { !it.stockPosted && !it.pendingStockId.isNullOrBlank() }
+                val pendingAuto =
+                    source.count { !it.stockPosted && !it.pendingStockId.isNullOrBlank() }
                 if (pendingAuto > 0) {
                     Log.d(
                         "SuperAdminReport",
@@ -789,7 +1135,9 @@ class SuperAdminReportFragment : Fragment() {
                     holder.b.tvSummary.visibility = View.GONE
                     holder.b.tvDesc.visibility = View.VISIBLE
                     val emptyMsg = when {
-                        masterRows.isEmpty() -> lastEmptyMessage ?: "Tidak ada data pembelian pada rentang ini."
+                        masterRows.isEmpty() -> lastEmptyMessage
+                            ?: "Tidak ada data pembelian pada rentang ini."
+
                         statusFilter == PurchaseStatusFilter.UPCOMING -> "Tidak ada pembelian yang menunggu jatuh tempo."
                         statusFilter == PurchaseStatusFilter.OVERDUE -> "Tidak ada pembelian yang sudah jatuh tempo."
                         else -> lastEmptyMessage ?: "Tidak ada data pembelian pada rentang ini."
@@ -814,14 +1162,15 @@ class SuperAdminReportFragment : Fragment() {
             }
 
             fun applyRows(
-                newRows: List<Row>,
+                newRows: List<PurchaseRow>,
                 emptyMessage: String? = null,
                 infoMessage: String? = null,
                 contextLabel: String? = null
             ) {
-                masterRows = newRows.sortedWith(compareBy<Row> { statusSortKey(it.statusPriority) }
-                    .thenBy { it.dueDate ?: Date(Long.MAX_VALUE) }
-                    .thenByDescending { it.createdAt?.time ?: Long.MIN_VALUE })
+                masterRows =
+                    newRows.sortedWith(compareBy<PurchaseRow> { statusSortKey(it.statusPriority) }
+                        .thenBy { it.dueDate ?: Date(Long.MAX_VALUE) }
+                        .thenByDescending { it.createdAt?.time ?: Long.MIN_VALUE })
                 lastEmptyMessage = emptyMessage
                 lastInfoMessage = infoMessage
                 lastContextLabel = contextLabel
@@ -1003,7 +1352,7 @@ class SuperAdminReportFragment : Fragment() {
                             if (it.isLowerCase()) it.titlecase(localeId) else it.toString()
                         }
                     }
-                    binding.tvType.text = "$direction · $typeLabel"
+                    binding.tvType.text = "$direction � $typeLabel"
                     val inboundColor = MaterialColors.getColor(
                         binding.tvType,
                         com.google.android.material.R.attr.colorPrimary
@@ -1023,7 +1372,7 @@ class SuperAdminReportFragment : Fragment() {
                         "Nilai total: Rp ${nf.format(row.totalCost)}"
                     } else ""
                     binding.tvCost.text = if (totalCostText.isNotBlank()) {
-                        "$unitCostText · $totalCostText"
+                        "$unitCostText � $totalCostText"
                     } else unitCostText
                     val note = row.note?.takeIf { it.isNotBlank() }
                     binding.tvNote.isVisible = note != null
@@ -1073,7 +1422,8 @@ class SuperAdminReportFragment : Fragment() {
                         FifoType.HOLD -> if (row.invoiceNo.isNotBlank()) row.invoiceNo else "Stok tertahan"
                     }
                     binding.tvProduct.text = "Barang: $productLabel"
-                    binding.tvSupplier.text = "Supplier: ${row.supplierName?.takeIf { it.isNotBlank() } ?: "-"}"
+                    binding.tvSupplier.text =
+                        "Supplier: ${row.supplierName?.takeIf { it.isNotBlank() } ?: "-"}"
                     binding.tvQty.text = "Qty ${nf.format(row.qty)} unit"
                     val costText = row.unitCost?.takeIf { it > 0 }
                         ?.let { "Modal/unit: Rp ${nf.format(it)}" } ?: "Modal/unit: -"
@@ -1092,6 +1442,7 @@ class SuperAdminReportFragment : Fragment() {
                             }
                             binding.tvStatus.text = "Status: $statusPretty"
                         }
+
                         FifoType.HOLD -> {
                             val received = row.receivedAt?.let { dfDateTime.format(it) } ?: "-"
                             binding.tvDue.text = "Diterima: $received"
@@ -1137,7 +1488,8 @@ class SuperAdminReportFragment : Fragment() {
 
             holder.b.toggleStockView.addOnButtonCheckedListener { _, checkedId, isChecked ->
                 if (!isChecked) return@addOnButtonCheckedListener
-                currentView = if (checkedId == holder.b.btnStockFifo.id) StockView.FIFO else StockView.SUMMARY
+                currentView =
+                    if (checkedId == holder.b.btnStockFifo.id) StockView.FIFO else StockView.SUMMARY
                 applySections()
             }
             holder.b.toggleStockView.check(holder.b.btnStockSummary.id)
@@ -1185,8 +1537,11 @@ class SuperAdminReportFragment : Fragment() {
                         if (movementRows.isEmpty()) {
                             holder.b.tvDesc.text = "Belum ada pergerakan stok."
                         } else {
-                            val summaryLine = "Stok masuk: ${nf.format(totalIn)} | Stok keluar: ${nf.format(totalOut)}"
-                            holder.b.tvDesc.text = "Riwayat pergerakan stok terbaru (maks 150 entri).\n$summaryLine"
+                            val summaryLine = "Stok masuk: ${nf.format(totalIn)} | Stok keluar: ${
+                                nf.format(totalOut)
+                            }"
+                            holder.b.tvDesc.text =
+                                "Riwayat pergerakan stok terbaru (maks 150 entri).\n$summaryLine"
                         }
                         applySections()
                     }
@@ -1226,7 +1581,8 @@ class SuperAdminReportFragment : Fragment() {
                             val sku = doc.getString("sku") ?: return@forEach
                             val qty = doc.getLong("qty") ?: 0L
                             if (qty <= 0L) return@forEach
-                            val name = doc.getString("productName") ?: productLookup[sku]?.name ?: sku
+                            val name =
+                                doc.getString("productName") ?: productLookup[sku]?.name ?: sku
                             val invoiceNo = doc.getString("invoiceNo") ?: doc.id.takeLast(6)
                             val supplier = doc.getString("supplierName")
                             val unitCost = doc.getLong("unitCost")
@@ -1272,7 +1628,8 @@ class SuperAdminReportFragment : Fragment() {
                             val remaining = doc.getLong("remainingQty")
                                 ?: doc.getLong("receivedQty") ?: 0L
                             if (remaining <= 0L) return@forEach
-                            val name = doc.getString("productName") ?: productLookup[sku]?.name ?: sku
+                            val name =
+                                doc.getString("productName") ?: productLookup[sku]?.name ?: sku
                             val invoiceNo = doc.getString("invoiceNo")
                                 ?: doc.getString("purchaseId") ?: doc.id.takeLast(6)
                             val supplier = doc.getString("supplierName")
@@ -1305,6 +1662,7 @@ class SuperAdminReportFragment : Fragment() {
                         complete()
                     }
             }
+
             fun startDetailLoads() {
                 if (detailStarted) return
                 detailStarted = true
@@ -1332,7 +1690,10 @@ class SuperAdminReportFragment : Fragment() {
                     if (productMap.isNotEmpty()) {
                         val skuCount = productMap.size
                         holder.b.tvSummary.visibility = View.VISIBLE
-                        holder.b.tvSummary.text = "Total stok gudang: ${nf.format(totalQty)} unit\nNilai persediaan: Rp ${nf.format(totalValue)} | SKU aktif: ${nf.format(skuCount.toLong())}"
+                        holder.b.tvSummary.text =
+                            "Total stok gudang: ${nf.format(totalQty)} unit\nNilai persediaan: Rp ${
+                                nf.format(totalValue)
+                            } | SKU aktif: ${nf.format(skuCount.toLong())}"
                     } else {
                         holder.b.tvSummary.visibility = View.VISIBLE
                         holder.b.tvSummary.text = "Belum ada produk dengan stok aktif."
@@ -1348,13 +1709,21 @@ class SuperAdminReportFragment : Fragment() {
                     startDetailLoads()
                     applySections()
                 }
-
-
-
-
-
+        }
     }
-} }
 
+    private fun startDialogPrinterAnimation(binding: DialogReceiptPrintStatusBinding) {
+        stopDialogPrinterAnimation()
+        dialogPrinterAnimator = ObjectAnimator.ofFloat(binding.ivStatus, View.ROTATION, 0f, -10f, 10f, 0f).apply {
+            duration = 750
+            repeatCount = ValueAnimator.INFINITE
+            start()
+        }
+    }
 
-
+    private fun stopDialogPrinterAnimation() {
+        dialogPrinterAnimator?.cancel()
+        dialogPrinterAnimator = null
+        printingBinding?.ivStatus?.rotation = 0f
+    }
+}

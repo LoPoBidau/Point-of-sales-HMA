@@ -11,7 +11,10 @@
         style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Cari barang">
+        android:hint="Cari barang disini...."
+        app:startIconDrawable="@drawable/ic_filter_list"
+        app:endIconMode="custom"
+        app:endIconDrawable="@drawable/ic_search">
 
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etSearch"

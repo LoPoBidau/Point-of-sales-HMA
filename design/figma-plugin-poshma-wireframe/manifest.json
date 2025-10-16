@@ -1,0 +1,8 @@
+{
+  "name": "POSHMA Wireframe Scaffolder",
+  "id": "poshma-wireframe-scaffolder",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"]
+}
+

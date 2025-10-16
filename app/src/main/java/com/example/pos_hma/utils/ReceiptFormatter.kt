@@ -72,6 +72,7 @@ object ReceiptFormatter {
         val sale: SaleInfo,
         val items: List<Item>,
         val serviceFee: Long = 0L,
+        val serviceDescription: String? = null,
         val totalCost: Long? = null,
         val unitCost: Long? = null
     ) : Serializable
@@ -179,6 +180,7 @@ object ReceiptFormatter {
         sale: SaleInfo,
         items: List<Item>,
         serviceFee: Long = 0L,
+        serviceDescription: String? = null,
         totalCost: Long? = null,
         unitCost: Long? = null,
         wrapItems: Boolean = true,
@@ -210,10 +212,25 @@ object ReceiptFormatter {
         val goods = items.filterNot { it.isService }
         val goodsQty = goods.sumOf { it.qty }
         val subtotal = goods.sumOf { it.qty * it.unitPrice }
-        val subLabel = if (goodsQty > 0L) "Subtotal ($goodsQty)" else "Subtotal"
-        b.appendLine(moneyRow(subLabel, subtotal, cfg))
-        if (serviceFee > 0L) b.appendLine(moneyRow("Biaya service", serviceFee, cfg))
+        val hasGoods = goodsQty > 0L
+        val serviceDescText = serviceDescription?.trim().orEmpty()
+        val hasServiceItems = items.any { it.isService }
+        val hasService = (serviceFee > 0L) || hasServiceItems || serviceDescText.isNotEmpty()
+
+        if (hasGoods) {
+            val subLabel = "Subtotal ${goodsQty} Barang"
+            b.appendLine(moneyRow(subLabel, subtotal, cfg))
+        }
+        if (serviceFee > 0L) {
+            b.appendLine(moneyRow("Biaya jasa", serviceFee, cfg))
+        }
         b.appendLine(moneyRow("Total", sale.total, cfg))
+
+        if (serviceDescText.isNotEmpty()) {
+            b.appendLine(sep(cfg))
+            b.appendLine("Deskripsi jasa")
+            fitLines(serviceDescText, cfg.width, wrapNotice).forEach { b.appendLine(it) }
+        }
 
         b.appendLine(sep(cfg))
         b.appendLine(moneyRow("Total bayar", sale.paid, cfg))
@@ -222,14 +239,23 @@ object ReceiptFormatter {
         val hasCostInfo = (unitCost ?: 0L) > 0L || (totalCost ?: 0L) > 0L
         if (hasCostInfo) {
             b.appendLine(sep(cfg))
+            b.appendLine("Rincian modal")
             if ((unitCost ?: 0L) > 0L) b.appendLine(moneyRow("Modal/Unit", unitCost!!, cfg))
             if ((totalCost ?: 0L) > 0L) b.appendLine(moneyRow("Total modal", totalCost!!, cfg))
         }
         b.appendLine(sep(cfg))
 
-        b.appendLine("Perhatian")
-        fitLines("Barang-barang yang sudah dibeli tidak dapat dikembalikan/ditukar", cfg.width, wrapNotice)
-            .forEach { b.appendLine(it) }
+        val closingLines: List<String> = when {
+            hasGoods && hasService -> listOf(
+                "Barang-barang yang sudah dibeli tidak dapat dikembalikan/ditukar, terima kasih telah menggunakan dan mempercayai jasa bengkel kami"
+            )
+            hasGoods -> listOf("Barang-barang yang sudah dibeli tidak dapat dikembalikan/ditukar")
+            hasService -> listOf("Terima kasih telah menggunakan dan mempercayai jasa bengkel kami")
+            else -> listOf("Terima kasih telah menggunakan dan mempercayai jasa bengkel kami")
+        }
+        closingLines.forEach { message ->
+            fitLines(message, cfg.width, wrapNotice).forEach { b.appendLine(it) }
+        }
 
         return b.toString().trimEnd()
     }
@@ -239,24 +265,58 @@ object ReceiptFormatter {
         sale: SaleInfo,
         items: List<Item>,
         serviceFee: Long = 0L,
+        serviceDescription: String? = null,
         totalCost: Long? = null,
         unitCost: Long? = null
-    ): String = buildReceipt(PRINTER_CONFIG, store, sale, items, serviceFee, totalCost, unitCost, wrapItems = true, wrapMeta = true, wrapNotice = true)
+    ): String = buildReceipt(
+        PRINTER_CONFIG,
+        store,
+        sale,
+        items,
+        serviceFee,
+        serviceDescription,
+        totalCost,
+        unitCost,
+        wrapItems = true,
+        wrapMeta = true,
+        wrapNotice = true
+    )
 
     fun buildForPrinter(payload: Payload): String =
-        buildForPrinter(payload.store, payload.sale, payload.items, payload.serviceFee, payload.totalCost, payload.unitCost)
+        buildForPrinter(
+            payload.store,
+            payload.sale,
+            payload.items,
+            payload.serviceFee,
+            payload.serviceDescription,
+            payload.totalCost,
+            payload.unitCost
+        )
 
     fun buildForScreenPlain(
         store: StoreInfo,
         sale: SaleInfo,
         items: List<Item>,
         serviceFee: Long = 0L,
+        serviceDescription: String? = null,
         totalCost: Long? = null,
         unitCost: Long? = null,
         columns: Int? = null
     ): String {
         val cfg = screenConfig(columns)
-        return buildReceipt(cfg, store, sale, items, serviceFee, totalCost, unitCost, wrapItems = false, wrapMeta = false, wrapNotice = true)
+        return buildReceipt(
+            cfg,
+            store,
+            sale,
+            items,
+            serviceFee,
+            serviceDescription,
+            totalCost,
+            unitCost,
+            wrapItems = true,
+            wrapMeta = true,
+            wrapNotice = true
+        )
     }
 
     fun buildForScreenPlain(
@@ -267,6 +327,7 @@ object ReceiptFormatter {
         sale = payload.sale,
         items = payload.items,
         serviceFee = payload.serviceFee,
+        serviceDescription = payload.serviceDescription,
         totalCost = payload.totalCost,
         unitCost = payload.unitCost,
         columns = columns
@@ -277,11 +338,12 @@ object ReceiptFormatter {
         sale: SaleInfo,
         items: List<Item>,
         serviceFee: Long = 0L,
+        serviceDescription: String? = null,
         totalCost: Long? = null,
         unitCost: Long? = null,
         columns: Int? = null
     ): CharSequence = buildForScreen(
-        Payload(store, sale, items, serviceFee, totalCost, unitCost),
+        Payload(store, sale, items, serviceFee, serviceDescription, totalCost, unitCost),
         columns
     )
 

@@ -22,6 +22,7 @@ import com.github.mikephil.charting.data.LineDataSet
 import com.github.mikephil.charting.data.PieData
 import com.github.mikephil.charting.data.PieDataSet
 import com.github.mikephil.charting.data.PieEntry
+import com.github.mikephil.charting.interfaces.datasets.ILineDataSet
 import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.formatter.ValueFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
@@ -244,8 +245,9 @@ class SuperAdminDashboardFragment : Fragment() {
         b.containerTodaySummary.isVisible = true
         val todayLabel = dateFormatDay.format(Date())
         b.tvTodaySummarySubtitle.text = "Periode: $todayLabel"
-        b.tvTodayGross.text = "Omzet: ${formatCurrency(analytics.todayGrossRevenue)}"
+        b.tvTodayGross.text = "Omzet barang: ${formatCurrency(analytics.todayGoodsRevenue)}"
         b.tvTodayTransactions.text = "Transaksi: ${numberFormat.format(analytics.todayTransactions)}"
+        b.tvTodayService.text = "Pendapatan jasa: ${formatCurrency(analytics.todayServiceRevenue)}"
         b.tvTodayNet.text = "Laba bersih: ${formatCurrency(analytics.todayNetProfit)}"
         b.tvTodayGoods.text = "Barang terjual: ${numberFormat.format(analytics.todayGoodsQuantity)}"
     }
@@ -258,7 +260,8 @@ class SuperAdminDashboardFragment : Fragment() {
         b.tvRevenueSummaryStatus.isVisible = false
         b.containerRevenueSummary.isVisible = true
 
-        b.tvRevenueGrossValue.text = formatCurrency(analytics.grossRevenue)
+        b.tvRevenueGrossValue.text = formatCurrency(analytics.goodsRevenue)
+        b.tvServiceRevenueValue.text = formatCurrency(analytics.serviceRevenue)
         b.tvRevenueCostValue.text = formatCurrency(analytics.totalCost)
         b.tvRevenueNetValue.text = formatCurrency(analytics.netProfit)
 
@@ -274,7 +277,7 @@ class SuperAdminDashboardFragment : Fragment() {
 
     private fun showTrendLoading(range: TimeRange) {
         val b = _binding ?: return
-        b.tvRevenueTrendSubtitle.text = "Pergerakan pendapatan (${range.label})"
+        b.tvRevenueTrendSubtitle.text = "Pergerakan omzet & jasa (${range.label})"
         b.progressRevenueTrend.isVisible = true
         b.tvRevenueTrendStatus.isVisible = false
         b.chartRevenueTrend.isVisible = false
@@ -299,16 +302,25 @@ class SuperAdminDashboardFragment : Fragment() {
 
         val ctx = requireContext()
         val chart = b.chartRevenueTrend
-        val revenueEntries = daily.mapIndexed { index, item -> Entry(index.toFloat(), item.grossRevenue.toFloat()) }
+        val revenueEntries = daily.mapIndexed { index, item -> Entry(index.toFloat(), item.goodsRevenue.toFloat()) }
+        val serviceEntries = daily.mapIndexed { index, item -> Entry(index.toFloat(), item.serviceRevenue.toFloat()) }
         val profitEntries = daily.mapIndexed { index, item -> Entry(index.toFloat(), item.netProfit.toFloat()) }
 
         val revenueColor = MaterialColors.getColor(b.cardRevenueTrend, com.google.android.material.R.attr.colorPrimary)
+        val serviceColor = MaterialColors.getColor(b.cardRevenueTrend, com.google.android.material.R.attr.colorSecondary)
         val profitColor = ContextCompat.getColor(ctx, R.color.green_success)
 
-        val revenueSet = LineDataSet(revenueEntries, "Omzet").apply {
+        val revenueSet = LineDataSet(revenueEntries, "Omzet Barang").apply {
             color = revenueColor
             setDrawCircles(false)
             lineWidth = 2.5f
+            setDrawValues(false)
+        }
+        val serviceSet = LineDataSet(serviceEntries, "Pendapatan Jasa").apply {
+            color = serviceColor
+            setDrawCircles(false)
+            enableDashedLine(8f, 6f, 0f)
+            lineWidth = 2f
             setDrawValues(false)
         }
         val profitSet = LineDataSet(profitEntries, "Laba Bersih").apply {
@@ -319,7 +331,13 @@ class SuperAdminDashboardFragment : Fragment() {
             setDrawValues(false)
         }
 
-        chart.data = LineData(revenueSet, profitSet)
+        val dataSets = mutableListOf<ILineDataSet>(revenueSet)
+        if (daily.any { it.serviceRevenue > 0L }) {
+            dataSets += serviceSet
+        }
+        dataSets += profitSet
+
+        chart.data = LineData(dataSets)
         chart.description.isEnabled = false
         chart.setNoDataText("Data pendapatan belum tersedia.")
         chart.axisRight.isEnabled = false
@@ -348,7 +366,7 @@ class SuperAdminDashboardFragment : Fragment() {
         b.progressRevenueTrend.isVisible = false
         b.tvRevenueTrendStatus.isVisible = false
         chart.isVisible = true
-        b.tvRevenueTrendSubtitle.text = "Pergerakan pendapatan (${range.label})"
+        b.tvRevenueTrendSubtitle.text = "Pergerakan omzet & jasa (${range.label})"
     }
 
     private fun showTopProductsLoading(range: TimeRange) {
@@ -504,13 +522,17 @@ class SuperAdminDashboardFragment : Fragment() {
         val dayKeyFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
         val dayLabelFormat = SimpleDateFormat("dd MMM", localeId)
 
-        var grossRevenue = 0L
+        var totalRevenue = 0L
+        var goodsRevenue = 0L
+        var serviceRevenue = 0L
         var totalCost = 0L
         var goodsQuantity = 0L
         var transactionCount = 0
         val todayStart = normalizeDay(Date())
         val todayEndExclusive = Date(todayStart.time + 24 * 60 * 60 * 1000L)
-        var todayGrossRevenue = 0L
+        var todayGoodsRevenue = 0L
+        var todayServiceRevenue = 0L
+        var todayTotalRevenue = 0L
         var todayCost = 0L
         var todayGoodsQuantity = 0L
         var todayTransactions = 0
@@ -519,31 +541,42 @@ class SuperAdminDashboardFragment : Fragment() {
             val createdAt = doc.getTimestamp("createdAt")?.toDate() ?: continue
             transactionCount++
             val total = doc.getLong("total") ?: 0L
-            grossRevenue += total
+            val serviceFee = doc.getLong("serviceFee") ?: 0L
 
             val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
             var saleCost = 0L
             var goodsInSale = 0L
+            var saleGoodsRevenue = 0L
+            var saleServiceRevenue = serviceFee
+
             for (item in items) {
                 val qty = (item["qty"] as? Number)?.toLong() ?: 0L
                 if (qty <= 0L) continue
+                val unitPrice = (item["unitPrice"] as? Number)?.toLong() ?: 0L
+                val lineRevenue = qty * unitPrice
                 val isService = (item["isService"] as? Boolean) ?: false
                 if (!isService) {
                     val sku = (item["sku"] as? String).orEmpty()
                     val nameRaw = (item["name"] as? String).orEmpty()
                     val name = if (nameRaw.isBlank()) sku else nameRaw
-                    val unitPrice = (item["unitPrice"] as? Number)?.toLong() ?: 0L
-                    val unitCost = (item["unitCost"] as? Number)?.toLong() ?: 0L
                     val key = sku.ifBlank { name.lowercase(localeId) }
                     val agg = aggregated.getOrPut(key) { AggregatedProduct(sku = sku, name = name, quantity = 0L, revenue = 0L) }
                     agg.quantity += qty
-                    agg.revenue += qty * unitPrice
+                    agg.revenue += lineRevenue
                     if (agg.name.isBlank() && name.isNotBlank()) agg.name = name
+                    val unitCost = (item["unitCost"] as? Number)?.toLong() ?: 0L
                     saleCost += qty * unitCost
                     goodsQuantity += qty
                     goodsInSale += qty
+                    saleGoodsRevenue += lineRevenue
+                } else {
+                    saleServiceRevenue += lineRevenue
                 }
             }
+
+            totalRevenue += total
+            goodsRevenue += saleGoodsRevenue
+            serviceRevenue += saleServiceRevenue
             totalCost += saleCost
 
             val dayKey = dayKeyFormat.format(createdAt)
@@ -551,16 +584,22 @@ class SuperAdminDashboardFragment : Fragment() {
                 DailyAggregateMutable(
                     date = normalizeDay(createdAt),
                     label = dayLabelFormat.format(createdAt),
-                    grossRevenue = 0L,
+                    goodsRevenue = 0L,
+                    serviceRevenue = 0L,
+                    totalRevenue = 0L,
                     netProfit = 0L
                 )
             }
-            bucket.grossRevenue += total
+            bucket.goodsRevenue += saleGoodsRevenue
+            bucket.serviceRevenue += saleServiceRevenue
+            bucket.totalRevenue += total
             bucket.netProfit += (total - saleCost)
 
             if (createdAt >= todayStart && createdAt < todayEndExclusive) {
                 todayTransactions += 1
-                todayGrossRevenue += total
+                todayGoodsRevenue += saleGoodsRevenue
+                todayServiceRevenue += saleServiceRevenue
+                todayTotalRevenue += total
                 todayCost += saleCost
                 todayGoodsQuantity += goodsInSale
             }
@@ -570,12 +609,19 @@ class SuperAdminDashboardFragment : Fragment() {
             compareByDescending<AggregatedProduct> { it.quantity }.thenByDescending { it.revenue }
         )
         val daily = dailyMap.values.sortedBy { it.date }.map {
-            DailyAggregate(it.date, it.label, it.grossRevenue, it.netProfit)
+            DailyAggregate(
+                date = it.date,
+                label = it.label,
+                goodsRevenue = it.goodsRevenue,
+                serviceRevenue = it.serviceRevenue,
+                totalRevenue = it.totalRevenue,
+                netProfit = it.netProfit
+            )
         }
-        val netProfit = grossRevenue - totalCost
+        val netProfit = totalRevenue - totalCost
         val generatedAt = Date()
         val endInclusive = Date(endExclusive.time - 1L)
-        val todayNetProfit = todayGrossRevenue - todayCost
+        val todayNetProfit = todayTotalRevenue - todayCost
 
         return DashboardAnalytics(
             start = start,
@@ -583,12 +629,16 @@ class SuperAdminDashboardFragment : Fragment() {
             generatedAt = generatedAt,
             products = sortedProducts,
             daily = daily,
-            grossRevenue = grossRevenue,
+            goodsRevenue = goodsRevenue,
+            serviceRevenue = serviceRevenue,
+            totalRevenue = totalRevenue,
             totalCost = totalCost,
             netProfit = netProfit,
             transactionCount = transactionCount,
             goodsQuantity = goodsQuantity,
-            todayGrossRevenue = todayGrossRevenue,
+            todayGoodsRevenue = todayGoodsRevenue,
+            todayServiceRevenue = todayServiceRevenue,
+            todayTotalRevenue = todayTotalRevenue,
             todayNetProfit = todayNetProfit,
             todayTransactions = todayTransactions,
             todayGoodsQuantity = todayGoodsQuantity
@@ -623,14 +673,18 @@ class SuperAdminDashboardFragment : Fragment() {
     private data class DailyAggregate(
         val date: Date,
         val label: String,
-        val grossRevenue: Long,
+        val goodsRevenue: Long,
+        val serviceRevenue: Long,
+        val totalRevenue: Long,
         val netProfit: Long
     )
 
     private data class DailyAggregateMutable(
         val date: Date,
         val label: String,
-        var grossRevenue: Long,
+        var goodsRevenue: Long,
+        var serviceRevenue: Long,
+        var totalRevenue: Long,
         var netProfit: Long
     )
 
@@ -640,12 +694,16 @@ class SuperAdminDashboardFragment : Fragment() {
         val generatedAt: Date,
         val products: List<AggregatedProduct>,
         val daily: List<DailyAggregate>,
-        val grossRevenue: Long,
+        val goodsRevenue: Long,
+        val serviceRevenue: Long,
+        val totalRevenue: Long,
         val totalCost: Long,
         val netProfit: Long,
         val transactionCount: Int,
         val goodsQuantity: Long,
-        val todayGrossRevenue: Long,
+        val todayGoodsRevenue: Long,
+        val todayServiceRevenue: Long,
+        val todayTotalRevenue: Long,
         val todayNetProfit: Long,
         val todayTransactions: Int,
         val todayGoodsQuantity: Long

@@ -3,6 +3,7 @@ package com.example.pos_hma.ui.role.admin
 import android.os.Bundle
 import android.view.*
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
@@ -14,6 +15,8 @@ import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.FragmentAdminCashierCartBinding
 import com.example.pos_hma.databinding.ItemCartLineCashierBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 
 private val ID_LOCALE = java.util.Locale("in","ID")
 private fun rupiah(v: Long) = java.text.NumberFormat.getInstance(ID_LOCALE).format(v)
@@ -40,30 +43,16 @@ class AdminCashierCartFragment : Fragment() {
 
         cartVm.lines.observe(viewLifecycleOwner) { map ->
             adapter.submit(map.values.toList())
-            val hasService = (cartVm.serviceFee.value ?: 0L) > 0L
-            val showEmpty = map.isEmpty() && !hasService
-            binding.empty.visibility = if (showEmpty) View.VISIBLE else View.GONE
+            refreshServiceSection()
             updateTotalAndButton()
         }
         cartVm.goodsSubTotal.observe(viewLifecycleOwner) { _ -> updateTotalAndButton() }
-
-        cartVm.serviceFee.observe(viewLifecycleOwner) { fee ->
-            val hasGoods = (cartVm.lines.value?.isNotEmpty() == true)
-            if (fee != null && fee > 0) {
-                binding.tvServiceFee.visibility = View.VISIBLE
-                val label = if (hasGoods) "Tambahan Biaya Service" else "Biaya Service"
-                binding.tvServiceFee.text = "$label: Rp ${rupiah(fee)}"
-                binding.btnServiceFee.text = "Ubah harga service"
-            } else {
-                binding.tvServiceFee.visibility = View.GONE
-                binding.btnServiceFee.text = "Tambah Service"
-            }
-            // Hide empty-state if only service is present
-            val map = cartVm.lines.value ?: emptyMap()
-            val hasService = (fee ?: 0L) > 0L
-            val showEmpty = map.isEmpty() && !hasService
-            binding.empty.visibility = if (showEmpty) View.VISIBLE else View.GONE
+        cartVm.serviceFee.observe(viewLifecycleOwner) { _ ->
+            refreshServiceSection()
             updateTotalAndButton()
+        }
+        cartVm.serviceDescription.observe(viewLifecycleOwner) { _ ->
+            refreshServiceSection()
         }
 
         binding.btnClear.setOnClickListener {
@@ -78,9 +67,14 @@ class AdminCashierCartFragment : Fragment() {
             val fee = cartVm.serviceFee.value ?: 0L
             val total = goods + fee
             val hasGoods = (cartVm.lines.value?.isNotEmpty() == true)
+            val desc = cartVm.serviceDescription.value.orEmpty()
             val lines = buildString {
-                appendLine("Sub Total: Rp ${rupiah(goods)}")
-                if (fee > 0) appendLine("${if (hasGoods) "Tambahan Biaya Service" else "Biaya Service"}: Rp ${rupiah(fee)}")
+                appendLine("Subtotal Barang: Rp ${rupiah(goods)}")
+                if (fee > 0) {
+                    val labelBase = if (hasGoods) "Tambahan Biaya Jasa" else "Biaya Jasa"
+                    val label = if (desc.isBlank()) labelBase else "$labelBase ($desc)"
+                    appendLine("$label: Rp ${rupiah(fee)}")
+                }
                 append("Total Bayar: Rp ${rupiah(total)}")
             }
             MaterialAlertDialogBuilder(requireContext())
@@ -109,6 +103,27 @@ class AdminCashierCartFragment : Fragment() {
         val canPay = hasLines || fee > 0L
         binding.btnCheckout.isEnabled = canPay
         binding.btnCheckout.alpha = if (canPay) 1f else 0.5f
+    }
+
+    private fun refreshServiceSection() {
+        val fee = cartVm.serviceFee.value ?: 0L
+        val desc = cartVm.serviceDescription.value.orEmpty()
+        val hasGoods = (cartVm.lines.value?.isNotEmpty() == true)
+        val hasService = fee > 0L
+
+        if (hasService) {
+            binding.tvServiceFee.visibility = View.VISIBLE
+            val labelBase = if (hasGoods) "Tambahan Biaya Jasa" else "Biaya Jasa"
+            val label = if (desc.isBlank()) labelBase else "$labelBase ($desc)"
+            binding.tvServiceFee.text = "$label: Rp ${rupiah(fee)}"
+            binding.btnServiceFee.text = "Ubah jasa"
+        } else {
+            binding.tvServiceFee.visibility = View.GONE
+            binding.btnServiceFee.text = "Tambah Jasa"
+        }
+
+        val linesEmpty = cartVm.lines.value?.isEmpty() == true
+        binding.empty.visibility = if (linesEmpty && !hasService) View.VISIBLE else View.GONE
     }
 }
 
@@ -156,45 +171,88 @@ private class CartLinesAdapter(
 private fun AdminCashierCartFragment.showServiceFeeDialog() {
     val ctx = requireContext()
     val view = layoutInflater.inflate(R.layout.dialog_service_fee, null, false)
-    val et = view.findViewById<com.google.android.material.textfield.TextInputEditText>(R.id.etServiceFee)
-    val current = cartVm.serviceFee.value ?: 0L
-    if (current > 0) et.setText(java.text.NumberFormat.getInstance(ID_LOCALE).format(current))
+    val tilFee = view.findViewById<TextInputLayout>(R.id.tilServiceFee)
+    val etFee = view.findViewById<TextInputEditText>(R.id.etServiceFee)
+    val tilDesc = view.findViewById<TextInputLayout>(R.id.tilServiceDescription)
+    val etDesc = view.findViewById<TextInputEditText>(R.id.etServiceDescription)
+    val currentFee = cartVm.serviceFee.value ?: 0L
+    val formatter = java.text.NumberFormat.getInstance(ID_LOCALE)
+    if (currentFee > 0) {
+        etFee.setText(formatter.format(currentFee))
+    }
+    val currentDesc = cartVm.serviceDescription.value.orEmpty()
+    if (currentDesc.isNotBlank()) {
+        etDesc.setText(currentDesc)
+        etDesc.setSelection(currentDesc.length)
+    }
 
     // Format ribuan (1.000, 10.000, dst) saat mengetik
     var editing = false
-    et.addTextChangedListener(object : android.text.TextWatcher {
+    etFee.addTextChangedListener(object : android.text.TextWatcher {
         override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
         override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
         override fun afterTextChanged(s: android.text.Editable?) {
             if (editing) return
             editing = true
+            tilFee.error = null
             val raw = s?.toString().orEmpty()
             // Ambil angka saja
             val digits = raw.replace("[^\\d]".toRegex(), "")
             if (digits.isEmpty()) {
-                et.setText("")
+                etFee.setText("")
                 editing = false
                 return
             }
             val v = digits.toLongOrNull() ?: 0L
-            val formatted = java.text.NumberFormat.getInstance(ID_LOCALE).format(v)
+            val formatted = formatter.format(v)
             if (formatted != raw) {
-                et.setText(formatted)
-                et.setSelection(formatted.length)
+                etFee.setText(formatted)
+                etFee.setSelection(formatted.length)
             }
             editing = false
         }
     })
 
-    MaterialAlertDialogBuilder(ctx)
-        .setTitle("Biaya Service")
+    etDesc.addTextChangedListener(object : android.text.TextWatcher {
+        override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+        override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        override fun afterTextChanged(s: android.text.Editable?) {
+            tilDesc.error = null
+        }
+    })
+
+    val dialog = MaterialAlertDialogBuilder(ctx)
+        .setTitle("Biaya Jasa")
         .setView(view)
         .setNegativeButton("Batal", null)
-        .setPositiveButton("Simpan") { _, _ ->
-            val s = et.text?.toString()?.trim().orEmpty()
-            val digits = s.replace("[^\\d]".toRegex(), "")
-            val v = digits.toLongOrNull() ?: 0L
-            cartVm.setServiceFee(v)
+        .setPositiveButton("Simpan", null)
+        .create()
+
+    dialog.setOnShowListener {
+        val positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+        positive.setOnClickListener {
+            tilFee.error = null
+            tilDesc.error = null
+
+            val amountRaw = etFee.text?.toString().orEmpty()
+            val amountDigits = amountRaw.replace("[^\\d]".toRegex(), "")
+            val amount = amountDigits.toLongOrNull() ?: 0L
+            val desc = etDesc.text?.toString()?.trim().orEmpty()
+
+            if (amount > 0L && desc.isBlank()) {
+                tilDesc.error = "Deskripsi jasa wajib diisi ketika menambahkan jasa"
+                return@setOnClickListener
+            }
+
+            if (amount > 0L) {
+                cartVm.setServiceFee(amount)
+                cartVm.setServiceDescription(desc)
+            } else {
+                cartVm.clearServiceFee()
+            }
+            dialog.dismiss()
         }
-        .show()
+    }
+
+    dialog.show()
 }

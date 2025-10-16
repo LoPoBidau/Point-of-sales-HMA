@@ -55,4 +55,10 @@
     <string name="receipt_overlay_title">Simpan &amp; Cetak Nota</string>
     <string name="action_edit">Edit</string>
     <string name="action_delete">Hapus</string>
+    <string name="print_status_icon_desc">Status printer</string>
+    <string name="print_status_sending">Mengirim nota ke printer...</string>
+    <string name="print_status_retry">Coba Lagi</string>
+    <string name="print_status_close">Tutup</string>
+    <string name="print_status_success">Nota berhasil dikirim</string>
+    <string name="print_status_failed">Gagal cetak: %1$s</string>
 </resources>

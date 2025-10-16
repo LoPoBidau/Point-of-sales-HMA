@@ -9,13 +9,27 @@
         android:id="@+id/tilServiceFee"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Biaya service (Rp)">
+        android:hint="Biaya jasa (Rp)">
         <com.google.android.material.textfield.TextInputEditText
             android:id="@+id/etServiceFee"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:inputType="number"
             android:singleLine="true"/>
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/tilServiceDescription"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="Deskripsi Jasa">
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/etServiceDescription"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textCapSentences|textMultiLine"
+            android:maxLines="3"/>
     </com.google.android.material.textfield.TextInputLayout>
 
     <TextView

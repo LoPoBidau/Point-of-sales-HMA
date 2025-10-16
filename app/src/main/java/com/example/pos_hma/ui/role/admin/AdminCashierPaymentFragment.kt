@@ -45,6 +45,7 @@ class AdminCashierPaymentFragment : Fragment() {
     private var totalAmount = 0L
     private var goodsSubTotal = 0L
     private var serviceFee = 0L
+    private var serviceDescription = ""
 
     private var pendingNav: Runnable? = null
     private val EXTRA_SUCCESS_DELAY_MS = 650L
@@ -62,6 +63,10 @@ class AdminCashierPaymentFragment : Fragment() {
 
         cartVm.goodsSubTotal.observe(viewLifecycleOwner) { goodsSubTotal = it; updateSummaryUI(); updatePaidUI() }
         cartVm.serviceFee.observe(viewLifecycleOwner) { serviceFee = it ?: 0L; updateSummaryUI(); updatePaidUI() }
+        cartVm.serviceDescription.observe(viewLifecycleOwner) {
+            serviceDescription = it?.trim().orEmpty()
+            updateSummaryUI()
+        }
         cartVm.lines.observe(viewLifecycleOwner) { updateSummaryUI() }
 
         listOf(
@@ -107,7 +112,9 @@ class AdminCashierPaymentFragment : Fragment() {
 
     private fun attemptPay() {
         val lines = cartVm.lines.value ?: emptyMap()
-        if (lines.isEmpty() && (cartVm.serviceFee.value ?: 0L) <= 0L) {
+        val feeValue = cartVm.serviceFee.value ?: 0L
+        val serviceDesc = serviceDescription
+        if (lines.isEmpty() && feeValue <= 0L) {
             Toast.makeText(requireContext(), "Keranjang kosong", Toast.LENGTH_SHORT).show()
             return
         }
@@ -367,12 +374,21 @@ class AdminCashierPaymentFragment : Fragment() {
                     }
                 }
 
-                trx.set(saleRef, mapOf(
-                    "createdAt" to now, "cashierId" to uid, "items" to items,
-                    "total" to due, "paid" to paid, "change" to (paid - due),
-                    "serviceFee" to (cartVm.serviceFee.value ?: 0L),
-                    "status" to "PAID", "noNota" to noNota
-                ))
+                val saleData = mutableMapOf<String, Any>(
+                    "createdAt" to now,
+                    "cashierId" to uid,
+                    "items" to items,
+                    "total" to due,
+                    "paid" to paid,
+                    "change" to (paid - due),
+                    "serviceFee" to feeValue,
+                    "status" to "PAID",
+                    "noNota" to noNota
+                )
+                if (feeValue > 0L && serviceDesc.isNotBlank()) {
+                    saleData["serviceDescription"] = serviceDesc
+                }
+                trx.set(saleRef, saleData)
 
                 trx.set(counterRef, mapOf("last" to next, "updatedAt" to now), SetOptions.merge())
 
@@ -435,11 +451,13 @@ class AdminCashierPaymentFragment : Fragment() {
         val saleInfo = ReceiptFormatter.SaleInfo(saleId = noNota, date = java.util.Date(), total = total, paid = paid)
 
         val svc = cartVm.serviceFee.value ?: 0L
+        val svcDesc = cartVm.serviceDescription.value.orEmpty()
         val payload = Payload(
             store = store,
             sale = saleInfo,
             items = items,
-            serviceFee = svc
+            serviceFee = svc,
+            serviceDescription = svcDesc
         )
         val receiptForScreen = ReceiptFormatter.buildForScreen(payload)
         val receiptForPrinter = ReceiptFormatter.buildForPrinter(payload)
@@ -456,14 +474,16 @@ class AdminCashierPaymentFragment : Fragment() {
 
     private fun updateSummaryUI() {
         val hasGoods = (cartVm.lines.value?.isNotEmpty() == true)
-        binding.tvTotalLabel.text = "Sub Total"
+        binding.tvTotalLabel.text = "Subtotal Barang"
         binding.tvTotal.text = "Rp ${rupiah(goodsSubTotal)}"
 
         val hasFee = serviceFee > 0
         binding.tvServiceFeeLabel.visibility = if (hasFee) View.VISIBLE else View.GONE
         binding.tvServiceFeeValue.visibility = if (hasFee) View.VISIBLE else View.GONE
         if (hasFee) {
-            binding.tvServiceFeeLabel.text = if (hasGoods) "Tambahan Biaya Service" else "Biaya Service"
+            val base = if (hasGoods) "Tambahan Biaya Jasa" else "Biaya Jasa"
+            val label = if (serviceDescription.isBlank()) base else "$base ($serviceDescription)"
+            binding.tvServiceFeeLabel.text = label
             binding.tvServiceFeeValue.text = "Rp ${rupiah(serviceFee)}"
         }
 

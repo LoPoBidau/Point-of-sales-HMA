@@ -10,24 +10,24 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.print.PrintManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.RequiresPermission
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.doOnLayout
 import androidx.core.view.updatePadding
-import androidx.core.widget.ImageViewCompat
+import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierReceiptBinding
+import com.example.pos_hma.databinding.DialogReceiptPrintStatusBinding
 import com.example.pos_hma.print.DirectEscPosPrinter
 import com.example.pos_hma.ui.role.admin.print.CenteredReceiptPrintAdapter
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
@@ -55,12 +55,13 @@ class AdminCashierReceiptFragment : Fragment() {
     private var receiptPrinterPayload: String = ""
     private var receiptPayload: ReceiptFormatter.Payload? = null
     private var lastRenderedColumns: Int = -1
-    private val printingHandler = Handler(Looper.getMainLooper())
-    private var printingRunnable: Runnable? = null
-    private var printerAnimator: ObjectAnimator? = null
     private var isPrinting = false
     private var pendingPermissionAction: (() -> Unit)? = null
-    private var printingMessages: Array<String> = emptyArray()
+    private var printingDialog: AlertDialog? = null
+    private var printingBinding: DialogReceiptPrintStatusBinding? = null
+    private var pendingReceiptToPrint: String? = null
+    private var hasNavigatedAfterPrint = false
+    private var dialogPrinterAnimator: ObjectAnimator? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _b = FragmentAdminCashierReceiptBinding.inflate(inflater, container, false)
@@ -125,13 +126,7 @@ class AdminCashierReceiptFragment : Fragment() {
             b.tvReceipt.text = textUi
         }
 
-        printingMessages = arrayOf(
-            getString(R.string.receipt_status_printing),
-            getString(R.string.receipt_status_printing) + ".",
-            getString(R.string.receipt_status_printing) + "..",
-            getString(R.string.receipt_status_printing) + "..."
-        )
-        setIdleState()
+        resetPrintingState(clearPending = true)
 
         b.btnSaveAndPrint.setOnClickListener {
             if (isPrinting) return@setOnClickListener
@@ -161,6 +156,7 @@ class AdminCashierReceiptFragment : Fragment() {
 
     @SuppressLint("MissingPermission")
     private fun beginPrintWorkflow(text: String) {
+        pendingReceiptToPrint = text
         val savedMac = PrintersPref.getMac(requireContext())
         if (savedMac.isNullOrBlank()) {
             showBtPicker { mac ->
@@ -173,18 +169,23 @@ class AdminCashierReceiptFragment : Fragment() {
     }
 
     private fun beginDirectPrint(mac: String, text: String) {
+        pendingReceiptToPrint = text
+        hasNavigatedAfterPrint = false
+        val dialogBinding = ensurePrintingDialog()
         isPrinting = true
         pendingPermissionAction = null
         b.btnSaveAndPrint.isEnabled = false
-        b.printingOverlay.visibility = View.VISIBLE
-        b.ivPrinting.setImageResource(R.drawable.ic_printer)
-        ImageViewCompat.setImageTintList(
-            b.ivPrinting,
-            ColorStateList.valueOf(ContextCompat.getColor(requireContext(), android.R.color.white))
+        dialogBinding.progress.isVisible = true
+        dialogBinding.btnRetry.isVisible = false
+        dialogBinding.btnRetry.setOnClickListener(null)
+        dialogBinding.btnClose.isVisible = false
+        dialogBinding.btnClose.setOnClickListener(null)
+        dialogBinding.ivStatus.setImageResource(R.drawable.ic_printer)
+        dialogBinding.ivStatus.imageTintList = ColorStateList.valueOf(
+            MaterialColors.getColor(dialogBinding.ivStatus, com.google.android.material.R.attr.colorPrimary)
         )
-        b.tvPrintingStatus.text = printingMessages.firstOrNull() ?: getString(R.string.receipt_status_printing)
-        startPrinterAnimation()
-        startStatusLoop()
+        dialogBinding.tvStatus.text = getString(R.string.print_status_sending)
+        startDialogPrinterAnimation(dialogBinding)
         DirectEscPosPrinter.print(
             requireContext(),
             mac,
@@ -195,85 +196,102 @@ class AdminCashierReceiptFragment : Fragment() {
     }
 
     private fun onPrintSuccess() {
-        stopStatusLoop()
-        stopPrinterAnimation()
-        b.printingOverlay.visibility = View.VISIBLE
-        b.ivPrinting.setImageResource(R.drawable.ic_check_success)
-        ImageViewCompat.setImageTintList(
-            b.ivPrinting,
-            ColorStateList.valueOf(ContextCompat.getColor(requireContext(), R.color.green_success))
-        )
-        b.tvPrintingStatus.text = getString(R.string.receipt_status_success)
+        val binding = printingBinding ?: ensurePrintingDialog()
+        stopDialogPrinterAnimation()
         isPrinting = false
-        b.root.postDelayed({ finishAndNavigate() }, 1500)
+        pendingReceiptToPrint = null
+        binding.progress.isVisible = false
+        binding.ivStatus.setImageResource(R.drawable.ic_check_success)
+        binding.ivStatus.imageTintList = ColorStateList.valueOf(
+            ContextCompat.getColor(requireContext(), R.color.green_success)
+        )
+        binding.tvStatus.text = getString(R.string.print_status_success)
+        binding.btnRetry.isVisible = false
+        binding.btnClose.apply {
+            text = getString(R.string.print_status_close)
+            isVisible = true
+            setOnClickListener {
+                printingDialog?.dismiss()
+                navigateAfterPrintOnce()
+            }
+        }
+        toast("Terkirim ke printer")
+        binding.root.postDelayed({
+            printingDialog?.dismiss()
+            navigateAfterPrintOnce()
+        }, 1200)
     }
 
     private fun onPrintError(error: Throwable, fallbackText: String) {
-        stopStatusLoop()
-        stopPrinterAnimation()
-        b.printingOverlay.visibility = View.VISIBLE
-        b.ivPrinting.setImageResource(R.drawable.ic_printer)
-        ImageViewCompat.setImageTintList(
-            b.ivPrinting,
-            ColorStateList.valueOf(MaterialColors.getColor(b.ivPrinting, com.google.android.material.R.attr.colorError))
-        )
+        val binding = printingBinding ?: ensurePrintingDialog()
+        stopDialogPrinterAnimation()
+        isPrinting = false
+        binding.progress.isVisible = false
+        binding.ivStatus.setImageResource(R.drawable.ic_printer)
+        val errorColor = MaterialColors.getColor(binding.ivStatus, com.google.android.material.R.attr.colorError)
+        binding.ivStatus.imageTintList = ColorStateList.valueOf(errorColor)
         val message = error.message?.takeUnless { it.isBlank() } ?: "Tidak diketahui"
-        b.tvPrintingStatus.text = getString(R.string.receipt_status_error, message)
-        toast("Gagal cetak: $message")
-        isPrinting = false
-        b.btnSaveAndPrint.isEnabled = true
-        printReceipt(currentSaleId, fallbackText)
-        b.root.postDelayed({ setIdleState() }, 2500)
-    }
-
-    private fun setIdleState() {
-        stopStatusLoop()
-        stopPrinterAnimation()
-        b.printingOverlay.visibility = View.GONE
-        b.ivPrinting.setImageResource(R.drawable.ic_printer)
-        ImageViewCompat.setImageTintList(
-            b.ivPrinting,
-            ColorStateList.valueOf(ContextCompat.getColor(requireContext(), android.R.color.white))
-        )
-        b.tvPrintingStatus.text = getString(R.string.receipt_status_printing)
-        b.btnSaveAndPrint.isEnabled = true
-        isPrinting = false
-    }
-
-    private fun startPrinterAnimation() {
-        stopPrinterAnimation()
-        printerAnimator = ObjectAnimator.ofFloat(b.ivPrinting, View.ROTATION, 0f, -8f, 8f, 0f).apply {
-            duration = 700
-            repeatCount = ValueAnimator.INFINITE
-            start()
-        }
-    }
-
-    private fun stopPrinterAnimation() {
-        printerAnimator?.cancel()
-        printerAnimator = null
-        b.ivPrinting.rotation = 0f
-    }
-
-    private fun startStatusLoop() {
-        stopStatusLoop()
-        if (printingMessages.isEmpty()) return
-        var index = 0
-        b.tvPrintingStatus.text = printingMessages[index]
-        val runnable = object : Runnable {
-            override fun run() {
-                index = (index + 1) % printingMessages.size
-                b.tvPrintingStatus.text = printingMessages[index]
-                printingHandler.postDelayed(this, 400)
+        binding.tvStatus.text = getString(R.string.print_status_failed, message)
+        binding.btnRetry.isVisible = true
+        binding.btnClose.isVisible = true
+        binding.btnRetry.setOnClickListener {
+            val retryText = pendingReceiptToPrint
+            if (!retryText.isNullOrBlank()) {
+                beginPrintWorkflow(retryText)
+            } else {
+                printingDialog?.dismiss()
             }
         }
-        printingRunnable = runnable
-        printingHandler.postDelayed(runnable, 400)
+        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        toast("Gagal cetak: $message")
+        b.btnSaveAndPrint.isEnabled = true
+        pendingReceiptToPrint = fallbackText
+        if (fallbackText.isNotBlank()) {
+            printReceipt(currentSaleId, fallbackText)
+        }
     }
 
-    private fun stopStatusLoop() {
-        printingRunnable?.let { printingHandler.removeCallbacks(it) }
-        printingRunnable = null
+    private fun ensurePrintingDialog(): DialogReceiptPrintStatusBinding {
+        val current = printingBinding
+        if (current != null) {
+            if (printingDialog?.isShowing != true) printingDialog?.show()
+            return current
+        }
+        val binding = DialogReceiptPrintStatusBinding.inflate(layoutInflater)
+        printingBinding = binding
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setView(binding.root)
+            .setCancelable(false)
+            .create()
+        dialog.setOnDismissListener {
+            stopDialogPrinterAnimation()
+            printingBinding = null
+            printingDialog = null
+            if (!isPrinting) {
+                pendingReceiptToPrint = null
+            }
+        }
+        dialog.show()
+        printingDialog = dialog
+        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        return binding
+    }
+
+    private fun resetPrintingState(clearPending: Boolean = false) {
+        isPrinting = false
+        hasNavigatedAfterPrint = false
+        stopDialogPrinterAnimation()
+        b.btnSaveAndPrint.isEnabled = true
+        if (clearPending) {
+            pendingReceiptToPrint = null
+        }
+        printingDialog?.dismiss()
+    }
+
+    private fun navigateAfterPrintOnce() {
+        if (hasNavigatedAfterPrint) return
+        hasNavigatedAfterPrint = true
+        finishAndNavigate()
     }
 
     private fun finishAndNavigate() {
@@ -293,7 +311,7 @@ class AdminCashierReceiptFragment : Fragment() {
         val bonded = adapter?.bondedDevices?.toList().orEmpty()
         if (bonded.isEmpty()) {
             toast("Tidak ada printer terpasang (pairing dulu)")
-            setIdleState()
+            resetPrintingState()
             return
         }
 
@@ -302,7 +320,7 @@ class AdminCashierReceiptFragment : Fragment() {
             .setTitle("Pilih Printer")
             .setItems(labels) { _, which -> onPicked(bonded[which].address) }
             .setNegativeButton("Batal") { _, _ ->
-                setIdleState()
+                resetPrintingState()
             }
             .show()
     }
@@ -327,17 +345,18 @@ class AdminCashierReceiptFragment : Fragment() {
                 pendingPermissionAction?.invoke()
             } else {
                 toast("Izin Bluetooth diperlukan untuk mencetak")
-                setIdleState()
+                resetPrintingState()
             }
             pendingPermissionAction = null
         }
     }
 
     override fun onDestroyView() {
-        stopStatusLoop()
-        stopPrinterAnimation()
         pendingPermissionAction = null
-        b.printingOverlay.visibility = View.GONE
+        resetPrintingState(clearPending = true)
+        stopDialogPrinterAnimation()
+        printingBinding = null
+        printingDialog = null
         _b = null
         super.onDestroyView()
     }
@@ -347,6 +366,21 @@ class AdminCashierReceiptFragment : Fragment() {
         return requiredBtPermissions.all {
             ContextCompat.checkSelfPermission(requireContext(), it) == PackageManager.PERMISSION_GRANTED
         }
+    }
+
+    private fun startDialogPrinterAnimation(binding: DialogReceiptPrintStatusBinding) {
+        stopDialogPrinterAnimation()
+        dialogPrinterAnimator = ObjectAnimator.ofFloat(binding.ivStatus, View.ROTATION, 0f, -10f, 10f, 0f).apply {
+            duration = 750
+            repeatCount = ValueAnimator.INFINITE
+            start()
+        }
+    }
+
+    private fun stopDialogPrinterAnimation() {
+        dialogPrinterAnimator?.cancel()
+        dialogPrinterAnimator = null
+        printingBinding?.ivStatus?.rotation = 0f
     }
 
 }

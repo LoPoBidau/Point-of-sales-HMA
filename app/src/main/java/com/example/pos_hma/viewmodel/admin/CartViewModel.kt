@@ -23,9 +23,12 @@ class CartViewModel : ViewModel() {
         _lines.map { it.values.filter { l -> !l.product.isService }
             .sumOf { l -> l.product.salePrice * l.qty } }
 
-    // Biaya service opsional (ditentukan kasir di keranjang)
+    // Biaya jasa opsional (ditentukan kasir di keranjang)
     private val _serviceFee = MutableLiveData<Long>(0L)
     val serviceFee: LiveData<Long> = _serviceFee
+
+    private val _serviceDescription = MutableLiveData<String>("")
+    val serviceDescription: LiveData<String> = _serviceDescription
 
     // Total akhir = subtotal barang + biaya service
     val grandTotal: LiveData<Long> = MediatorLiveData<Long>().apply {
@@ -40,8 +43,20 @@ class CartViewModel : ViewModel() {
 
     fun setServiceFee(amount: Long) {
         _serviceFee.value = amount.coerceAtLeast(0L)
+        if (amount <= 0L) {
+            _serviceDescription.value = ""
+        }
     }
-    fun clearServiceFee() { _serviceFee.value = 0L }
+
+    fun setServiceDescription(text: String) {
+        val cleaned = text.trim()
+        _serviceDescription.value = cleaned
+    }
+
+    fun clearServiceFee() {
+        _serviceFee.value = 0L
+        _serviceDescription.value = ""
+    }
 
     fun plus(p: Product) {
         val key = p.sku.ifBlank { p.id }
@@ -61,5 +76,9 @@ class CartViewModel : ViewModel() {
         _lines.value = map
     }
 
-    fun clear() { _lines.value = linkedMapOf(); _serviceFee.value = 0L }
+    fun clear() {
+        _lines.value = linkedMapOf()
+        _serviceFee.value = 0L
+        _serviceDescription.value = ""
+    }
 }

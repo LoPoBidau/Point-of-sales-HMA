@@ -15,6 +15,8 @@ import com.example.pos_hma.R
 import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.FragmentAdminCashierGoodsBinding
 import com.example.pos_hma.databinding.ItemProductSuperAdminBinding
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.firebase.auth.FirebaseAuth
@@ -31,6 +33,8 @@ class AdminCashierGoodsFragment : Fragment() {
     private var reg: ListenerRegistration? = null
     private val all = mutableListOf<Product>()
     private val adapter = GoodsAdapter { p -> onGoodsClicked(p) }
+    private val filterCategories = linkedSetOf<String>()
+    private var availableCategories: List<String> = emptyList()
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
         _b = FragmentAdminCashierGoodsBinding.inflate(inflater, container, false)
@@ -45,6 +49,8 @@ class AdminCashierGoodsFragment : Fragment() {
             override fun afterTextChanged(s: Editable?) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { applyFilter() }
         })
+        b.tilSearch.setStartIconOnClickListener { showFilterDialog() }
+        b.tilSearch.setEndIconOnClickListener { applyFilter() }
         listen()
     }
 
@@ -64,19 +70,86 @@ class AdminCashierGoodsFragment : Fragment() {
                     d.toObject(Product::class.java)?.copy(id = d.id)
                 }.filter { !it.isService }
                 all.clear(); all.addAll(items)
+                availableCategories = items.mapNotNull { it.categoryName.takeIf { name -> name.isNotBlank() } }
+                    .distinct()
+                    .sorted()
+                filterCategories.retainAll(availableCategories)
                 applyFilter()
             }
     }
 
     private fun applyFilter() {
         val q = b.etSearch.text?.toString()?.trim()?.lowercase().orEmpty()
+        val selectedCats = filterCategories
         val list = all
-            .filter { p -> q.isEmpty() || p.nameLowercase.contains(q) || p.sku.lowercase().contains(q) }
+            .filter { p ->
+                val matchName = q.isEmpty() || p.nameLowercase.contains(q) || p.sku.lowercase().contains(q)
+                val matchCategory = selectedCats.isEmpty() || selectedCats.contains(p.categoryName)
+                matchName && matchCategory
+            }
             .sortedWith(compareBy<Product> { p ->
                 val trackable = p.trackStock && !p.isService
                 if (trackable && p.stock <= 0L) 1 else 0
             }.thenBy { it.nameLowercase })
         adapter.submit(list)
+    }
+
+    private fun showFilterDialog() {
+        val ctx = requireContext()
+        val view = LayoutInflater.from(ctx).inflate(R.layout.dialog_catalog_filter, null, false)
+        val chipGroup = view.findViewById<ChipGroup>(R.id.chipGroupCategories)
+
+        chipGroup.removeAllViews()
+        val anyChip = Chip(ctx).apply {
+            text = "Semua"
+            isCheckable = true
+            isChecked = filterCategories.isEmpty()
+            setOnClickListener {
+                if (isChecked) {
+                    for (i in 0 until chipGroup.childCount) {
+                        val c = chipGroup.getChildAt(i)
+                        if (c != this && c is Chip) c.isChecked = false
+                    }
+                }
+            }
+        }
+        chipGroup.addView(anyChip)
+
+        val categories = if (availableCategories.isNotEmpty()) availableCategories
+        else all.mapNotNull { it.categoryName.takeIf { name -> name.isNotBlank() } }.distinct().sorted()
+
+        categories.forEach { cat ->
+            val chip = Chip(ctx).apply {
+                text = cat
+                tag = cat
+                isCheckable = true
+                isChecked = filterCategories.contains(cat)
+                setOnCheckedChangeListener { _, checked -> if (checked) anyChip.isChecked = false }
+            }
+            chipGroup.addView(chip)
+        }
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle("Filter Barang")
+            .setView(view)
+            .setNegativeButton("Batal", null)
+            .setNeutralButton("Reset") { _, _ ->
+                filterCategories.clear()
+                applyFilter()
+            }
+            .setPositiveButton("Terapkan") { _, _ ->
+                val selected = linkedSetOf<String>()
+                for (i in 0 until chipGroup.childCount) {
+                    val c = chipGroup.getChildAt(i)
+                    if (c is Chip && c != anyChip && c.isChecked) {
+                        (c.tag as? String)?.let { selected.add(it) }
+                    }
+                }
+                filterCategories.clear()
+                filterCategories.addAll(selected)
+                applyFilter()
+            }
+            .show()
     }
 
     private fun onGoodsClicked(p: Product) {

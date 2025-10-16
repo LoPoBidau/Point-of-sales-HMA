@@ -120,13 +120,14 @@ service cloud.firestore {
       allow read: if isCashierLike();
       allow create: if isCashierLike()
         && request.resource.data.keys().hasOnly([
-             'createdAt','cashierId','items','total','paid','change','status','serviceFee','noNota'
+             'createdAt','cashierId','items','total','paid','change','status','serviceFee','serviceDescription','noNota'
            ])
         && request.resource.data.status == 'PAID'
         && request.resource.data.total  is int
         && request.resource.data.paid   is int
         && request.resource.data.change is int
         && (!('serviceFee' in request.resource.data) || request.resource.data.serviceFee is int)
+        && (!('serviceDescription' in request.resource.data) || request.resource.data.serviceDescription is string)
         && (!('noNota'     in request.resource.data) || request.resource.data.noNota is string);
       allow update, delete: if false;
     }
