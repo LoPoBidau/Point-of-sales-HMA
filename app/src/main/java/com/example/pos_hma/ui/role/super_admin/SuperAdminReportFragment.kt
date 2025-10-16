@@ -448,6 +448,7 @@ class SuperAdminReportFragment : Fragment() {
             holder.b.searchRow.visibility = View.VISIBLE
             holder.b.filterCard.visibility = View.VISIBLE
             holder.b.chipGroupPurchaseStatus.visibility = View.GONE
+            holder.b.chipGroupRange.isSingleSelection = false
 
             fun fetchAndShow(saleId: String) {
                 db.collection("sales").document(saleId).get().addOnSuccessListener { doc ->
@@ -640,155 +641,140 @@ class SuperAdminReportFragment : Fragment() {
                 applySalesSearch()
             }
 
-            fun computeRange(which: Int): Pair<Date, Date> {
-                val cal = Calendar.getInstance()
-                val end = Date(System.currentTimeMillis() + 1) // exclusive end
-                when (which) {
-                    holder.b.chipWeek.id -> {
-                        cal.firstDayOfWeek = Calendar.MONDAY
-                        cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-                    }
+            var activeRangeChipId: Int? = null
 
-                    holder.b.chipMonth.id -> cal.set(Calendar.DAY_OF_MONTH, 1)
-                    else -> { /* today */
-                    }
-                }
-                cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(
-                    Calendar.MINUTE,
-                    0
-                ); cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
-                return cal.time to end
+            fun updateRangeChipStates() {
+                holder.b.chipToday.isChecked = activeRangeChipId == holder.b.chipToday.id
+                holder.b.chipWeek.isChecked = activeRangeChipId == holder.b.chipWeek.id
+                holder.b.chipMonth.isChecked = activeRangeChipId == holder.b.chipMonth.id
+                holder.b.chipCustom.isChecked = activeRangeChipId == holder.b.chipCustom.id
             }
 
-            fun load(rangeChipId: Int) {
-                val (start, end) = computeRange(rangeChipId)
-                db.collection("sales")
-                    .whereGreaterThanOrEqualTo("createdAt", start)
-                    .whereLessThan("createdAt", end)
+            fun loadSalesWithin(start: Date?, end: Date?, label: String) {
+                var query = db.collection("sales")
                     .orderBy("createdAt", Query.Direction.DESCENDING)
                     .limit(200)
-                    .get()
-                    .addOnSuccessListener { snap ->
-                        allSales.clear()
-                        var sumOmzet = 0L
-                        var sumCost = 0L
-                        for (doc in snap.documents) {
-                            val ts = doc.getTimestamp("createdAt")?.toDate()
-                            val total = doc.getLong("total") ?: 0L
-                            val noNota = doc.getString("noNota")
-                            val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
-                            var cost = 0L
-                            var qtySum = 0L
-                            var hasGoods = false
-                            items.forEach { m ->
-                                val qty = (m["qty"] as? Number)?.toLong() ?: 0L
-                                val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
-                                val isService = (m["isService"] as? Boolean) ?: false
-                                if (!isService) hasGoods = true
-                                if (!isService) {
-                                    cost += qty * unitCost
-                                    qtySum += qty
-                                }
+                if (start != null && end != null) {
+                    query = query
+                        .whereGreaterThanOrEqualTo("createdAt", start)
+                        .whereLessThan("createdAt", end)
+                }
+                query.get().addOnSuccessListener { snap ->
+                    allSales.clear()
+                    for (doc in snap.documents) {
+                        val ts = doc.getTimestamp("createdAt")?.toDate()
+                        val total = doc.getLong("total") ?: 0L
+                        val noNota = doc.getString("noNota")
+                        val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
+                        var cost = 0L
+                        var qtySum = 0L
+                        var hasGoods = false
+                        items.forEach { m ->
+                            val qty = (m["qty"] as? Number)?.toLong() ?: 0L
+                            val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
+                            val isService = (m["isService"] as? Boolean) ?: false
+                            if (!isService) hasGoods = true
+                            if (!isService) {
+                                cost += qty * unitCost
+                                qtySum += qty
                             }
-                            val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
-                            allSales += SaleRow(
-                                doc.id,
-                                ts,
-                                total,
-                                cost,
-                                unitCostAvg,
-                                hasGoods,
-                                noNota
-                            )
-                            sumOmzet += total
-                            sumCost += cost
                         }
-                        holder.b.tvKeterangan.visibility = View.VISIBLE
-                        holder.b.tvKeterangan.text = when (rangeChipId) {
-                            holder.b.chipWeek.id -> "Transaksi Minggu Ini : ${allSales.size}"
-                            holder.b.chipMonth.id -> "Transaksi Pada Bulan (${dfMonth.format(start)}) : ${allSales.size}"
-                            else -> "Transaksi Hari Ini : ${allSales.size}"
-                        }
-                        applySalesSearch()
+                        val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
+                        allSales += SaleRow(doc.id, ts, total, cost, unitCostAvg, hasGoods, noNota)
                     }
-            }
-
-            fun manualLoad(start: Date, end: Date) {
-                db.collection("sales")
-                    .whereGreaterThanOrEqualTo("createdAt", start)
-                    .whereLessThan("createdAt", end)
-                    .orderBy("createdAt", Query.Direction.DESCENDING)
-                    .limit(200)
-                    .get()
-                    .addOnSuccessListener { snap ->
-                        allSales.clear()
-                        var sumOmzet = 0L
-                        var sumCost = 0L
-                        for (doc in snap.documents) {
-                            val ts = doc.getTimestamp("createdAt")?.toDate()
-                            val total = doc.getLong("total") ?: 0L
-                            val items = (doc.get("items") as? List<Map<String, Any?>>).orEmpty()
-                            val noNota = doc.getString("noNota")
-                            var cost = 0L
-                            var qtySum = 0L
-                            var hasGoods = false
-                            items.forEach { m ->
-                                val qty = (m["qty"] as? Number)?.toLong() ?: 0L
-                                val unitCost = (m["unitCost"] as? Number)?.toLong() ?: 0L
-                                val isService = (m["isService"] as? Boolean) ?: false
-                                if (!isService) hasGoods = true
-                                if (!isService) {
-                                    cost += qty * unitCost
-                                    qtySum += qty
-                                }
-                            }
-                            val unitCostAvg = if (qtySum > 0L) cost / qtySum else 0L
-                            allSales += SaleRow(
-                                doc.id,
-                                ts,
-                                total,
-                                cost,
-                                unitCostAvg,
-                                hasGoods,
-                                noNota
-                            )
-                            sumOmzet += total
-                            sumCost += cost
-                        }
-                        holder.b.tvKeterangan.visibility = View.VISIBLE
-                        val endIncl = Date(end.time - 1L)
-                        val sameDay = dfDay.format(start) == dfDay.format(endIncl)
-                        val rangeLabel =
-                            if (sameDay) dfDay.format(start) else "${dfDay.format(start)} - ${
-                                dfDay.format(endIncl)
-                            }"
-                        holder.b.tvKeterangan.text =
-                            "Transaksi Pada Tanggal (${rangeLabel}) : ${allSales.size}"
-                        applySalesSearch()
-                    }
-            }
-
-            holder.b.chipToday.isChecked = true
-            holder.b.chipGroupRange.setOnCheckedStateChangeListener { _, checkedIds ->
-                val id = checkedIds.firstOrNull() ?: holder.b.chipToday.id
-                when (id) {
-                    holder.b.chipToday.id, holder.b.chipWeek.id -> load(id)
-                    holder.b.chipMonth.id -> pickMonth(holder) { start, end ->
-                        manualLoad(
-                            start,
-                            end
-                        )
-                    }
-
-                    holder.b.chipCustom.id -> pickDateRange(holder) { start, end ->
-                        manualLoad(
-                            start,
-                            end
-                        )
-                    }
+                    holder.b.tvKeterangan.visibility = View.VISIBLE
+                    holder.b.tvKeterangan.text = "$label : ${allSales.size}"
+                    applySalesSearch()
                 }
             }
-            load(holder.b.chipToday.id)
+
+            fun loadAllSales() {
+                activeRangeChipId = null
+                updateRangeChipStates()
+                holder.b.chipGroupRange.clearCheck()
+                loadSalesWithin(null, null, "Semua Transaksi")
+            }
+
+            fun selectToday() {
+                activeRangeChipId = holder.b.chipToday.id
+                updateRangeChipStates()
+                val cal = Calendar.getInstance().apply {
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                val start = cal.time
+                val end = Date(System.currentTimeMillis() + 1)
+                loadSalesWithin(start, end, "Transaksi Hari Ini")
+            }
+
+            fun selectWeek() {
+                activeRangeChipId = holder.b.chipWeek.id
+                updateRangeChipStates()
+                val cal = Calendar.getInstance().apply {
+                    firstDayOfWeek = Calendar.MONDAY
+                    set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
+                    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                }
+                val start = cal.time
+                val end = Date(System.currentTimeMillis() + 1)
+                loadSalesWithin(start, end, "Transaksi Minggu Ini")
+            }
+
+            fun selectMonth(start: Date, end: Date, label: String) {
+                activeRangeChipId = holder.b.chipMonth.id
+                updateRangeChipStates()
+                loadSalesWithin(start, end, label)
+            }
+
+            fun selectCustom(start: Date, end: Date) {
+                activeRangeChipId = holder.b.chipCustom.id
+                updateRangeChipStates()
+                val endInclusive = Date(end.time - 1L)
+                val sameDay = dfDay.format(start) == dfDay.format(endInclusive)
+                val label = if (sameDay) {
+                    "Transaksi Pada Tanggal (${dfDay.format(start)})"
+                } else {
+                    "Transaksi Pada Tanggal (${dfDay.format(start)} - ${dfDay.format(endInclusive)})"
+                }
+                loadSalesWithin(start, end, label)
+            }
+
+            holder.b.chipToday.setOnClickListener {
+                if (activeRangeChipId == holder.b.chipToday.id) {
+                    loadAllSales()
+                } else {
+                    selectToday()
+                }
+            }
+
+            holder.b.chipWeek.setOnClickListener {
+                if (activeRangeChipId == holder.b.chipWeek.id) {
+                    loadAllSales()
+                } else {
+                    selectWeek()
+                }
+            }
+
+            holder.b.chipMonth.setOnClickListener {
+                if (activeRangeChipId == holder.b.chipMonth.id) {
+                    loadAllSales()
+                } else {
+                    pickMonth(holder) { start, end, label ->
+                        selectMonth(start, end, label)
+                    }
+                    updateRangeChipStates()
+                }
+            }
+
+            holder.b.chipCustom.setOnClickListener {
+                if (activeRangeChipId == holder.b.chipCustom.id) {
+                    loadAllSales()
+                } else {
+                    pickDateRange(holder) { start, end -> selectCustom(start, end) }
+                    updateRangeChipStates()
+                }
+            }
+
+            loadAllSales()
         }
 
         inner class SaleVH(val v: ItemSaleRowBinding) : RecyclerView.ViewHolder(v.root)
@@ -806,7 +792,7 @@ class SuperAdminReportFragment : Fragment() {
             picker.show(fm, "dateRangeSuper")
         }
 
-        private fun pickMonth(holder: VH, onPicked: (Date, Date) -> Unit) {
+        private fun pickMonth(holder: VH, onPicked: (Date, Date, String) -> Unit) {
             val cal = Calendar.getInstance()
             val labels = (0 until 12).map { i ->
                 val c = (cal.clone() as Calendar).apply {
@@ -827,7 +813,7 @@ class SuperAdminReportFragment : Fragment() {
                     val start = labels[which].second
                     val c2 = Calendar.getInstance().apply { time = start; add(Calendar.MONTH, 1) }
                     val endExclusive = c2.time
-                    onPicked(start, endExclusive)
+                    onPicked(start, endExclusive, "Transaksi Pada Bulan (${labels[which].first})")
                 }
                 .setNegativeButton("Batal", null)
                 .show()
@@ -865,6 +851,7 @@ class SuperAdminReportFragment : Fragment() {
             var lastInfoMessage: String? = null
             var lastContextLabel: String? = null
             var statusFilter = PurchaseStatusFilter.ALL
+            var activeStatusChipId: Int? = null
             val ensuredPendingIds = mutableSetOf<String>()
             holder.b.rvSales.layoutManager = LinearLayoutManager(ctx)
 
@@ -1178,16 +1165,39 @@ class SuperAdminReportFragment : Fragment() {
                 filterAndDisplay()
             }
 
-            holder.b.chipGroupPurchaseStatus.setOnCheckedStateChangeListener { _, checkedIds ->
-                val selected = checkedIds.firstOrNull()
-                statusFilter = when (selected) {
-                    holder.b.chipStatusUpcoming.id -> PurchaseStatusFilter.UPCOMING
-                    holder.b.chipStatusOverdue.id -> PurchaseStatusFilter.OVERDUE
-                    else -> PurchaseStatusFilter.ALL
-                }
+            holder.b.chipGroupPurchaseStatus.isSingleSelection = false
+            holder.b.chipGroupPurchaseStatus.clearCheck()
+            holder.b.chipStatusAll.visibility = View.GONE
+
+            fun updateStatusChips() {
+                holder.b.chipStatusUpcoming.isChecked = activeStatusChipId == holder.b.chipStatusUpcoming.id
+                holder.b.chipStatusOverdue.isChecked = activeStatusChipId == holder.b.chipStatusOverdue.id
+            }
+
+            fun applyStatusFilter(filter: PurchaseStatusFilter, chipId: Int?) {
+                statusFilter = filter
+                activeStatusChipId = chipId
+                updateStatusChips()
                 filterAndDisplay()
             }
-            holder.b.chipGroupPurchaseStatus.check(holder.b.chipStatusAll.id)
+
+            holder.b.chipStatusUpcoming.setOnClickListener {
+                if (activeStatusChipId == holder.b.chipStatusUpcoming.id) {
+                    applyStatusFilter(PurchaseStatusFilter.ALL, null)
+                } else {
+                    applyStatusFilter(PurchaseStatusFilter.UPCOMING, holder.b.chipStatusUpcoming.id)
+                }
+            }
+
+            holder.b.chipStatusOverdue.setOnClickListener {
+                if (activeStatusChipId == holder.b.chipStatusOverdue.id) {
+                    applyStatusFilter(PurchaseStatusFilter.ALL, null)
+                } else {
+                    applyStatusFilter(PurchaseStatusFilter.OVERDUE, holder.b.chipStatusOverdue.id)
+                }
+            }
+
+            updateStatusChips()
 
             fun listenRecent() {
                 holder.b.tilSearchSaleId.error = null
@@ -1352,7 +1362,7 @@ class SuperAdminReportFragment : Fragment() {
                             if (it.isLowerCase()) it.titlecase(localeId) else it.toString()
                         }
                     }
-                    binding.tvType.text = "$direction � $typeLabel"
+                    binding.tvType.text = "$direction - $typeLabel"
                     val inboundColor = MaterialColors.getColor(
                         binding.tvType,
                         com.google.android.material.R.attr.colorPrimary
@@ -1372,7 +1382,7 @@ class SuperAdminReportFragment : Fragment() {
                         "Nilai total: Rp ${nf.format(row.totalCost)}"
                     } else ""
                     binding.tvCost.text = if (totalCostText.isNotBlank()) {
-                        "$unitCostText � $totalCostText"
+                        "$unitCostText | $totalCostText"
                     } else unitCostText
                     val note = row.note?.takeIf { it.isNotBlank() }
                     binding.tvNote.isVisible = note != null

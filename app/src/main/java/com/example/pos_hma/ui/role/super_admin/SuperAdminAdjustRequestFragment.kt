@@ -40,6 +40,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
 
     private enum class StatusFilter { PENDING, APPROVED, REJECTED, ALL }
     private var currentStatus: StatusFilter = StatusFilter.ALL
+    private var activeChipId: Int? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?, s: Bundle?
@@ -53,15 +54,48 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
         binding.rv.adapter = adapter
 
         // Setup chips for status filter (default: Semua)
-        binding.chipPending.isChecked = false
-        binding.chipApproved.isChecked = false
-        binding.chipRejected.isChecked = false
-        binding.chipAll.isChecked = true
+        currentStatus = StatusFilter.ALL
+        activeChipId = null
+        binding.chipStatusGroup.isSingleSelection = false
+        binding.chipStatusGroup.clearCheck()
+        binding.chipAll.visibility = View.GONE
 
-        binding.chipPending.setOnClickListener { setStatus(StatusFilter.PENDING) }
-        binding.chipApproved.setOnClickListener { setStatus(StatusFilter.APPROVED) }
-        binding.chipRejected.setOnClickListener { setStatus(StatusFilter.REJECTED) }
-        binding.chipAll.setOnClickListener { setStatus(StatusFilter.ALL) }
+        fun updateChipStates() {
+            binding.chipPending.isChecked = activeChipId == binding.chipPending.id
+            binding.chipApproved.isChecked = activeChipId == binding.chipApproved.id
+            binding.chipRejected.isChecked = activeChipId == binding.chipRejected.id
+        }
+
+        fun applyStatus(filter: StatusFilter, chipId: Int?) {
+            currentStatus = filter
+            activeChipId = chipId
+            updateChipStates()
+            listen()
+        }
+
+        binding.chipPending.setOnClickListener {
+            if (activeChipId == binding.chipPending.id) {
+                applyStatus(StatusFilter.ALL, null)
+            } else {
+                applyStatus(StatusFilter.PENDING, binding.chipPending.id)
+            }
+        }
+        binding.chipApproved.setOnClickListener {
+            if (activeChipId == binding.chipApproved.id) {
+                applyStatus(StatusFilter.ALL, null)
+            } else {
+                applyStatus(StatusFilter.APPROVED, binding.chipApproved.id)
+            }
+        }
+        binding.chipRejected.setOnClickListener {
+            if (activeChipId == binding.chipRejected.id) {
+                applyStatus(StatusFilter.ALL, null)
+            } else {
+                applyStatus(StatusFilter.REJECTED, binding.chipRejected.id)
+            }
+        }
+
+        updateChipStates()
 
         listen()
         binding.swipeRefresh.setOnRefreshListener { refreshOnce() }
@@ -73,16 +107,9 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
         super.onDestroyView()
     }
 
-    // === SnapshotDisposable (dipanggil juga oleh Activity saat logout) ===
     override fun disposeSnapshots() {
         reg?.remove()
         reg = null
-    }
-
-    private fun setStatus(s: StatusFilter) {
-        if (currentStatus == s) return
-        currentStatus = s
-        listen()
     }
 
     private fun listen() {

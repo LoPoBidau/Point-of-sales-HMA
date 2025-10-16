@@ -49,7 +49,7 @@ class AdminCashierReportFragment : Fragment() {
 
     private val sales = mutableListOf<SaleRow>()
     private val adapter = SalesAdapter(sales) { saleId -> onSaleClicked(saleId) }
-    private var currentKetPrefix: String = "Transaksi Hari Ini"
+    private var currentKetPrefix: String = "Semua Transaksi"
 
     // For direct Bluetooth ESC/POS printing from dialog
     private val BT_REQ = 202
@@ -58,6 +58,7 @@ class AdminCashierReportFragment : Fragment() {
     private var printingBinding: DialogReceiptPrintStatusBinding? = null
     private var isPrinting = false
     private var dialogPrinterAnimator: ObjectAnimator? = null
+    private var activeRangeChipId: Int? = null
     private val requiredBtPermissions: Array<String> by lazy {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             arrayOf(
@@ -84,12 +85,12 @@ class AdminCashierReportFragment : Fragment() {
             b.chipCustom.isSaveEnabled = false
         } catch (_: Throwable) {}
 
-        // Ensure no chip is checked before setting listener to avoid auto-invoking pickers
+        // Ensure no chip is pre-selected; default shows all data
         b.chipGroupRange.clearCheck()
-        b.chipToday.isChecked = true
-        currentKetPrefix = "Transaksi Hari Ini"
-        setFilterListeners()
-        loadData(rangeStartEnd(TodayRange.TODAY))
+        b.chipGroupRange.isSingleSelection = false
+        activeRangeChipId = null
+        setupRangeChips()
+        loadAllTransactions()
 
         // Search No. Nota
         b.btnSearchSaleId.setOnClickListener {
@@ -116,24 +117,80 @@ class AdminCashierReportFragment : Fragment() {
         }
     }
 
-    private fun setFilterListeners() {
-        b.chipGroupRange.setOnCheckedStateChangeListener { _, _ ->
-            when {
-                b.chipToday.isChecked -> { currentKetPrefix = "Transaksi Hari Ini"; loadData(rangeStartEnd(TodayRange.TODAY)) }
-                b.chipWeek.isChecked  -> { currentKetPrefix = "Transaksi Minggu Ini"; loadData(rangeStartEnd(TodayRange.THIS_WEEK)) }
-                b.chipMonth.isChecked -> pickMonth { start, end ->
-                    currentKetPrefix = "Transaksi Pada Bulan (${dfMonth.format(start)})"
-                    loadData(start to end)
-                }
-                b.chipCustom.isChecked -> pickDateRange { start, endExclusive ->
-                    val endIncl = Date(endExclusive.time - 1L)
-                    val sameDay = dfDay.format(start) == dfDay.format(endIncl)
-                    val rangeLabel = if (sameDay) dfDay.format(start) else "${dfDay.format(start)} - ${dfDay.format(endIncl)}"
-                    currentKetPrefix = "Transaksi Pada Tanggal (${rangeLabel})"
-                    loadData(start to endExclusive)
-                }
+    private fun setupRangeChips() {
+        fun updateChipStates() {
+            b.chipToday.isChecked = activeRangeChipId == b.chipToday.id
+            b.chipWeek.isChecked = activeRangeChipId == b.chipWeek.id
+            b.chipMonth.isChecked = activeRangeChipId == b.chipMonth.id
+            b.chipCustom.isChecked = activeRangeChipId == b.chipCustom.id
+        }
+
+        fun selectToday() {
+            activeRangeChipId = b.chipToday.id
+            updateChipStates()
+            val (start, end) = rangeStartEnd(TodayRange.TODAY)
+            loadSalesWithin(start, end, "Transaksi Hari Ini")
+        }
+
+        fun selectWeek() {
+            activeRangeChipId = b.chipWeek.id
+            updateChipStates()
+            val (start, end) = rangeStartEnd(TodayRange.THIS_WEEK)
+            loadSalesWithin(start, end, "Transaksi Minggu Ini")
+        }
+
+        fun selectMonth(start: Date, end: Date, label: String) {
+            activeRangeChipId = b.chipMonth.id
+            updateChipStates()
+            loadSalesWithin(start, end, label)
+        }
+
+        fun selectCustom(start: Date, end: Date) {
+            activeRangeChipId = b.chipCustom.id
+            updateChipStates()
+            val endIncl = Date(end.time - 1L)
+            val sameDay = dfDay.format(start) == dfDay.format(endIncl)
+            val label = if (sameDay) {
+                "Transaksi Pada Tanggal (${dfDay.format(start)})"
+            } else {
+                "Transaksi Pada Tanggal (${dfDay.format(start)} - ${dfDay.format(endIncl)})"
+            }
+            loadSalesWithin(start, end, label)
+        }
+
+        fun clearSelection() {
+            activeRangeChipId = null
+            updateChipStates()
+            loadAllTransactions()
+        }
+
+        b.chipToday.setOnClickListener {
+            if (activeRangeChipId == b.chipToday.id) clearSelection() else selectToday()
+        }
+
+        b.chipWeek.setOnClickListener {
+            if (activeRangeChipId == b.chipWeek.id) clearSelection() else selectWeek()
+        }
+
+        b.chipMonth.setOnClickListener {
+            if (activeRangeChipId == b.chipMonth.id) {
+                clearSelection()
+            } else {
+                pickMonth { start, end, label -> selectMonth(start, end, label) }
+                updateChipStates()
             }
         }
+
+        b.chipCustom.setOnClickListener {
+            if (activeRangeChipId == b.chipCustom.id) {
+                clearSelection()
+            } else {
+                pickDateRange { start, end -> selectCustom(start, end) }
+                updateChipStates()
+            }
+        }
+
+        updateChipStates()
     }
 
     private enum class TodayRange { TODAY, THIS_WEEK, THIS_MONTH }
@@ -159,34 +216,42 @@ class AdminCashierReportFragment : Fragment() {
         return start to end
     }
 
-    private fun loadData(se: Pair<Date, Date>) {
+    private fun loadSalesWithin(start: Date?, end: Date?, label: String) {
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
-        val (start, end) = se
-
-        db.collection("sales")
+        var query = db.collection("sales")
             .whereEqualTo("cashierId", uid)
-            .whereGreaterThanOrEqualTo("createdAt", start)
-            .whereLessThan("createdAt", end)
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(200)
-            .get()
-            .addOnSuccessListener { snap ->
-                sales.clear()
-                var totalOmzet = 0L
-                for (doc in snap.documents) {
-                    val ts = doc.getTimestamp("createdAt")?.toDate()
-                    val saleId = doc.id
-                    val noNota = doc.getString("noNota")
-                    val total = doc.getLong("total") ?: 0L
-                    totalOmzet += total
-                    sales += SaleRow(saleId, ts, total, noNota)
-                }
-                // View may be gone if user switches tabs quickly
-                _b?.let { binding ->
-                    binding.tvKeterangan.text = "$currentKetPrefix : ${sales.size}"
-                }
-                adapter.notifyDataSetChanged()
+        if (start != null && end != null) {
+            query = query.whereGreaterThanOrEqualTo("createdAt", start)
+                .whereLessThan("createdAt", end)
+        }
+        query.get().addOnSuccessListener { snap ->
+            sales.clear()
+            for (doc in snap.documents) {
+                val ts = doc.getTimestamp("createdAt")?.toDate()
+                val saleId = doc.id
+                val noNota = doc.getString("noNota")
+                val total = doc.getLong("total") ?: 0L
+                sales += SaleRow(saleId, ts, total, noNota)
             }
+            _b?.let { binding ->
+                currentKetPrefix = label
+                binding.tvKeterangan.visibility = View.VISIBLE
+                binding.tvKeterangan.text = "$currentKetPrefix : ${sales.size}"
+            }
+            adapter.notifyDataSetChanged()
+        }
+    }
+
+    private fun loadAllTransactions() {
+        activeRangeChipId = null
+        b.chipGroupRange.clearCheck()
+        b.chipToday.isChecked = false
+        b.chipWeek.isChecked = false
+        b.chipMonth.isChecked = false
+        b.chipCustom.isChecked = false
+        loadSalesWithin(null, null, "Semua Transaksi")
     }
 
     private fun pickDateRange(onPicked: (Date, Date) -> Unit) {
@@ -199,7 +264,7 @@ class AdminCashierReportFragment : Fragment() {
         picker.show(parentFragmentManager, "dateRange")
     }
 
-    private fun pickMonth(onPicked: (Date, Date) -> Unit) {
+    private fun pickMonth(onPicked: (Date, Date, String) -> Unit) {
         // Simple month picker via dialog list of last 12 months
         val cal = Calendar.getInstance()
         val labels = (0 until 12).map { i ->
@@ -208,13 +273,13 @@ class AdminCashierReportFragment : Fragment() {
             label to c.time
         }
         val items = labels.map { it.first }.toTypedArray()
-            MaterialAlertDialogBuilder(requireContext())
+        MaterialAlertDialogBuilder(requireContext())
             .setTitle("Pilih Bulan")
             .setItems(items) { _, which ->
                 val start = labels[which].second
                 val c2 = Calendar.getInstance().apply { time = start; add(Calendar.MONTH, 1) }
                 val endExclusive = c2.time
-                onPicked(start, endExclusive)
+                onPicked(start, endExclusive, "Transaksi Pada Bulan (${labels[which].first})")
             }
             .setNegativeButton("Batal", null)
             .show()

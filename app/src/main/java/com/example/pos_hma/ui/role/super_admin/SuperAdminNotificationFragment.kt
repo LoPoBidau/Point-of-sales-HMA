@@ -17,7 +17,6 @@ import com.example.pos_hma.databinding.ItemNotificationBinding
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.firestore.Query
 import com.google.android.material.color.MaterialColors
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -52,8 +51,11 @@ class SuperAdminNotificationFragment : Fragment() {
         reg?.remove(); reg = null
         reg = db.collection("notifications")
             .whereEqualTo("toRole", "super-admin")
-            .orderBy("createdAt", Query.Direction.DESCENDING)
-            .addSnapshotListener { snap, _ ->
+            .addSnapshotListener { snap, e ->
+                if (e != null) {
+                    b.empty.visibility = View.VISIBLE
+                    return@addSnapshotListener
+                }
                 var list = snap?.documents?.map { d ->
                     AppNotif(
                         id = d.id,
@@ -70,14 +72,19 @@ class SuperAdminNotificationFragment : Fragment() {
                         .thenByDescending { it.createdAt?.toDate()?.time ?: 0L }
                 )
                 adapter.submitList(list)
-                b.empty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+                if (list.isEmpty()) {
+                    b.empty.text = getString(R.string.notification_empty_state)
+                    b.empty.visibility = View.VISIBLE
+                } else {
+                    b.empty.text = ""
+                    b.empty.visibility = View.GONE
+                }
             }
     }
 
     private fun refreshOnce() {
         db.collection("notifications")
             .whereEqualTo("toRole", "super-admin")
-            .orderBy("createdAt", Query.Direction.DESCENDING)
             .get()
             .addOnSuccessListener { qs ->
                 var list = qs.documents.map { d ->
@@ -95,7 +102,13 @@ class SuperAdminNotificationFragment : Fragment() {
                         .thenByDescending { it.createdAt?.toDate()?.time ?: 0L }
                 )
                 adapter.submitList(list)
-                b.empty.visibility = if (list.isEmpty()) View.VISIBLE else View.GONE
+                if (list.isEmpty()) {
+                    b.empty.text = getString(R.string.notification_empty_state)
+                    b.empty.visibility = View.VISIBLE
+                } else {
+                    b.empty.text = ""
+                    b.empty.visibility = View.GONE
+                }
             }
             .addOnCompleteListener { b.swipeRefresh.isRefreshing = false }
     }
