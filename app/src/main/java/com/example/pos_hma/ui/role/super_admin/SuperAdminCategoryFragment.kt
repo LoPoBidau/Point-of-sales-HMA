@@ -1,7 +1,6 @@
 package com.example.pos_hma.ui.role.super_admin
 
 import android.os.Bundle
-import android.text.InputType
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -19,7 +18,6 @@ import com.example.pos_hma.data.Category
 import com.example.pos_hma.databinding.DialogCategoryFormBinding
 import com.example.pos_hma.databinding.FragmentSuperAdminCategoryBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -74,7 +72,6 @@ class SuperAdminCategoryFragment : Fragment() {
                         id = d.id,
                         name = d.getString("name") ?: d.id,
                         slug = d.getString("slug") ?: d.id,
-                        forType = d.getString("forType") ?: "barang & jasa",
                         isActive = d.getBoolean("isActive") ?: true,
                         nameLowercase = d.getString("nameLowercase") ?: (d.getString("name") ?: d.id).lowercase(),
                         sortOrder = d.getLong("sortOrder") ?: 0L,
@@ -91,15 +88,6 @@ class SuperAdminCategoryFragment : Fragment() {
     private fun openAddCategoryDialog() {
         val cat = DialogCategoryFormBinding.inflate(layoutInflater)
 
-        (cat.actCatType as MaterialAutoCompleteTextView).apply {
-            inputType = InputType.TYPE_NULL
-            keyListener = null
-            isCursorVisible = false
-            setOnClickListener { showDropDown() }
-            setSimpleItems(arrayOf("Barang", "Jasa", "Barang & Jasa"))
-            setText("Barang & Jasa", false)
-        }
-
         val dlg = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Kategori baru")
             .setView(cat.root)
@@ -113,7 +101,6 @@ class SuperAdminCategoryFragment : Fragment() {
                 cat.tilCatName.error = null
 
                 val name = cat.etCatName.text?.toString()?.trim().orEmpty()
-                val type = cat.actCatType.text?.toString()?.trim()?.lowercase().orEmpty().ifBlank { "barang & jasa" }
                 if (name.isBlank()) {
                     cat.tilCatName.error = "Harus diisi"
                     showRequiredAlert()
@@ -129,7 +116,6 @@ class SuperAdminCategoryFragment : Fragment() {
                 val data = mapOf(
                     "name" to name,
                     "slug" to slug,
-                    "forType" to type,
                     "isActive" to true,
                     "nameLowercase" to name.lowercase(),
                     "sortOrder" to System.currentTimeMillis(),
@@ -195,7 +181,6 @@ class SuperAdminCategoryFragment : Fragment() {
                         id = d.id,
                         name = d.getString("name") ?: d.id,
                         slug = d.getString("slug") ?: d.id,
-                        forType = d.getString("forType") ?: "barang & jasa",
                         isActive = d.getBoolean("isActive") ?: true,
                         nameLowercase = d.getString("nameLowercase") ?: (d.getString("name") ?: d.id).lowercase(),
                         sortOrder = d.getLong("sortOrder") ?: 0L,
@@ -223,7 +208,6 @@ private class CategoryAdapter(
 
     inner class VH(v: View) : RecyclerView.ViewHolder(v) {
         val tvName: TextView = v.findViewById(R.id.tvName)
-        val tvType: TextView = v.findViewById(R.id.tvType)
         val btnDelete: ImageButton = v.findViewById(R.id.btnDelete)
     }
 
@@ -235,8 +219,6 @@ private class CategoryAdapter(
     override fun onBindViewHolder(h: VH, position: Int) {
         val c = getItem(position)
         h.tvName.text = c.name
-        h.tvType.text = "Untuk: ${c.forType}"
         h.btnDelete.setOnClickListener { onDelete(c) }
     }
 }
-

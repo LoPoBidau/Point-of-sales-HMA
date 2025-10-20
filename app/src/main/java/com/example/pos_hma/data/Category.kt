@@ -7,7 +7,6 @@ data class Category(
     var id: String = "",
     var name: String = "",
     var slug: String = "",
-    var forType: String = "both", // goods / service / both
 
     // Tambahkan field yang memicu warning di logcat
     var isActive: Boolean = true,

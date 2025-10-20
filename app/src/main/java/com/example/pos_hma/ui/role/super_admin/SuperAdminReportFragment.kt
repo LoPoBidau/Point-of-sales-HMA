@@ -20,6 +20,10 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.annotation.AttrRes
 import androidx.annotation.RequiresPermission
+import androidx.core.content.ContextCompat
+import androidx.core.view.doOnLayout
+import androidx.core.view.isVisible
+import androidx.core.widget.addTextChangedListener
 import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentSuperAdminReportBinding
 import com.example.pos_hma.databinding.DialogPurchaseDetailBinding
@@ -37,10 +41,6 @@ import com.google.android.material.datepicker.MaterialDatePicker
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.example.pos_hma.print.DirectEscPosPrinter
 import com.example.pos_hma.utils.PrintersPref
-import androidx.core.view.doOnLayout
-import androidx.core.view.isVisible
-import androidx.core.widget.addTextChangedListener
-import androidx.core.content.ContextCompat
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -440,11 +440,13 @@ class SuperAdminReportFragment : Fragment() {
             holder.b.toggleStockView.visibility = View.GONE
             holder.b.tvDesc.visibility = View.GONE
             holder.b.tvTitle.visibility = View.GONE
-            holder.b.tvSummary.visibility = View.GONE
+            holder.b.hideSummaryButton()
             holder.b.rvSales.visibility = View.VISIBLE
+            holder.b.scrollRange.visibility = View.VISIBLE
             holder.b.chipGroupRange.visibility = View.VISIBLE
             holder.b.searchRow.visibility = View.VISIBLE
             holder.b.filterCard.visibility = View.VISIBLE
+            holder.b.scrollPurchaseStatus.visibility = View.GONE
             holder.b.chipGroupPurchaseStatus.visibility = View.GONE
             holder.b.chipGroupRange.isSingleSelection = false
 
@@ -801,10 +803,12 @@ class SuperAdminReportFragment : Fragment() {
 
             holder.b.tvTitle.visibility = View.GONE
             holder.b.tvDesc.visibility = View.GONE
-            holder.b.tvSummary.visibility = View.GONE
+            holder.b.hideSummaryButton()
             holder.b.filterCard.visibility = View.VISIBLE
             holder.b.searchRow.visibility = View.VISIBLE
+            holder.b.scrollRange.visibility = View.GONE
             holder.b.chipGroupRange.visibility = View.GONE
+            holder.b.scrollPurchaseStatus.visibility = View.VISIBLE
             holder.b.chipGroupPurchaseStatus.visibility = View.VISIBLE
             holder.b.rvSales.visibility = View.VISIBLE
             holder.b.tilSearchSaleId.error = null
@@ -1036,24 +1040,27 @@ class SuperAdminReportFragment : Fragment() {
             }
             holder.b.rvSales.adapter = adapter
 
+            holder.b.hideSummaryButton()
+
             fun updateSummary(current: List<PurchaseRow>) {
                 if (current.isEmpty()) {
-                    holder.b.tvSummary.visibility = View.GONE
+                    holder.b.hideSummaryButton()
                     return
                 }
                 val totalValue = current.sumOf { it.totalCost }
                 val overdueCount = current.count { it.statusPriority == 0 }
                 val upcomingCount = current.count { it.statusPriority == 1 }
                 val noDueCount = current.size - overdueCount - upcomingCount
-                val summaryParts = mutableListOf(
-                    "Total invoice: ${current.size}",
-                    "Nilai: Rp ${nf.format(totalValue)}"
-                )
-                summaryParts += "Sudah JT: $overdueCount"
-                summaryParts += "Menunggu: $upcomingCount"
-                if (noDueCount > 0) summaryParts += "Tanpa tempo: $noDueCount"
-                holder.b.tvSummary.visibility = View.VISIBLE
-                holder.b.tvSummary.text = summaryParts.joinToString(" | ")
+                val rows = buildList {
+                    add("Total invoice" to nf.format(current.size.toLong()))
+                    add("Nilai pembelian" to "Rp ${nf.format(totalValue)}")
+                    add("Sudah jatuh tempo" to nf.format(overdueCount.toLong()))
+                    add("Menunggu jatuh tempo" to nf.format(upcomingCount.toLong()))
+                    if (noDueCount > 0) add("Tanpa tempo" to nf.format(noDueCount.toLong()))
+                }
+                holder.b.showSummaryButton("Ringkasan Pembelian", rows) { summaryRows ->
+                    this@SuperAdminReportFragment.showSummaryDialog("Ringkasan Pembelian", summaryRows)
+                }
             }
 
             fun ensureDueAutoPosting(source: List<PurchaseRow>) {
@@ -1086,7 +1093,7 @@ class SuperAdminReportFragment : Fragment() {
                 }
 
                 if (filtered.isEmpty()) {
-                    holder.b.tvSummary.visibility = View.GONE
+                    holder.b.hideSummaryButton()
                     holder.b.tvDesc.visibility = View.VISIBLE
                     val emptyMsg = when {
                         masterRows.isEmpty() -> lastEmptyMessage
@@ -1298,14 +1305,17 @@ class SuperAdminReportFragment : Fragment() {
 
             holder.b.filterCard.visibility = View.VISIBLE
             holder.b.searchRow.visibility = View.GONE
+            holder.b.scrollRange.visibility = View.GONE
             holder.b.chipGroupRange.visibility = View.GONE
+            holder.b.scrollPurchaseStatus.visibility = View.GONE
             holder.b.chipGroupPurchaseStatus.visibility = View.GONE
             holder.b.toggleStockView.visibility = View.VISIBLE
+            holder.b.tvTitle.visibility = View.GONE
 
             holder.b.rvSales.visibility = View.GONE
             holder.b.tvDesc.visibility = View.VISIBLE
             holder.b.tvDesc.text = "Memuat ringkasan stok..."
-            holder.b.tvSummary.visibility = View.GONE
+            holder.b.hideSummaryButton()
             holder.b.tvPendingTitle.visibility = View.GONE
             holder.b.rvPendingQueue.visibility = View.GONE
             holder.b.tvPendingStatus.visibility = View.GONE
@@ -1458,7 +1468,6 @@ class SuperAdminReportFragment : Fragment() {
                 val showSummary = currentView == StockView.SUMMARY
                 holder.b.rvSales.isVisible = showSummary && movementRows.isNotEmpty()
                 holder.b.tvDesc.isVisible = showSummary
-                holder.b.tvSummary.isVisible = showSummary && holder.b.tvSummary.text.isNotBlank()
                 holder.b.tvPendingTitle.isVisible = !showSummary
                 holder.b.rvPendingQueue.isVisible = !showSummary && pendingRows.isNotEmpty()
                 holder.b.tvPendingStatus.isVisible = !showSummary && pendingRows.isEmpty()
@@ -1474,6 +1483,7 @@ class SuperAdminReportFragment : Fragment() {
 
             val productMap = mutableMapOf<String, ProductSummary>()
             var detailStarted = false
+            var baseSummaryRows: List<Pair<String, String>> = emptyList()
 
             fun loadMovements(productLookup: Map<String, ProductSummary>) {
                 db.collection("inventory_movements")
@@ -1512,14 +1522,25 @@ class SuperAdminReportFragment : Fragment() {
                             )
                         }
                         movementAdapter.notifyDataSetChanged()
-                        if (movementRows.isEmpty()) {
-                            holder.b.tvDesc.text = "Belum ada pergerakan stok."
+                        val baseRows = if (baseSummaryRows.size == 1 && baseSummaryRows.first().first.equals("Status", true)) {
+                            emptyList()
                         } else {
-                            val summaryLine = "Stok masuk: ${nf.format(totalIn)} | Stok keluar: ${
-                                nf.format(totalOut)
-                            }"
-                            holder.b.tvDesc.text =
-                                "Riwayat pergerakan stok terbaru (maks 150 entri).\n$summaryLine"
+                            baseSummaryRows
+                        }
+                        val combinedSummary = mutableListOf<Pair<String, String>>().apply {
+                            addAll(baseRows)
+                            if (movementRows.isNotEmpty()) {
+                                add("Stok masuk (150 entri)" to "${nf.format(totalIn)} unit")
+                                add("Stok keluar (150 entri)" to "${nf.format(totalOut)} unit")
+                            }
+                        }
+                        holder.b.showSummaryButton("Ringkasan Persediaan", combinedSummary) { rows ->
+                            this@SuperAdminReportFragment.showSummaryDialog("Ringkasan Persediaan", rows)
+                        }
+                        holder.b.tvDesc.text = if (movementRows.isEmpty()) {
+                            "Belum ada pergerakan stok."
+                        } else {
+                            "Riwayat pergerakan stok terbaru (maks 150 entri)."
                         }
                         applySections()
                     }
@@ -1527,6 +1548,9 @@ class SuperAdminReportFragment : Fragment() {
                         if (!isStockRequestValid(holder, token)) return@addOnFailureListener
                         val msg = e.localizedMessage ?: "Gagal memuat pergerakan stok."
                         holder.b.tvDesc.text = msg
+                        holder.b.showSummaryButton("Ringkasan Persediaan", baseSummaryRows) { rows ->
+                            this@SuperAdminReportFragment.showSummaryDialog("Ringkasan Persediaan", rows)
+                        }
                         applySections()
                     }
             }
@@ -1665,16 +1689,18 @@ class SuperAdminReportFragment : Fragment() {
                         totalQty += stock
                         totalValue += stock * lastCost
                     }
-                    if (productMap.isNotEmpty()) {
+                    baseSummaryRows = if (productMap.isNotEmpty()) {
                         val skuCount = productMap.size
-                        holder.b.tvSummary.visibility = View.VISIBLE
-                        holder.b.tvSummary.text =
-                            "Total stok gudang: ${nf.format(totalQty)} unit\nNilai persediaan: Rp ${
-                                nf.format(totalValue)
-                            } | SKU aktif: ${nf.format(skuCount.toLong())}"
+                        listOf(
+                            "Total stok gudang" to "${nf.format(totalQty)} unit",
+                            "Nilai persediaan" to "Rp ${nf.format(totalValue)}",
+                            "SKU aktif" to nf.format(skuCount.toLong())
+                        )
                     } else {
-                        holder.b.tvSummary.visibility = View.VISIBLE
-                        holder.b.tvSummary.text = "Belum ada produk dengan stok aktif."
+                        listOf("Status" to "Belum ada produk dengan stok aktif.")
+                    }
+                    holder.b.showSummaryButton("Ringkasan Persediaan", baseSummaryRows) { rows ->
+                        this@SuperAdminReportFragment.showSummaryDialog("Ringkasan Persediaan", rows)
                     }
                     holder.b.tvDesc.text = "Riwayat pergerakan stok terbaru (maks 150 entri)."
                     startDetailLoads()
@@ -1683,7 +1709,7 @@ class SuperAdminReportFragment : Fragment() {
                 .addOnFailureListener { e ->
                     if (!isStockRequestValid(holder, token)) return@addOnFailureListener
                     holder.b.tvDesc.text = e.localizedMessage ?: "Gagal memuat ringkasan stok."
-                    holder.b.tvSummary.visibility = View.GONE
+                    holder.b.hideSummaryButton()
                     startDetailLoads()
                     applySections()
                 }
@@ -1704,4 +1730,40 @@ class SuperAdminReportFragment : Fragment() {
         dialogPrinterAnimator = null
         printingBinding?.ivStatus?.rotation = 0f
     }
+}
+
+private fun ItemReportTabBinding.hideSummaryButton() {
+    summaryRow.visibility = View.GONE
+    btnSummary.visibility = View.GONE
+    btnSummary.isEnabled = false
+    btnSummary.setOnClickListener(null)
+}
+
+private fun ItemReportTabBinding.showSummaryButton(
+    label: String,
+    rows: List<Pair<String, String>>,
+    onClick: (List<Pair<String, String>>) -> Unit
+) {
+    if (rows.isEmpty()) {
+        hideSummaryButton()
+        return
+    }
+    summaryRow.visibility = View.VISIBLE
+    btnSummary.visibility = View.VISIBLE
+    btnSummary.text = label
+    btnSummary.setOnClickListener { onClick(rows) }
+    btnSummary.isEnabled = true
+}
+
+private fun Fragment.showSummaryDialog(title: String, rows: List<Pair<String, String>>) {
+    if (rows.isEmpty()) return
+    val locale = Locale("in", "ID")
+    val message = rows.joinToString(separator = "\n\n") { (label, value) ->
+        "${label.uppercase(locale)}\n$value"
+    }
+    MaterialAlertDialogBuilder(requireContext())
+        .setTitle(title)
+        .setMessage(message)
+        .setPositiveButton("Tutup", null)
+        .show()
 }

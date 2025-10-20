@@ -242,7 +242,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         id = d.id,
                         name = d.getString("name") ?: d.id,
                         slug = d.getString("slug") ?: d.id,
-                        forType = d.getString("forType") ?: "both",
                         isActive = isActive,
                         sortOrder = d.getLong("sortOrder") ?: 0L,
                         order = d.getLong("order")
@@ -286,7 +285,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     id = d.id,
                     name = d.getString("name") ?: d.id,
                     slug = d.getString("slug") ?: d.id,
-                    forType = d.getString("forType") ?: "both",
                     isActive = isActive,
                     sortOrder = d.getLong("sortOrder") ?: 0L,
                     order = d.getLong("order")
@@ -393,43 +391,27 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private fun normalizeSku(s: String) = s.trim().uppercase().replace("\\s+".toRegex(), "-")
     private fun slugify(s: String) = s.trim().lowercase().replace("[^a-z0-9\\s-]".toRegex(), "").replace("\\s+".toRegex(), "-")
 
-    // ====== Normalisasi tipe kategori (ID/EN -> key) ======
-    private fun toTypeKey(raw: String?): String {
-        val s = raw?.trim()?.lowercase().orEmpty()
-        return when (s) {
-            "both", "semua", "all", "barang & jasa", "barang dan jasa", "barang+jasa" -> "both"
-            "goods", "barang", "product", "produk" -> "goods"
-            "service", "services", "jasa" -> "service"
-            else -> if (s.isBlank()) "both" else s
-        }
-    }
-
     // ====== MUAT KATEGORI AKTIF untuk FORM ======
-    private fun loadCategoriesForForm(forType: String, onDone: (() -> Unit)? = null) {
-        val want = toTypeKey(forType)
+    private fun loadCategoriesForForm(onDone: (() -> Unit)? = null) {
         db.collection("categories")
             .get()
             .addOnSuccessListener { qs ->
-                val all = qs.documents.mapNotNull { d ->
-                    val active = d.getBoolean("isActive") ?: true
-                    if (!active) return@mapNotNull null
+                val categories = qs.documents.mapNotNull { d ->
+                    val isActive = d.getBoolean("isActive") ?: true
+                    if (!isActive) return@mapNotNull null
                     val c = d.toObject(Category::class.java)?.copy(id = d.id) ?: Category(
                         id = d.id,
                         name = d.getString("name") ?: d.id,
                         slug = d.getString("slug") ?: d.id,
-                        forType = d.getString("forType") ?: "both",
-                        isActive = active,
+                        isActive = isActive,
                         sortOrder = d.getLong("sortOrder") ?: 0L,
                         order = d.getLong("order")
                     )
-                    c.copy(forType = toTypeKey(c.forType))
-                }
-
-                val filtered = all.filter { it.forType == "both" || it.forType == want }
-                    .sortedWith(compareBy<Category> { it.effectiveOrder }.thenBy { it.name })
+                    c
+                }.sortedWith(compareBy<Category> { it.effectiveOrder }.thenBy { it.name })
 
                 catFormList.clear()
-                catFormList.addAll(filtered)
+                catFormList.addAll(categories)
                 onDone?.invoke()
             }
             .addOnFailureListener { toast("Kategori gagal dimuat: ${it.message}") }
@@ -437,16 +419,15 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
     // ====== Dialog pemilih kategori (dipakai di FORM) ======
     private fun openCategoryPickerDialog(
-        forType: String,
         preselectedId: String?,
         onPicked: (Category?) -> Unit
     ) {
-        loadCategoriesForForm(forType) {
+        loadCategoriesForForm {
             val names = catFormList.map { it.name }.toTypedArray()
             if (names.isEmpty()) {
                 MaterialAlertDialogBuilder(requireContext())
                     .setTitle("Pilih Kategori")
-                    .setMessage("Tidak ada kategori aktif untuk tipe ini")
+                    .setMessage("Tidak ada kategori aktif.")
                     .setPositiveButton("Tutup", null)
                     .show()
                 return@loadCategoriesForForm
@@ -544,11 +525,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }
         }
 
-        // Helper tipe saat ini (goods/service)
-        fun currentTypeKey(): String = if (isEditing) { if (fixedIsService) "service" else "goods" } else { forTypeTab }
-
         // Muat awal + preselect untuk EDIT
-        loadCategoriesForForm(currentTypeKey()) {
+        loadCategoriesForForm {
             if (isEditing && p!!.categoryId.isNotBlank()) {
                 val idx = catFormList.indexOfFirst { it.id == p.categoryId }
                 if (idx >= 0) {
@@ -560,7 +538,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
         // Tap di field/ikon => buka dialog pemilih kategori
         fun openCatDialog() {
-            openCategoryPickerDialog(currentTypeKey(), selectedFormCategory?.id) { picked ->
+            openCategoryPickerDialog(selectedFormCategory?.id) { picked ->
                 selectedFormCategory = picked
                 if (picked != null) {
                     actCat.setText(picked.name, false)
@@ -589,7 +567,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     form.tilPrice.error = null
                 }
                 // Muat kategori sesuai tipe baru dan reset pilihan
-                loadCategoriesForForm(currentTypeKey()) {
+                loadCategoriesForForm {
                     actCat.setText("", false)
                     selectedFormCategory = null
                 }
@@ -762,30 +740,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     }
 
     // ===== Tambah kategori (tetap sesuai UI kamu) =====
-    private fun openAddCategoryDialog(
-        defaultType: String,
-        onAdded: (Category) -> Unit
-    ) {
+    private fun openAddCategoryDialog(onAdded: (Category) -> Unit) {
         val cat = DialogCategoryFormBinding.inflate(layoutInflater)
-
-        (cat.actCatType as MaterialAutoCompleteTextView).apply {
-            inputType = InputType.TYPE_NULL
-            keyListener = null
-            isCursorVisible = false
-            setOnClickListener { showDropDown() }
-            // PERBAIKAN: Gunakan ArrayAdapter
-            val types = arrayOf("Barang", "Jasa", "Barang & Jasa")
-            val typeAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, types)
-            setAdapter(typeAdapter)
-
-            val def = when (defaultType.trim().lowercase()) {
-                "barang", "goods" -> "Barang"
-                "jasa", "service" -> "Jasa"
-                "barang & jasa", "both" -> "Barang & Jasa"
-                else -> "Barang & Jasa"
-            }
-            setText(def, false)
-        }
 
         val dlg = MaterialAlertDialogBuilder(requireContext())
             .setTitle("Kategori baru")
@@ -800,14 +756,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 cat.tilCatName.error = null
 
                 val name = cat.etCatName.text?.toString()?.trim().orEmpty()
-                val forType = (cat.actCatType.text?.toString()?.trim()).orEmpty().lowercase().let {
-                    when (it) {
-                        "barang" -> "barang"
-                        "jasa" -> "jasa"
-                        "barang & jasa" -> "barang & jasa"
-                        else -> "barang & jasa"
-                    }
-                }
 
                 if (name.isEmpty()) { cat.tilCatName.error = "Harus diisi"; return@setOnClickListener }
 
@@ -819,7 +767,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     mapOf(
                         "name" to name,
                         "slug" to slug,
-                        "forType" to forType,
                         "isActive" to true,
                         "nameLowercase" to name.lowercase(),
                         "sortOrder" to System.currentTimeMillis(),
@@ -827,7 +774,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         "updatedAt" to now
                     )
                 ).addOnSuccessListener {
-                    onAdded(Category(id = slug, name = name, slug = slug, forType = forType, isActive = true))
+                    onAdded(Category(id = slug, name = name, slug = slug, isActive = true))
                     dlg.dismiss()
                 }.addOnFailureListener { e ->
                     cat.tilCatName.error = e.message ?: "Gagal menyimpan"

@@ -212,7 +212,6 @@ private class SupplierAdapter(
             b.tvStatus.setBackgroundResource(statusBg)
             b.tvStatus.setTextColor(statusColor)
             b.root.setOnClickListener { onEdit(s) }
-            b.btnEdit.setOnClickListener { onEdit(s) }
             b.btnDelete.setOnClickListener { onDelete(s) }
         }
     }

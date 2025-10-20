@@ -1,7 +1,6 @@
 package com.example.pos_hma.ui.role.super_admin
 
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.LayoutInflater
@@ -302,6 +301,8 @@ class SuperAdminDashboardFragment : Fragment() {
 
         val ctx = requireContext()
         val chart = b.chartRevenueTrend
+        val onSurfaceColor = MaterialColors.getColor(chart, com.google.android.material.R.attr.colorOnSurface)
+        val outlineColor = MaterialColors.getColor(chart, com.google.android.material.R.attr.colorOutline)
         val revenueEntries = daily.mapIndexed { index, item -> Entry(index.toFloat(), item.goodsRevenue.toFloat()) }
         val serviceEntries = daily.mapIndexed { index, item -> Entry(index.toFloat(), item.serviceRevenue.toFloat()) }
         val profitEntries = daily.mapIndexed { index, item -> Entry(index.toFloat(), item.netProfit.toFloat()) }
@@ -340,8 +341,10 @@ class SuperAdminDashboardFragment : Fragment() {
         chart.data = LineData(dataSets)
         chart.description.isEnabled = false
         chart.setNoDataText("Data pendapatan belum tersedia.")
+        chart.setNoDataTextColor(onSurfaceColor)
         chart.axisRight.isEnabled = false
         chart.legend.isEnabled = true
+        chart.legend.textColor = onSurfaceColor
         chart.setTouchEnabled(true)
         chart.isDragEnabled = true
         chart.setScaleEnabled(true)
@@ -350,6 +353,9 @@ class SuperAdminDashboardFragment : Fragment() {
         chart.xAxis.apply {
             position = XAxis.XAxisPosition.BOTTOM
             setDrawGridLines(false)
+            gridColor = outlineColor
+            axisLineColor = outlineColor
+            textColor = onSurfaceColor
             granularity = 1f
             axisMinimum = 0f
             axisMaximum = (daily.size - 1).coerceAtLeast(0).toFloat()
@@ -357,6 +363,9 @@ class SuperAdminDashboardFragment : Fragment() {
         }
         chart.axisLeft.apply {
             setDrawGridLines(true)
+            gridColor = outlineColor
+            axisLineColor = outlineColor
+            textColor = onSurfaceColor
             valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float): String = numberFormat.format(value.toLong())
             }
@@ -413,6 +422,7 @@ class SuperAdminDashboardFragment : Fragment() {
             entries += PieEntry(othersQty.toFloat(), "Lainnya")
         }
 
+        val onSurfaceColor = MaterialColors.getColor(chart, com.google.android.material.R.attr.colorOnSurface)
         val dataSet = PieDataSet(entries, "").apply {
             val colors = mutableListOf<Int>().apply {
                 addAll(ColorTemplate.MATERIAL_COLORS.toList())
@@ -422,20 +432,25 @@ class SuperAdminDashboardFragment : Fragment() {
             this.colors = colors.take(entries.size)
             sliceSpace = 2f
             valueTextSize = 12f
-            valueTextColor = Color.WHITE
+            valueTextColor = onSurfaceColor
         }
 
         chart.setUsePercentValues(true)
         chart.description.isEnabled = false
         chart.legend.isWordWrapEnabled = true
         chart.legend.isEnabled = true
+        chart.legend.textColor = onSurfaceColor
         chart.setDrawEntryLabels(false)
         chart.setNoDataText("Data penjualan belum tersedia.")
+        chart.setNoDataTextColor(onSurfaceColor)
 
         val pieData = PieData(dataSet).apply {
             setValueFormatter(PercentFormatter(chart))
+            setValueTextColor(onSurfaceColor)
+            setValueTextSize(12f)
         }
         chart.data = pieData
+        chart.setEntryLabelColor(onSurfaceColor)
         chart.invalidate()
 
         b.containerTopProducts.removeAllViews()

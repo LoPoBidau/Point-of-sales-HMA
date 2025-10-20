@@ -20,22 +20,4 @@
             android:hint="Nama kategori"/>
     </com.google.android.material.textfield.TextInputLayout>
 
-    <!-- Tipe kategori -->
-    <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/tilCatType"
-        style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="12dp">
-
-        <com.google.android.material.textfield.MaterialAutoCompleteTextView
-            android:id="@+id/actCatType"
-            android:hint="Untuk"
-            android:inputType="none"
-            android:focusable="false"
-            android:clickable="true"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"/>
-    </com.google.android.material.textfield.TextInputLayout>
-
 </LinearLayout>
