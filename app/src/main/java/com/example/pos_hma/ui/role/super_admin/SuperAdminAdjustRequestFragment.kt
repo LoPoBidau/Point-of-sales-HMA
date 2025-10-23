@@ -53,14 +53,10 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
         binding.rv.layoutManager = LinearLayoutManager(requireContext())
         binding.rv.adapter = adapter
 
-        // Setup chips for status filter (default: Semua)
-        currentStatus = StatusFilter.ALL
-        activeChipId = null
         binding.chipStatusGroup.isSingleSelection = false
-        binding.chipStatusGroup.clearCheck()
-        binding.chipAll.visibility = View.GONE
 
         fun updateChipStates() {
+            binding.chipAll.isChecked = activeChipId == binding.chipAll.id
             binding.chipPending.isChecked = activeChipId == binding.chipPending.id
             binding.chipApproved.isChecked = activeChipId == binding.chipApproved.id
             binding.chipRejected.isChecked = activeChipId == binding.chipRejected.id
@@ -73,31 +69,32 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
             listen()
         }
 
+        binding.chipAll.setOnClickListener {
+            applyStatus(StatusFilter.ALL, binding.chipAll.id)
+        }
         binding.chipPending.setOnClickListener {
             if (activeChipId == binding.chipPending.id) {
-                applyStatus(StatusFilter.ALL, null)
+                applyStatus(StatusFilter.ALL, binding.chipAll.id)
             } else {
                 applyStatus(StatusFilter.PENDING, binding.chipPending.id)
             }
         }
         binding.chipApproved.setOnClickListener {
             if (activeChipId == binding.chipApproved.id) {
-                applyStatus(StatusFilter.ALL, null)
+                applyStatus(StatusFilter.ALL, binding.chipAll.id)
             } else {
                 applyStatus(StatusFilter.APPROVED, binding.chipApproved.id)
             }
         }
         binding.chipRejected.setOnClickListener {
             if (activeChipId == binding.chipRejected.id) {
-                applyStatus(StatusFilter.ALL, null)
+                applyStatus(StatusFilter.ALL, binding.chipAll.id)
             } else {
                 applyStatus(StatusFilter.REJECTED, binding.chipRejected.id)
             }
         }
 
-        updateChipStates()
-
-        listen()
+        applyStatus(StatusFilter.ALL, binding.chipAll.id)
         binding.swipeRefresh.setOnRefreshListener { refreshOnce() }
     }
 
@@ -369,7 +366,7 @@ private class ReqVH(
     fun bind(r: StockAdjustRequest) {
         val locale = java.util.Locale.getDefault()
         val (statusLabel, badgeRes) = when (r.status.uppercase(locale)) {
-            "PENDING" -> "Pending" to com.example.pos_hma.R.drawable.bg_badge_blue
+            "PENDING" -> "Menunggu" to com.example.pos_hma.R.drawable.bg_badge_orange
             "APPROVED" -> "Disetujui" to com.example.pos_hma.R.drawable.bg_badge_green
             "REJECTED" -> "Ditolak" to com.example.pos_hma.R.drawable.bg_badge_red
             else -> r.status.ifBlank { "Tidak diketahui" } to com.example.pos_hma.R.drawable.bg_badge_gray

@@ -25,6 +25,11 @@
         android:label="Struk" />
 
     <fragment
+        android:id="@+id/adminCashierReturnFragment"
+        android:name="com.example.pos_hma.ui.role.admin.AdminCashierReturnFragment"
+        android:label="Retur Barang" />
+
+    <fragment
         android:id="@+id/adminCashierReportFragment"
         android:name="com.example.pos_hma.ui.role.admin.AdminCashierReportFragment"
         android:label="Riwayat Transaksi" />

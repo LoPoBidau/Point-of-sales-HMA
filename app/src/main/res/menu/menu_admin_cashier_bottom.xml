@@ -11,6 +11,11 @@
         android:icon="@drawable/ic_inventory" />
 
     <item
+        android:id="@+id/adminCashierReturnFragment"
+        android:title="Retur"
+        android:icon="@drawable/ic_return" />
+
+    <item
         android:id="@+id/adminCashierReportFragment"
         android:title="Riwayat Transaksi"
         android:icon="@drawable/ic_report" />

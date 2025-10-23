@@ -34,6 +34,7 @@ import com.example.pos_hma.databinding.ItemSaleRowBinding
 import com.example.pos_hma.databinding.ItemStockMovementBinding
 import com.example.pos_hma.databinding.ItemFifoBatchBinding
 import com.example.pos_hma.data.BatchState
+import com.example.pos_hma.data.SaleStatus
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.tabs.TabLayoutMediator
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -632,6 +633,8 @@ class SuperAdminReportFragment : Fragment() {
                 query.get().addOnSuccessListener { snap ->
                     allSales.clear()
                     for (doc in snap.documents) {
+                        val status = doc.getString("status") ?: SaleStatus.PAID
+                        if (!status.equals(SaleStatus.PAID, ignoreCase = true)) continue
                         val ts = doc.getTimestamp("createdAt")?.toDate()
                         val total = doc.getLong("total") ?: 0L
                         val noNota = doc.getString("noNota")

@@ -29,6 +29,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.example.pos_hma.data.SaleStatus
 import androidx.annotation.RequiresPermission
 import androidx.core.view.isVisible
 import java.text.NumberFormat
@@ -224,6 +225,8 @@ class AdminCashierReportFragment : Fragment() {
         query.get().addOnSuccessListener { snap ->
             sales.clear()
             for (doc in snap.documents) {
+                val status = doc.getString("status") ?: SaleStatus.PAID
+                if (!status.equals(SaleStatus.PAID, ignoreCase = true)) continue
                 val ts = doc.getTimestamp("createdAt")?.toDate()
                 val saleId = doc.id
                 val noNota = doc.getString("noNota")

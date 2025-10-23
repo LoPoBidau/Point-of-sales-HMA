@@ -78,7 +78,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'sku','productName','unitCost','receivedQty','remainingQty','receivedAt',
           'purchaseId','invoiceNo','supplierName','supplierId','dueDate','termDays',
-          'state','salePrice'
+          'state','salePrice','updatedAt','returnRequestId','source'
         ])
         && request.resource.data.sku is string
         && (!('productName' in request.resource.data) || request.resource.data.productName is string)
@@ -87,17 +87,23 @@ service cloud.firestore {
         && request.resource.data.remainingQty >= 0
         && (!('receivedQty' in request.resource.data) || (request.resource.data.receivedQty is int && request.resource.data.receivedQty >= 0))
         && (!('salePrice' in request.resource.data) || (request.resource.data.salePrice is int && request.resource.data.salePrice >= 0))
-        && (!('state' in request.resource.data) || request.resource.data.state is string);
+        && (!('state' in request.resource.data) || request.resource.data.state is string)
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
+        && (!('returnRequestId' in request.resource.data) || request.resource.data.returnRequestId is string)
+        && (!('source' in request.resource.data) || request.resource.data.source is string);
       allow update: if isAdminLike()
         && request.resource.data.diff(resource.data).changedKeys().hasOnly([
-          'remainingQty','unitCost','receivedAt','activatedAt',
+          'remainingQty','unitCost','receivedAt','activatedAt','updatedAt',
           'purchaseId','invoiceNo','supplierName','supplierId',
-          'dueDate','termDays','state','salePrice'
+          'dueDate','termDays','state','salePrice','returnRequestId','source'
         ])
         && request.resource.data.remainingQty is int
         && request.resource.data.remainingQty >= 0
         && (!('salePrice' in request.resource.data) || (request.resource.data.salePrice is int && request.resource.data.salePrice >= 0))
-        && (!('state' in request.resource.data) || request.resource.data.state in ['HOLD','OPEN','CLEARED']);
+        && (!('state' in request.resource.data) || request.resource.data.state in ['HOLD','OPEN','CLEARED'])
+        && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
+        && (!('returnRequestId' in request.resource.data) || request.resource.data.returnRequestId is string)
+        && (!('source' in request.resource.data) || request.resource.data.source is string);
       allow delete: if isOwnerOrSuper();
     }
 
@@ -106,13 +112,16 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if isCashierLike()
         && request.resource.data.keys().hasOnly([
-             'sku','type','qtyDelta','unitCost','createdAt','refId','note','effectiveAt','batchId'
+             'sku','type','qtyDelta','unitCost','createdAt','refId','note','effectiveAt','batchId','saleId','returnRequestId'
            ])
         && (request.resource.data.type == 'SALE'
             || request.resource.data.type == 'PURCHASE'
             || request.resource.data.type == 'ADJUSTMENT'
-            || request.resource.data.type == 'ACTUAL_STOCK')
-        && (!('batchId' in request.resource.data) || request.resource.data.batchId is string);
+            || request.resource.data.type == 'ACTUAL_STOCK'
+            || request.resource.data.type == 'RETURN')
+        && (!('batchId' in request.resource.data) || request.resource.data.batchId is string)
+        && (!('saleId' in request.resource.data) || request.resource.data.saleId is string)
+        && (!('returnRequestId' in request.resource.data) || request.resource.data.returnRequestId is string);
     }
 
     // ===== sales =====
@@ -120,7 +129,10 @@ service cloud.firestore {
       allow read: if isCashierLike();
       allow create: if isCashierLike()
         && request.resource.data.keys().hasOnly([
-             'createdAt','cashierId','items','total','paid','change','status','serviceFee','serviceDescription','noNota'
+             'createdAt','cashierId','items','total','paid','change','status',
+             'serviceFee','serviceDescription','noNota',
+             'returnStatus','returnRequestId','returnReason','returnRequestedAt',
+             'returnApprovedAt','returnApprovedBy','returnRejectedAt','returnRejectionNote'
            ])
         && request.resource.data.status == 'PAID'
         && request.resource.data.total  is int
@@ -128,8 +140,98 @@ service cloud.firestore {
         && request.resource.data.change is int
         && (!('serviceFee' in request.resource.data) || request.resource.data.serviceFee is int)
         && (!('serviceDescription' in request.resource.data) || request.resource.data.serviceDescription is string)
-        && (!('noNota'     in request.resource.data) || request.resource.data.noNota is string);
-      allow update, delete: if false;
+        && (!('noNota' in request.resource.data) || request.resource.data.noNota is string)
+        && (!('returnStatus' in request.resource.data) || request.resource.data.returnStatus is string)
+        && (!('returnRequestId' in request.resource.data) || request.resource.data.returnRequestId is string)
+        && (!('returnReason' in request.resource.data) || request.resource.data.returnReason is string)
+        && (!('returnRequestedAt' in request.resource.data) || request.resource.data.returnRequestedAt is timestamp)
+        && (!('returnApprovedAt' in request.resource.data) || request.resource.data.returnApprovedAt is timestamp)
+        && (!('returnApprovedBy' in request.resource.data) || request.resource.data.returnApprovedBy is string)
+        && (!('returnRejectedAt' in request.resource.data) || request.resource.data.returnRejectedAt is timestamp)
+        && (!('returnRejectionNote' in request.resource.data) || request.resource.data.returnRejectionNote is string);
+      allow update: if (
+        isCashierLike() &&
+        resource.data.status == 'PAID' &&
+        request.resource.data.status == 'RETURN_PENDING' &&
+        request.resource.data.returnStatus == 'PENDING' &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status','returnStatus','returnRequestId','returnReason','returnRequestedAt'
+        ]) &&
+        ('returnRequestId' in request.resource.data.keys()) &&
+        request.resource.data.returnRequestId is string &&
+        ('returnReason' in request.resource.data.keys()) &&
+        request.resource.data.returnReason is string &&
+        ('returnRequestedAt' in request.resource.data.keys()) &&
+        request.resource.data.returnRequestedAt is timestamp
+      ) || (
+        isOwnerOrSuper() &&
+        resource.data.status == 'RETURN_PENDING' &&
+        request.resource.data.status in ['RETURNED','PAID'] &&
+        request.resource.data.returnStatus in ['APPROVED','REJECTED'] &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status','returnStatus','returnApprovedAt','returnApprovedBy','returnRejectedAt','returnRejectionNote'
+        ]) &&
+        (
+          (
+            request.resource.data.status == 'RETURNED' &&
+            request.resource.data.returnStatus == 'APPROVED' &&
+            ('returnApprovedAt' in request.resource.data.keys()) &&
+            request.resource.data.returnApprovedAt is timestamp &&
+            ('returnApprovedBy' in request.resource.data.keys()) &&
+            request.resource.data.returnApprovedBy is string
+          ) ||
+          (
+            request.resource.data.status == 'PAID' &&
+            request.resource.data.returnStatus == 'REJECTED' &&
+            ('returnRejectedAt' in request.resource.data.keys()) &&
+            request.resource.data.returnRejectedAt is timestamp &&
+            ('returnRejectionNote' in request.resource.data.keys()) &&
+            request.resource.data.returnRejectionNote is string
+          )
+        )
+      );
+      allow delete: if false;
+    }
+
+    // ===== sale return requests =====
+    match /sale_return_requests/{id} {
+      allow read: if isOwnerOrSuper() || (signedIn() && resource.data.cashierId == request.auth.uid);
+      allow create: if isCashierLike()
+        && request.auth.uid == request.resource.data.cashierId
+        && request.resource.data.keys().hasOnly([
+             'status','saleId','saleNo','cashierId','cashierEmail','cashierName',
+             'createdAt','reason','items','total','paid','change','serviceFee','saleCreatedAt'
+           ])
+        && request.resource.data.status == 'PENDING'
+        && request.resource.data.saleId is string
+        && (!('saleNo' in request.resource.data) || request.resource.data.saleNo is string)
+        && request.resource.data.cashierId is string
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.reason is string
+        && request.resource.data.items is list
+        && request.resource.data.total is int
+        && request.resource.data.paid is int
+        && request.resource.data.change is int
+        && request.resource.data.serviceFee is int
+        && request.resource.data.saleCreatedAt is timestamp
+        && (!('cashierEmail' in request.resource.data) || request.resource.data.cashierEmail is string)
+        && (!('cashierName' in request.resource.data) || request.resource.data.cashierName is string);
+      allow update: if isOwnerOrSuper()
+        && resource.data.status == 'PENDING'
+        && request.resource.data.status in ['APPROVED','REJECTED']
+        && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+             'status','decidedAt','decidedBy','decidedByName','rejectionNote'
+           ])
+        && ('decidedAt' in request.resource.data.keys()) && request.resource.data.decidedAt is timestamp
+        && ('decidedBy' in request.resource.data.keys()) && request.resource.data.decidedBy is string
+        && request.resource.data.decidedBy == request.auth.uid
+        && (!('decidedByName' in request.resource.data.keys()) || request.resource.data.decidedByName is string)
+        && (
+             (request.resource.data.status == 'APPROVED' && !('rejectionNote' in request.resource.data.keys()))
+             ||
+             (request.resource.data.status == 'REJECTED' && ('rejectionNote' in request.resource.data.keys()) && request.resource.data.rejectionNote is string)
+           );
+      allow delete: if false;
     }
 
     // ===== counters =====

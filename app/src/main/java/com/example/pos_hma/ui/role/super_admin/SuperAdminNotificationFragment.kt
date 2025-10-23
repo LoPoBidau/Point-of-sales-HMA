@@ -2,9 +2,12 @@ package com.example.pos_hma.ui.role.super_admin
 
 import android.graphics.Color
 import android.os.Bundle
+import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Companion.TAB_RETURNS
+import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Companion.TAB_STOCK_ADJUST
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DiffUtil
@@ -18,6 +21,8 @@ import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.android.material.color.MaterialColors
+import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Companion.TAB_RETURNS
+import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Companion.TAB_STOCK_ADJUST
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -120,7 +125,12 @@ class SuperAdminNotificationFragment : Fragment() {
         // Arahkan sesuai tipe (opsional)
         when (n.type) {
             "ADJUSTMENT_REQUEST" -> {
-                try { findNavController().navigate(R.id.superAdminAdjustRequestFragment) } catch (_: Throwable) {}
+                val args = bundleOf("initialTab" to TAB_STOCK_ADJUST)
+                try { findNavController().navigate(R.id.superAdminRequestsFragment, args) } catch (_: Throwable) {}
+            }
+            "SALE_RETURN_REQUEST" -> {
+                val args = bundleOf("initialTab" to TAB_RETURNS)
+                try { findNavController().navigate(R.id.superAdminRequestsFragment, args) } catch (_: Throwable) {}
             }
             "PURCHASE_DUE" -> {
                 // Belum ada layar detail purchase → arahkan ke Report agar Super Admin bisa cek

@@ -18,19 +18,19 @@
         app:singleLine="true">
 
         <com.google.android.material.chip.Chip
+            android:id="@+id/chipAll"
+            style="@style/Widget.MaterialComponents.Chip.Filter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Semua"
+            app:checkedIconVisible="true" />
+
+        <com.google.android.material.chip.Chip
             android:id="@+id/chipPending"
             style="@style/Widget.MaterialComponents.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Pending"
-            app:checkedIconVisible="true" />
-
-        <com.google.android.material.chip.Chip
-            android:id="@+id/chipApproved"
-            style="@style/Widget.MaterialComponents.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Disetujui"
+            android:text="Menunggu"
             app:checkedIconVisible="true" />
 
         <com.google.android.material.chip.Chip
@@ -42,14 +42,12 @@
             app:checkedIconVisible="true" />
 
         <com.google.android.material.chip.Chip
-            android:id="@+id/chipAll"
+            android:id="@+id/chipApproved"
             style="@style/Widget.MaterialComponents.Chip.Filter"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Semua"
-            app:chipIcon="@drawable/ic_filter_list"
-            app:checkedIconVisible="true"
-            android:visibility="gone" />
+            android:text="Disetujui"
+            app:checkedIconVisible="true" />
     </com.google.android.material.chip.ChipGroup>
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout

@@ -12,14 +12,13 @@
         android:icon="@drawable/ic_inventory"
         app:showAsAction="never" />
     <item
-        android:id="@+id/superAdminReportFragment"
-        android:icon="@drawable/ic_report"
-        android:title="Laporan" />
-
-    <item
-        android:id="@+id/superAdminAdjustRequestFragment"
+        android:id="@+id/superAdminRequestsFragment"
         android:title="Permintaan"
         android:icon="@drawable/ic_request"
         app:showAsAction="never" />
-
+    <item
+        android:id="@+id/superAdminReportFragment"
+        android:title="Laporan"
+        android:icon="@drawable/ic_report"
+        app:showAsAction="never" />
 </menu>

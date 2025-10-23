@@ -85,6 +85,7 @@ class AdminCashierMainActivity : AppCompatActivity() {
                 // Top-level: Katalog, Barang, Riwayat Transaksi
                 R.id.adminCashierCatalogFragment,
                 R.id.adminCashierGoodsFragment,
+                R.id.adminCashierReturnFragment,
                 R.id.adminCashierReportFragment
             )
         )
@@ -101,6 +102,7 @@ class AdminCashierMainActivity : AppCompatActivity() {
             when (item.itemId) {
                 R.id.adminCashierCatalogFragment -> { navController.navigate(R.id.adminCashierCatalogFragment, null, navOpts); true }
                 R.id.adminCashierGoodsFragment   -> { navController.navigate(R.id.adminCashierGoodsFragment, null, navOpts); true }
+                R.id.adminCashierReturnFragment  -> { navController.navigate(R.id.adminCashierReturnFragment, null, navOpts); true }
                 R.id.adminCashierReportFragment  -> { navController.navigate(R.id.adminCashierReportFragment, null, navOpts); true }
                 else -> false
             }

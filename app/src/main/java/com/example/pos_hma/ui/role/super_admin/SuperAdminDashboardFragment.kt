@@ -29,6 +29,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.example.pos_hma.data.SaleStatus
 import com.google.firebase.firestore.Query
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
@@ -553,6 +554,8 @@ class SuperAdminDashboardFragment : Fragment() {
         var todayTransactions = 0
 
         for (doc in docs) {
+            val status = doc.getString("status") ?: SaleStatus.PAID
+            if (!status.equals(SaleStatus.PAID, ignoreCase = true)) continue
             val createdAt = doc.getTimestamp("createdAt")?.toDate() ?: continue
             transactionCount++
             val total = doc.getLong("total") ?: 0L

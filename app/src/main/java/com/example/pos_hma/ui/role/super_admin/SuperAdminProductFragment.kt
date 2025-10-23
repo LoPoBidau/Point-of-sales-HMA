@@ -33,7 +33,6 @@ import com.example.pos_hma.utils.StockNotificationHelper
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.color.MaterialColors
-import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
 import com.google.firebase.auth.FirebaseAuth
@@ -2022,14 +2021,13 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         bubble.translationX = startX
         bubble.translationY = startY
 
-        val bottomNav = (activity as? SuperAdminMainActivity)?.findViewById<BottomNavigationView>(R.id.bottomNav)
-        val targetView = bottomNav?.findViewById<View>(targetMenuId)
+        val targetView: View? = null
         val endLoc = IntArray(2)
         if (targetView != null) {
             targetView.getLocationOnScreen(endLoc)
         } else {
             endLoc[0] = rootLoc[0] + (root.width * 0.75f).toInt()
-            endLoc[1] = rootLoc[1] + root.height - (bottomNav?.height ?: bubbleSize)
+            endLoc[1] = rootLoc[1] + root.height - bubbleSize
         }
         val targetWidth = targetView?.width ?: bubbleSize
         val targetHeight = targetView?.height ?: bubbleSize

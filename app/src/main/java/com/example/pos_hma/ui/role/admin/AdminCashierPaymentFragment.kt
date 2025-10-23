@@ -284,18 +284,35 @@ class AdminCashierPaymentFragment : Fragment() {
                                 holdBatchRefs = holdRefs.toList()
                             )
 
-                            items += mapOf(
+                            val itemData = mutableMapOf<String, Any>(
                                 "sku" to sku,
+                                "productId" to pRef.id,
                                 "name" to product.name,
                                 "qty" to qty,
                                 "unitPrice" to product.salePrice,
                                 "unitCost" to avgUnitCost,
                                 "isService" to false
                             )
+                            val consumedList = consumptions
+                                .filter { it.consumed > 0L }
+                                .map { cons ->
+                                    mutableMapOf<String, Any>(
+                                        "qty" to cons.consumed,
+                                        "unitCost" to cons.unitCost
+                                    ).apply {
+                                        cons.ref?.let { ref -> this["batchId"] = ref.id }
+                                        cons.salePrice?.let { price -> this["salePrice"] = price }
+                                    }
+                                }
+                            if (consumedList.isNotEmpty()) {
+                                itemData["consumptions"] = consumedList
+                            }
+                            items += itemData
                         }
                     } else {
                         items += mapOf(
                             "sku" to sku,
+                            "productId" to product.id,
                             "name" to product.name,
                             "qty" to qty,
                             "unitPrice" to product.salePrice,
@@ -383,6 +400,7 @@ class AdminCashierPaymentFragment : Fragment() {
                     "change" to (paid - due),
                     "serviceFee" to feeValue,
                     "status" to "PAID",
+                    "returnStatus" to "NONE",
                     "noNota" to noNota
                 )
                 if (feeValue > 0L && serviceDesc.isNotBlank()) {

@@ -24,20 +24,24 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.isVisible
 import androidx.core.view.updatePadding
 import androidx.navigation.NavController
 import androidx.navigation.NavDeepLinkBuilder
 import androidx.navigation.fragment.NavHostFragment
+import androidx.navigation.NavOptions
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.NavigationUI
-import androidx.navigation.NavOptions
 import com.example.pos_hma.R
 import com.example.pos_hma.databinding.ActivitySuperAdminMainBinding
+import com.example.pos_hma.data.SaleReturnStatus
 import com.example.pos_hma.ui.login.LoginActivity
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
 import com.example.pos_hma.utils.NetworkUtil
 import com.google.android.material.button.MaterialButton
+import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Companion.TAB_STOCK_ADJUST
+import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Companion.TAB_RETURNS
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.*
@@ -50,8 +54,13 @@ class SuperAdminMainActivity : AppCompatActivity() {
     private lateinit var appBarConfig: AppBarConfiguration
     private val db by lazy { FirebaseFirestore.getInstance() }
     private var regPending: ListenerRegistration? = null
+    private var regReturn: ListenerRegistration? = null
     private var regNotif: ListenerRegistration? = null
     private var firstPendingLoad = true
+    private var firstReturnLoad = true
+    private var updatingBottomNav = false
+    private var pendingAdjustCount: Int = 0
+    private var pendingReturnCount: Int = 0
     private val CHANNEL_ID = "adjust_req"
     private var unreadNotifCount: Int = 0
     private var tvNotifBadge: TextView? = null
@@ -102,47 +111,65 @@ class SuperAdminMainActivity : AppCompatActivity() {
         ensureRoleAllowedOrExit(setOf("owner", "super-admin", "superadmin")) {
             val host = supportFragmentManager.findFragmentById(R.id.nav_host_owner) as NavHostFragment
             navController = host.navController
+            navController.setGraph(R.navigation.nav_super_admin)
 
-            appBarConfig = AppBarConfiguration(
-                setOf(
-                    R.id.superAdminDashboardFragment,
-                    R.id.superAdminInventoryFragment,
-                    R.id.superAdminAdjustRequestFragment,
-                    R.id.superAdminReportFragment
-                )
+            val topLevelDestinations = setOf(
+                R.id.superAdminDashboardFragment,
+                R.id.superAdminInventoryFragment,
+                R.id.superAdminRequestsFragment,
+                R.id.superAdminReportFragment
             )
 
+            appBarConfig = AppBarConfiguration(topLevelDestinations)
+
             NavigationUI.setupWithNavController(binding.toolbar, navController, appBarConfig)
-            // Manual bottom nav wiring to avoid rare NPE in NavigationUI
+
             val navOpts = NavOptions.Builder()
                 .setLaunchSingleTop(true)
                 .setRestoreState(true)
                 .setPopUpTo(navController.graph.startDestinationId, false)
                 .build()
             binding.bottomNav.setOnItemSelectedListener { item ->
-                when (item.itemId) {
-                    R.id.superAdminDashboardFragment    -> { navController.navigate(R.id.superAdminDashboardFragment, null, navOpts); true }
-                    R.id.superAdminInventoryFragment    -> { navController.navigate(R.id.superAdminInventoryFragment, null, navOpts); true }
-                    R.id.superAdminReportFragment       -> { navController.navigate(R.id.superAdminReportFragment, null, navOpts); true }
-                    R.id.superAdminAdjustRequestFragment-> { navController.navigate(R.id.superAdminAdjustRequestFragment, null, navOpts); true }
-                    else -> false
+                if (updatingBottomNav) return@setOnItemSelectedListener true
+                val destId = when (item.itemId) {
+                    R.id.superAdminDashboardFragment -> R.id.superAdminDashboardFragment
+                    R.id.superAdminInventoryFragment -> R.id.superAdminInventoryFragment
+                    R.id.superAdminRequestsFragment -> R.id.superAdminRequestsFragment
+                    R.id.superAdminReportFragment -> R.id.superAdminReportFragment
+                    else -> return@setOnItemSelectedListener false
+                }
+                if (navController.currentDestination?.id == destId) {
+                    true
+                } else {
+                    try {
+                        navController.navigate(destId, null, navOpts)
+                        true
+                    } catch (_: IllegalArgumentException) {
+                        false
+                    }
                 }
             }
             binding.bottomNav.setOnItemReselectedListener { /* no-op */ }
+            updatingBottomNav = true
+            binding.bottomNav.selectedItemId = navController.currentDestination?.id ?: R.id.superAdminDashboardFragment
+            updatingBottomNav = false
 
             reschedulePendingStockReceipts()
 
-            // Toggle UI based on destination
             navController.addOnDestinationChangedListener { _, dest, _ ->
-                // Refresh menu visibility (e.g., hide notif icon on notif screen)
                 invalidateOptionsMenu()
-                // Hide bottom nav on Notification screen
                 val hideBottomOn = setOf(R.id.superAdminNotificationFragment)
-                binding.bottomNav.visibility = if (dest.id in hideBottomOn) View.GONE else View.VISIBLE
+                binding.bottomNav.isVisible = dest.id !in hideBottomOn
+                if (dest.id in topLevelDestinations) {
+                    updatingBottomNav = true
+                    binding.bottomNav.selectedItemId = dest.id
+                    updatingBottomNav = false
+                }
             }
 
             createNotificationChannel()
             startPendingRequestListener()
+            startPendingReturnListener()
             startNotifBadgeListener()
         }
 
@@ -194,6 +221,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         regPending?.remove(); regPending = null
+        regReturn?.remove(); regReturn = null
         regNotif?.remove(); regNotif = null
         // Unregister network callback if registered
         NetworkUtil.unregisterNetworkCallback(this, netCb)
@@ -343,21 +371,8 @@ class SuperAdminMainActivity : AppCompatActivity() {
                 if (AppFlags.isLoggingOut) return@addSnapshotListener
                 if (e != null || snap == null) return@addSnapshotListener
 
-                // Update bottom nav badge
-                val count = snap.size()
-                val badge = binding.bottomNav.getOrCreateBadge(R.id.superAdminAdjustRequestFragment)
-                badge.isVisible = count > 0
-                // Use small dot-only badge (no number) for 'Permintaan'
-                try { badge.clearNumber() } catch (_: Throwable) { }
-                try {
-                    val color = com.google.android.material.color.MaterialColors.getColor(binding.bottomNav, com.google.android.material.R.attr.colorError)
-                    badge.backgroundColor = color
-                } catch (_: Throwable) {}
-                // Shift badge slightly to the left
-                try {
-                    val dx = -java.lang.Math.round(4f * resources.displayMetrics.density)
-                    badge.horizontalOffset = dx
-                } catch (_: Throwable) { }
+                pendingAdjustCount = snap.size()
+                updateRequestsBadge()
 
                 // Notify on newly added docs (skip initial load)
                 if (!firstPendingLoad) {
@@ -369,6 +384,42 @@ class SuperAdminMainActivity : AppCompatActivity() {
             }
     }
 
+    private fun startPendingReturnListener() {
+        regReturn?.remove(); regReturn = null
+        firstReturnLoad = true
+        regReturn = db.collection("sale_return_requests")
+            .whereEqualTo("status", SaleReturnStatus.PENDING)
+            .addSnapshotListener { snap, e ->
+                if (AppFlags.isLoggingOut) return@addSnapshotListener
+                if (e != null || snap == null) return@addSnapshotListener
+
+                pendingReturnCount = snap.size()
+                updateRequestsBadge()
+
+                if (!firstReturnLoad) {
+                    for (chg in snap.documentChanges) {
+                        if (chg.type == DocumentChange.Type.ADDED) notifyNewReturnRequest(chg.document)
+                    }
+                }
+                firstReturnLoad = false
+            }
+    }
+
+    private fun updateRequestsBadge() {
+        val total = pendingAdjustCount + pendingReturnCount
+        val badge = binding.bottomNav.getOrCreateBadge(R.id.superAdminRequestsFragment)
+        if (total > 0) {
+            badge.isVisible = true
+            try { badge.clearNumber() } catch (_: Throwable) { }
+            try {
+                val color = com.google.android.material.color.MaterialColors.getColor(binding.bottomNav, com.google.android.material.R.attr.colorError)
+                badge.backgroundColor = color
+            } catch (_: Throwable) { }
+        } else {
+            badge.isVisible = false
+        }
+    }
+
     fun showReportBadge() {
         val badge = binding.bottomNav.getOrCreateBadge(R.id.superAdminReportFragment)
         badge.isVisible = true
@@ -378,6 +429,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
             badge.backgroundColor = color
         } catch (_: Throwable) { }
     }
+
     private fun startNotifBadgeListener() {
         regNotif?.remove(); regNotif = null
         regNotif = db.collection("notifications")
@@ -410,9 +462,11 @@ class SuperAdminMainActivity : AppCompatActivity() {
         val delta = (d.getLong("requestedDelta") ?: 0L).toString()
         val text = "$name (${if (delta.startsWith("-")) delta else "+$delta"})"
 
+        val args = Bundle().apply { putInt("initialTab", TAB_STOCK_ADJUST) }
         val pi = NavDeepLinkBuilder(this)
             .setGraph(R.navigation.nav_super_admin)
-            .setDestination(R.id.superAdminNotificationFragment)
+            .setDestination(R.id.superAdminRequestsFragment)
+            .setArguments(args)
             .createPendingIntent()
 
         val notif = NotificationCompat.Builder(this, CHANNEL_ID)
@@ -447,6 +501,57 @@ class SuperAdminMainActivity : AppCompatActivity() {
             if (createdAt != null) data["createdAt"] = createdAt else data["createdAt"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
             FirebaseFirestore.getInstance().collection("notifications")
                 .document("sa_req_${d.id}")
+                .set(data, SetOptions.merge())
+        } catch (_: Throwable) {}
+    }
+
+    private fun notifyNewReturnRequest(d: DocumentSnapshot) {
+        val saleNo = d.getString("saleNo") ?: d.getString("saleId") ?: d.id
+        val reason = d.getString("reason").orEmpty()
+        val message = if (reason.isNotBlank()) {
+            "Retur $saleNo • $reason"
+        } else {
+            "Retur $saleNo menunggu persetujuan"
+        }
+
+        val args = Bundle().apply { putInt("initialTab", TAB_RETURNS) }
+        val pi = NavDeepLinkBuilder(this)
+            .setGraph(R.navigation.nav_super_admin)
+            .setDestination(R.id.superAdminRequestsFragment)
+            .setArguments(args)
+            .createPendingIntent()
+
+        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Permintaan retur baru")
+            .setContentText(message)
+            .setAutoCancel(true)
+            .setContentIntent(pi)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+        if (canPostNotifications()) {
+            try {
+                NotificationManagerCompat.from(this).notify(("ret_${d.id}").hashCode(), notif)
+            } catch (_: SecurityException) {
+                maybeRequestPostNotifications(force = true)
+            }
+        } else {
+            maybeRequestPostNotifications(force = true)
+        }
+
+        try {
+            val createdAt = d.getTimestamp("createdAt")
+        val data = mutableMapOf<String, Any>(
+                "type" to "SALE_RETURN_REQUEST",
+                "title" to "Permintaan retur baru",
+                "message" to message,
+                "saleId" to (d.getString("saleId") ?: d.id),
+                "toRole" to "super-admin",
+                "read" to false
+            )
+            if (createdAt != null) data["createdAt"] = createdAt else data["createdAt"] = FieldValue.serverTimestamp()
+            FirebaseFirestore.getInstance().collection("notifications")
+                .document("sa_return_${d.id}")
                 .set(data, SetOptions.merge())
         } catch (_: Throwable) {}
     }
