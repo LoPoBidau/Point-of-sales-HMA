@@ -2172,10 +2172,10 @@ private class ProductsAdapter(
         if (missingCat) {
             val errColor = MaterialColors.getColor(h.tvCategory, com.google.android.material.R.attr.colorError)
             h.tvCategory.setTextColor(errColor)
-            h.tvCategory.text = "Kategori: wajib diisi"
+            h.tvCategory.text = "Kategori: belum diisi"
         } else {
             h.tvCategory.setTextColor(defaultCategoryColor!!)
-            h.tvCategory.text = if (product.categoryName.isNotBlank()) "Kategori : ${product.categoryName}" else "Kategori: -"
+            h.tvCategory.text = if (product.categoryName.isNotBlank()) "Kategori : ${product.categoryName}" else "Kategori: belum diisi"
         }
         h.tvPrice.text = if (product.isService) "Harga: input kasir" else "Rp ${rupiah(product.salePrice)}"
         h.tvCost.text = if (product.isService) "Modal/Unit  : -" else "Modal/Unit  : Rp ${rupiah(product.lastCost)}"
