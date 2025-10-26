@@ -493,7 +493,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }
 
             if (p.images.firstOrNull().isNullOrBlank()) {
-                form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
+                form.imgPreview.setImageResource(R.drawable.ic_product_placeholder); form.imgPreview.alpha = .25f
                 form.btnRemoveImage.isVisible = false
             } else {
                 form.imgPreview.alpha = 1f
@@ -502,7 +502,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }
         } else {
             // Non-editing: lock to current tab type
-            form.imgPreview.setImageResource(R.drawable.store); form.imgPreview.alpha = .25f
+            form.imgPreview.setImageResource(R.drawable.ic_product_placeholder); form.imgPreview.alpha = .25f
             form.btnRemoveImage.isVisible = false
             if (forTypeTab == "service") {
                 // Service tab: create service only
@@ -588,7 +588,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         form.btnRemoveImage.setOnClickListener {
             selectedImageUri = null
             cameraTempUri = null
-            form.imgPreview.setImageResource(R.drawable.store)
+            form.imgPreview.setImageResource(R.drawable.ic_product_placeholder)
             form.imgPreview.alpha = .25f
             form.btnRemoveImage.isVisible = false
             formRemoveImageButton?.isVisible = false
@@ -626,21 +626,29 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 val salePrice = if (form.tilPrice.visibility == View.VISIBLE) form.etPrice.text.asCleanLong() else 0L
                 if (form.tilPrice.visibility == View.VISIBLE && salePrice <= 0) { form.tilPrice.error = "Harus diisi"; ok = false }
 
-                val initStock = if (isService) 0L else (form.etStock.text.toString().toLongOrNull() ?: 0L)
-                val initCost  = if (isService) 0L else form.etInitCost.text.asCleanLong()
+                var initStock = 0L
+                var initCost = 0L
                 if (!isService) {
-                    if (initStock < 0) { form.tilStock.error = "Tidak boleh negatif"; ok = false }
-                    if (initStock > 0 && initCost <= 0) { form.tilInitCost.error = "Harus diisi"; ok = false }
+                    val stockText = form.etStock.text?.toString()?.trim().orEmpty()
+                    val stockVal = stockText.toLongOrNull()
+                    when {
+                        stockText.isEmpty() -> { form.tilStock.error = "Harus diisi"; ok = false }
+                        stockVal == null -> { form.tilStock.error = "Angka tidak valid"; ok = false }
+                        stockVal < 0 -> { form.tilStock.error = "Tidak boleh negatif"; ok = false }
+                        else -> initStock = stockVal
+                    }
+
+                    val costVal = form.etInitCost.text.asCleanLongOrNull()
+                    if (costVal == null) {
+                        form.tilInitCost.error = "Harus diisi"; ok = false
+                    } else {
+                        initCost = costVal
+                        if (initStock > 0 && initCost <= 0) {
+                            form.tilInitCost.error = "Harus lebih besar dari 0"; ok = false
+                        }
+                    }
                 }
 
-                val needPhoto = !isEditing
-                if (needPhoto && selectedImageUri == null) {
-                    form.tvPhotoError.visibility = View.VISIBLE
-                    val errColor = MaterialColors.getColor(form.cardImage, com.google.android.material.R.attr.colorError)
-                    form.cardImage.setStrokeColor(errColor)
-                    form.cardImage.strokeWidth = (2 * resources.displayMetrics.density).toInt()
-                    ok = false
-                }
                 if (!ok) return@setOnClickListener
 
                 val name = form.etName.text.toString().trim()
@@ -2143,7 +2151,14 @@ private class ProductsAdapter(
 
     override fun onBindViewHolder(h: VH, position: Int) {
         val product = getItem(position)
-        h.img.load(product.images.firstOrNull() ?: R.drawable.store)
+        val firstImage = product.images.firstOrNull()
+        if (firstImage.isNullOrBlank()) {
+            h.img.setImageResource(R.drawable.ic_product_placeholder)
+            h.img.alpha = 0.65f
+        } else {
+            h.img.alpha = 1f
+            h.img.load(firstImage)
+        }
         val inStock = product.isService || product.stock > 0
         h.tvBadge.text = if (product.isService) "Jasa" else if (inStock) "Stock Tersedia" else "Stock Habis"
         h.tvBadge.setBackgroundResource(

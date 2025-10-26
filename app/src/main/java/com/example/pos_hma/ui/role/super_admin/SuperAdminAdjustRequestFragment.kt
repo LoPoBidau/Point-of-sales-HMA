@@ -56,7 +56,6 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
         binding.chipStatusGroup.isSingleSelection = false
 
         fun updateChipStates() {
-            binding.chipAll.isChecked = activeChipId == binding.chipAll.id
             binding.chipPending.isChecked = activeChipId == binding.chipPending.id
             binding.chipApproved.isChecked = activeChipId == binding.chipApproved.id
             binding.chipRejected.isChecked = activeChipId == binding.chipRejected.id
@@ -69,32 +68,29 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
             listen()
         }
 
-        binding.chipAll.setOnClickListener {
-            applyStatus(StatusFilter.ALL, binding.chipAll.id)
-        }
         binding.chipPending.setOnClickListener {
             if (activeChipId == binding.chipPending.id) {
-                applyStatus(StatusFilter.ALL, binding.chipAll.id)
+                applyStatus(StatusFilter.ALL, null)
             } else {
                 applyStatus(StatusFilter.PENDING, binding.chipPending.id)
             }
         }
         binding.chipApproved.setOnClickListener {
             if (activeChipId == binding.chipApproved.id) {
-                applyStatus(StatusFilter.ALL, binding.chipAll.id)
+                applyStatus(StatusFilter.ALL, null)
             } else {
                 applyStatus(StatusFilter.APPROVED, binding.chipApproved.id)
             }
         }
         binding.chipRejected.setOnClickListener {
             if (activeChipId == binding.chipRejected.id) {
-                applyStatus(StatusFilter.ALL, binding.chipAll.id)
+                applyStatus(StatusFilter.ALL, null)
             } else {
                 applyStatus(StatusFilter.REJECTED, binding.chipRejected.id)
             }
         }
 
-        applyStatus(StatusFilter.ALL, binding.chipAll.id)
+        applyStatus(StatusFilter.ALL, null)
         binding.swipeRefresh.setOnRefreshListener { refreshOnce() }
     }
 
@@ -276,25 +272,39 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                             val p = trx.get(pRef)
                             if (!p.exists()) throw IllegalStateException("Produk tidak ditemukan")
                             if (!(p.getBoolean("trackStock") ?: true)) throw IllegalStateException("Jasa tidak pakai stok")
+
+                            val batchSnapshots = batches.map { it.reference to trx.get(it.reference) }
+
                             val old = p.getLong("stock") ?: 0L
                             val newStock = old - need
                             if (newStock < 0) throw IllegalStateException("Stok tidak cukup")
-                            trx.update(pRef, mapOf("stock" to newStock, "updatedAt" to now))
+
                             var remainNeed = need
-                            for (d in batches) {
-                                if (remainNeed <= 0) break
-                                val bRef = d.reference
-                                val bs = trx.get(bRef)
-                                val rem = bs.getLong("remainingQty") ?: 0L
-                                if (rem <= 0L) continue
-                                val unit = bs.getLong("unitCost") ?: 0L
+                            batchSnapshots.forEach { (_, snap) ->
+                                if (remainNeed <= 0) return@forEach
+                                val rem = snap.getLong("remainingQty") ?: 0L
+                                if (rem <= 0L) return@forEach
+                                val take = kotlin.math.min(remainNeed, rem)
+                                remainNeed -= take
+                            }
+                            if (remainNeed > 0L) throw IllegalStateException("Batch stok tidak cukup")
+
+                            trx.update(pRef, mapOf("stock" to newStock, "updatedAt" to now))
+
+                            remainNeed = need
+                            batchSnapshots.forEach { (ref, snap) ->
+                                if (remainNeed <= 0) return@forEach
+                                val rem = snap.getLong("remainingQty") ?: 0L
+                                if (rem <= 0L) return@forEach
+                                val unit = snap.getLong("unitCost") ?: 0L
                                 val take = kotlin.math.min(remainNeed, rem)
                                 val remainingAfter = rem - take
                                 val batchUpdates = mutableMapOf<String, Any>("remainingQty" to remainingAfter)
                                 if (remainingAfter <= 0L) {
                                     batchUpdates["state"] = BatchState.CLEARED.name
                                 }
-                                trx.update(bRef, batchUpdates)
+                                trx.update(ref, batchUpdates)
+
                                 val mv = db.collection("inventory_movements").document()
                                 trx.set(mv, mapOf(
                                     "sku" to r.sku, "type" to "ADJUSTMENT",
@@ -303,14 +313,13 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                                 ))
                                 remainNeed -= take
                             }
-                            if (remainNeed != 0L) throw IllegalStateException("Batch stok tidak cukup")
+
                             trx.update(reqRef, mapOf("status" to "APPROVED", "decidedAt" to now))
                             null
                         }.addOnSuccessListener {
                             toast("Disetujui")
                             stockEventVm.emitAdjustmentEvent()
-                        }
-                            .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
+                        }.addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
                     }
                     fetchEnough()
                 }

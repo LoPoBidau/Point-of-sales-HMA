@@ -24,7 +24,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:scaleType="fitCenter"
-                    android:src="@drawable/store"
+                    android:src="@drawable/ic_product_placeholder"
                     android:contentDescription="@null" />
 
                 <ImageButton
@@ -47,7 +47,7 @@
             android:id="@+id/tvPhotoError"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Foto wajib"
+            android:text="Foto opsional"
             android:textColor="?attr/colorError"
             android:visibility="gone"
             android:layout_marginTop="4dp"/>

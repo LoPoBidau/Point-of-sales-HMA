@@ -17,13 +17,6 @@
         <com.google.android.material.chip.Chip
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:id="@+id/chipAll"
-            style="@style/Widget.MaterialComponents.Chip.Choice"
-            android:text="Semua" />
-
-        <com.google.android.material.chip.Chip
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
             android:id="@+id/chipPending"
             style="@style/Widget.MaterialComponents.Chip.Choice"
             android:text="Menunggu" />

@@ -153,7 +153,14 @@ private class CartLinesAdapter(
     ) : RecyclerView.ViewHolder(b.root) {
         fun bind(l: CartLine) {
             val p = l.product
-            b.img.load(p.images.firstOrNull() ?: R.drawable.store)
+            val firstImage = p.images.firstOrNull()
+            if (firstImage.isNullOrBlank()) {
+                b.img.setImageResource(R.drawable.ic_product_placeholder)
+                b.img.alpha = 0.65f
+            } else {
+                b.img.alpha = 1f
+                b.img.load(firstImage)
+            }
             b.tvName.text = p.name
             b.tvUnitPrice.text = "Unit: Rp ${rupiah(p.salePrice)}"
             b.tvQty.text = l.qty.toString()

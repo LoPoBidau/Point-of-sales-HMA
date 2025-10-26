@@ -23,6 +23,7 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.firestore.*
+import kotlin.math.roundToInt
 
 private val ID_LOCALE = java.util.Locale("in","ID")
 private fun rupiah(v: Long) = java.text.NumberFormat.getInstance(ID_LOCALE).format(v)
@@ -405,7 +406,19 @@ private class CashierGoodsRowAdapter(
     ) : RecyclerView.ViewHolder(b.root) {
         fun bind(p: Product) {
             val key = p.sku.ifBlank { p.id }
-            b.img.load(p.images.firstOrNull() ?: R.drawable.store)
+            val firstImage = p.images.firstOrNull()
+            val padding = (8 * b.root.resources.displayMetrics.density).roundToInt()
+            if (firstImage.isNullOrBlank()) {
+                b.img.setImageResource(R.drawable.ic_product_placeholder)
+                b.img.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                b.img.setPadding(padding, padding, padding, padding)
+                b.img.alpha = 0.7f
+            } else {
+                b.img.alpha = 1f
+                b.img.setPadding(0, 0, 0, 0)
+                b.img.scaleType = ImageView.ScaleType.CENTER_CROP
+                b.img.load(firstImage)
+            }
             b.tvName.text = p.name
             b.tvCategory.text = if (p.categoryName.isNotBlank()) "Kategori : ${p.categoryName}" else "Kategori : -"
             b.tvStock.text = "Stok: ${p.stock}"

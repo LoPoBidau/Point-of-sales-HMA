@@ -8,10 +8,11 @@
 
     <ImageView
         android:id="@+id/img"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:scaleType="centerCrop"
-        android:src="@drawable/store"/>
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:adjustViewBounds="true"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_product_placeholder"/>
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="0dp"

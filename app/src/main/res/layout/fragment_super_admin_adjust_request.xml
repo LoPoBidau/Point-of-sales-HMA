@@ -18,14 +18,6 @@
         app:singleLine="true">
 
         <com.google.android.material.chip.Chip
-            android:id="@+id/chipAll"
-            style="@style/Widget.MaterialComponents.Chip.Filter"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Semua"
-            app:checkedIconVisible="true" />
-
-        <com.google.android.material.chip.Chip
             android:id="@+id/chipPending"
             style="@style/Widget.MaterialComponents.Chip.Filter"
             android:layout_width="wrap_content"

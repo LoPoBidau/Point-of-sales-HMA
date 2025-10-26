@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import android.widget.ImageView
 import coil.load
 import com.example.pos_hma.R
 import com.example.pos_hma.data.Product
@@ -23,6 +24,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlin.math.roundToInt
 
 class AdminCashierGoodsFragment : Fragment() {
 
@@ -271,7 +273,19 @@ private class GoodsAdapter(
     ) : RecyclerView.ViewHolder(b.root) {
         fun bind(p: Product) {
             // Image & basic info
-            b.img.load(p.images.firstOrNull() ?: R.drawable.store)
+            val firstImage = p.images.firstOrNull()
+            val padding = (16 * b.root.resources.displayMetrics.density).roundToInt()
+            if (firstImage.isNullOrBlank()) {
+                b.img.setImageResource(R.drawable.ic_product_placeholder)
+                b.img.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                b.img.setPadding(padding, padding, padding, padding)
+                b.img.alpha = 0.7f
+            } else {
+                b.img.alpha = 1f
+                b.img.setPadding(0, 0, 0, 0)
+                b.img.scaleType = ImageView.ScaleType.CENTER_CROP
+                b.img.load(firstImage)
+            }
             b.tvName.text = p.name
             b.tvCategory.text = if (p.categoryName.isNotBlank()) "Kategori : ${p.categoryName}" else "Kategori : -"
             b.tvStock.text = "Stok: ${p.stock}"

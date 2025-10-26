@@ -73,7 +73,6 @@ class SuperAdminReturnRequestFragment : Fragment() {
         b.chipGroupStatus.isSingleSelection = false
 
         fun updateChipStates() {
-            b.chipAll.isChecked = activeChipId == b.chipAll.id
             b.chipPending.isChecked = activeChipId == b.chipPending.id
             b.chipApproved.isChecked = activeChipId == b.chipApproved.id
             b.chipRejected.isChecked = activeChipId == b.chipRejected.id
@@ -87,30 +86,29 @@ class SuperAdminReturnRequestFragment : Fragment() {
             subscribe()
         }
 
-        b.chipAll.setOnClickListener { applyStatus(StatusFilter.ALL, b.chipAll.id) }
         b.chipPending.setOnClickListener {
             if (activeChipId == b.chipPending.id) {
-                applyStatus(StatusFilter.ALL, b.chipAll.id)
+                applyStatus(StatusFilter.ALL, null)
             } else {
                 applyStatus(StatusFilter.PENDING, b.chipPending.id)
             }
         }
         b.chipApproved.setOnClickListener {
             if (activeChipId == b.chipApproved.id) {
-                applyStatus(StatusFilter.ALL, b.chipAll.id)
+                applyStatus(StatusFilter.ALL, null)
             } else {
                 applyStatus(StatusFilter.APPROVED, b.chipApproved.id)
             }
         }
         b.chipRejected.setOnClickListener {
             if (activeChipId == b.chipRejected.id) {
-                applyStatus(StatusFilter.ALL, b.chipAll.id)
+                applyStatus(StatusFilter.ALL, null)
             } else {
                 applyStatus(StatusFilter.REJECTED, b.chipRejected.id)
             }
         }
 
-        applyStatus(StatusFilter.ALL, b.chipAll.id)
+        applyStatus(StatusFilter.ALL, null)
     }
 
     private fun subscribe() {
