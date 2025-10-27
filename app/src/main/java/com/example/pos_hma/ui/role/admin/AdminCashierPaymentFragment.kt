@@ -480,6 +480,31 @@ class AdminCashierPaymentFragment : Fragment() {
         val receiptForScreen = ReceiptFormatter.buildForScreen(payload)
         val receiptForPrinter = ReceiptFormatter.buildForPrinter(payload)
 
+        val nf = NumberFormat.getInstance(ID_LOCALE)
+        val productNames = lines.values.map { line ->
+            line.product.name.trim().ifBlank { line.product.sku.ifBlank { line.product.id } }
+        }.filter { it.isNotBlank() }
+        val summaryLabel = when {
+            productNames.isEmpty() && svcDesc.isNotBlank() -> svcDesc
+            productNames.isEmpty() -> "Transaksi kasir"
+            productNames.size == 1 -> productNames.first()
+            else -> "${productNames.first()} + ${productNames.size - 1} lainnya"
+        }
+        val notificationData = mutableMapOf<String, Any>(
+            "type" to "SALE_SUCCESS",
+            "title" to "Transaksi berhasil",
+            "message" to "$summaryLabel - Total Rp ${nf.format(total)}",
+            "toRole" to "super-admin",
+            "read" to false,
+            "saleDocId" to docId,
+            "saleNo" to noNota,
+            "total" to total,
+            "createdAt" to FieldValue.serverTimestamp()
+        )
+        db.collection("notifications")
+            .document("sa_sale_$docId")
+            .set(notificationData, SetOptions.merge())
+
         cartVm.clear()
         showSuccessThenNavigate(Bundle().apply {
             putString("saleId", noNota)

@@ -68,7 +68,9 @@ class SuperAdminNotificationFragment : Fragment() {
                         message = d.getString("message") ?: "",
                         createdAt = d.getTimestamp("createdAt"),
                         read = d.getBoolean("read") ?: false,
-                        type = d.getString("type")
+                        type = d.getString("type"),
+                        saleDocId = d.getString("saleDocId"),
+                        saleNo = d.getString("saleNo")
                     )
                 }.orEmpty()
                 // Sort: unread first, then newest by createdAt
@@ -99,7 +101,9 @@ class SuperAdminNotificationFragment : Fragment() {
                         message = d.getString("message") ?: "",
                         createdAt = d.getTimestamp("createdAt"),
                         read = d.getBoolean("read") ?: false,
-                        type = d.getString("type")
+                        type = d.getString("type"),
+                        saleDocId = d.getString("saleDocId"),
+                        saleNo = d.getString("saleNo")
                     )
                 }
                 list = list.sortedWith(
@@ -133,8 +137,16 @@ class SuperAdminNotificationFragment : Fragment() {
                 try { findNavController().navigate(R.id.superAdminRequestsFragment, args) } catch (_: Throwable) {}
             }
             "PURCHASE_DUE" -> {
-                // Belum ada layar detail purchase → arahkan ke Report agar Super Admin bisa cek
+                // Belum ada layar detail purchase - arahkan ke Report agar Super Admin bisa cek
                 try { findNavController().navigate(R.id.superAdminReportFragment) } catch (_: Throwable) {}
+            }
+            "SALE_SUCCESS" -> {
+                val fallbackId = n.id.removePrefix("sa_sale_")
+                val saleDocId = n.saleDocId ?: fallbackId.takeIf { it.isNotBlank() }
+                if (!saleDocId.isNullOrBlank()) {
+                    val args = bundleOf(SuperAdminReportFragment.ARG_INITIAL_SALE_DOC_ID to saleDocId)
+                    try { findNavController().navigate(R.id.superAdminReportFragment, args) } catch (_: Throwable) {}
+                }
             }
         }
     }
@@ -146,7 +158,9 @@ data class AppNotif(
     val message: String,
     val createdAt: Timestamp?,
     val read: Boolean,
-    val type: String?
+    val type: String?,
+    val saleDocId: String? = null,
+    val saleNo: String? = null
 )
 
 private class NotifAdapter(

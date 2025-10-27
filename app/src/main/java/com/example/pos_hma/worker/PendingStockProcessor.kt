@@ -214,14 +214,14 @@ object PendingStockProcessor {
                     )
                 }
 
-                // Tandai posted. Jika di-HOLD, langsung set notificationSent=true supaya tidak ada notifikasi "Stock Posted"
                 trx.update(
                     docRef,
                     mapOf(
                         "status" to "posted",
                         "postedAt" to nowField,
                         "processingAt" to FieldValue.delete(),
-                        "notificationSent" to holdNewStock // true jika HOLD; false jika OPEN (akan dinotifikasi di bawah)
+                        "notificationSent" to false,
+                        "held" to holdNewStock
                     )
                 )
 
@@ -232,9 +232,8 @@ object PendingStockProcessor {
             return Outcome.RETRY
         }
 
-        // Jika tidak HOLD, kirim notifikasi "stok otomatis ditambahkan"
-        if (!holdNewStockResult) {
-            val notified = StockNotificationHelper.notifyStockPosted(
+        val notified = if (holdNewStockResult) {
+            StockNotificationHelper.notifyStockHeld(
                 context = context,
                 db = db,
                 docKey = docId,
@@ -242,14 +241,25 @@ object PendingStockProcessor {
                 qty = qty,
                 dueDate = scheduledTs,
                 sku = sku,
-                invoiceNo = invoiceNo.takeIf { it.isNotBlank() } // ← perbaikan: pakai invoiceNo, bukan purchaseId
+                invoiceNo = invoiceNo.takeIf { it.isNotBlank() }
             )
-            if (notified) {
-                try {
-                    docRef.update("notificationSent", true).await()
-                } catch (e: Exception) {
-                    Log.w(TAG, "Gagal menandai notifikasi terkirim ($source)", e)
-                }
+        } else {
+            StockNotificationHelper.notifyStockPosted(
+                context = context,
+                db = db,
+                docKey = docId,
+                productName = productName,
+                qty = qty,
+                dueDate = scheduledTs,
+                sku = sku,
+                invoiceNo = invoiceNo.takeIf { it.isNotBlank() }
+            )
+        }
+        if (notified) {
+            try {
+                docRef.update("notificationSent", true).await()
+            } catch (e: Exception) {
+                Log.w(TAG, "Gagal menandai notifikasi terkirim ($source)", e)
             }
         }
 

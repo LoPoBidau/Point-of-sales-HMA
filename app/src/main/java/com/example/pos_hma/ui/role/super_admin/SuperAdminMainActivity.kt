@@ -58,10 +58,12 @@ class SuperAdminMainActivity : AppCompatActivity() {
     private var regNotif: ListenerRegistration? = null
     private var firstPendingLoad = true
     private var firstReturnLoad = true
+    private var firstNotifLoad = true
     private var updatingBottomNav = false
     private var pendingAdjustCount: Int = 0
     private var pendingReturnCount: Int = 0
     private val CHANNEL_ID = "adjust_req"
+    private val CHANNEL_SALES = "sale_success"
     private var unreadNotifCount: Int = 0
     private var tvNotifBadge: TextView? = null
     private var netCb: android.net.ConnectivityManager.NetworkCallback? = null
@@ -432,6 +434,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
 
     private fun startNotifBadgeListener() {
         regNotif?.remove(); regNotif = null
+        firstNotifLoad = true
         regNotif = db.collection("notifications")
             .whereEqualTo("toRole", "super-admin")
             .whereEqualTo("read", false)
@@ -440,6 +443,16 @@ class SuperAdminMainActivity : AppCompatActivity() {
                 if (e != null) return@addSnapshotListener
                 unreadNotifCount = snap?.size() ?: 0
                 updateNotifBadgeUI()
+                if (snap != null && !firstNotifLoad) {
+                    for (chg in snap.documentChanges) {
+                        if (chg.type == DocumentChange.Type.ADDED) {
+                            when (chg.document.getString("type")) {
+                                "SALE_SUCCESS" -> notifySaleSuccess(chg.document)
+                            }
+                        }
+                    }
+                }
+                firstNotifLoad = false
             }
     }
 
@@ -559,10 +572,53 @@ class SuperAdminMainActivity : AppCompatActivity() {
     private fun createNotificationChannel() {
         if (android.os.Build.VERSION.SDK_INT >= 26) {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val ch = NotificationChannel(CHANNEL_ID, "Permintaan Persetujuan", NotificationManager.IMPORTANCE_HIGH)
-            ch.description = "Notifikasi permintaan penyesuaian stok"
-            ch.enableLights(true); ch.lightColor = Color.RED
-            nm.createNotificationChannel(ch)
+            val requestChannel = NotificationChannel(CHANNEL_ID, "Permintaan Persetujuan", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Notifikasi permintaan penyesuaian stok"
+                enableLights(true)
+                lightColor = Color.RED
+            }
+            nm.createNotificationChannel(requestChannel)
+
+            val salesChannel = NotificationChannel(CHANNEL_SALES, "Transaksi Berhasil", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Notifikasi transaksi kasir yang berhasil"
+            }
+            nm.createNotificationChannel(salesChannel)
+        }
+    }
+
+    private fun notifySaleSuccess(d: DocumentSnapshot) {
+        val saleDocId = d.getString("saleDocId") ?: return
+        val title = d.getString("title") ?: "Transaksi berhasil"
+        val message = d.getString("message") ?: "Transaksi kasir berhasil."
+
+        if (!canPostNotifications()) {
+            maybeRequestPostNotifications(force = true)
+            return
+        }
+
+        val args = Bundle().apply {
+            putString(SuperAdminReportFragment.ARG_INITIAL_SALE_DOC_ID, saleDocId)
+        }
+        val pi = NavDeepLinkBuilder(this)
+            .setGraph(R.navigation.nav_super_admin)
+            .setDestination(R.id.superAdminReportFragment)
+            .setArguments(args)
+            .createPendingIntent()
+
+        val notif = NotificationCompat.Builder(this, CHANNEL_SALES)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pi)
+            .build()
+
+        try {
+            NotificationManagerCompat.from(this).notify(("sale_$saleDocId").hashCode(), notif)
+        } catch (_: SecurityException) {
+            maybeRequestPostNotifications(force = true)
         }
     }
 

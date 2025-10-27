@@ -283,7 +283,7 @@ service cloud.firestore {
           'invoiceNo','supplierName','supplierId',
           'termDays','dueDate','scheduledAt',
           'purchaseId','createdAt','createdBy',
-          'status','notificationSent'
+          'status','notificationSent','held'
         ])
         && request.resource.data.status == 'pending'
         && request.resource.data.qty is int
@@ -297,7 +297,7 @@ service cloud.firestore {
           'invoiceNo','supplierName','supplierId',
           'termDays','dueDate','scheduledAt',
           'purchaseId','createdAt','createdBy',
-          'status','notificationSent','processingAt','postedAt'
+          'status','notificationSent','held','processingAt','postedAt'
         ])
         && request.resource.data.qty is int
         && request.resource.data.qty > 0
@@ -333,9 +333,10 @@ service cloud.firestore {
 
     match /notifications/{id} {
       allow read: if isAdminLike();
-      allow create: if isAdminLike();
+      allow create: if isCashierLike();
       allow update, delete: if isOwnerOrSuper();
     }
   }
 }
+
 

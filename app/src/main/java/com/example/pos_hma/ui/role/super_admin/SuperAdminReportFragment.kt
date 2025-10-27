@@ -54,6 +54,11 @@ import kotlin.math.abs
 
 class SuperAdminReportFragment : Fragment() {
 
+    companion object {
+        const val ARG_INITIAL_SALE_DOC_ID = "initialSaleDocId"
+        private const val STATE_INITIAL_SALE_HANDLED = "state_initial_sale_handled"
+    }
+
     private var _binding: FragmentSuperAdminReportBinding? = null
     private val binding get() = _binding!!
 
@@ -74,6 +79,9 @@ class SuperAdminReportFragment : Fragment() {
             )
         } else emptyArray()
     }
+
+    private var initialSaleDocId: String? = null
+    private var initialSaleHandled: Boolean = false
 
     private enum class PurchaseStatusFilter { ALL, UPCOMING, OVERDUE }
 
@@ -155,6 +163,20 @@ class SuperAdminReportFragment : Fragment() {
     )
 
 
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (savedInstanceState != null) {
+            initialSaleDocId = savedInstanceState.getString(ARG_INITIAL_SALE_DOC_ID)
+            initialSaleHandled = savedInstanceState.getBoolean(
+                STATE_INITIAL_SALE_HANDLED,
+                initialSaleDocId.isNullOrBlank()
+            )
+        } else {
+            initialSaleDocId = arguments?.getString(ARG_INITIAL_SALE_DOC_ID)
+            initialSaleHandled = initialSaleDocId.isNullOrBlank()
+        }
+    }
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
         _binding = FragmentSuperAdminReportBinding.inflate(inflater, container, false)
         return binding.root
@@ -165,6 +187,16 @@ class SuperAdminReportFragment : Fragment() {
         TabLayoutMediator(binding.tabs, binding.pager) { tab, pos ->
             tab.text = tabs[pos]
         }.attach()
+
+        if (!initialSaleHandled && !initialSaleDocId.isNullOrBlank()) {
+            binding.pager.post { binding.pager.currentItem = 0 }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(ARG_INITIAL_SALE_DOC_ID, initialSaleDocId)
+        outState.putBoolean(STATE_INITIAL_SALE_HANDLED, initialSaleHandled)
     }
 
     override fun onDestroyView() {
@@ -576,6 +608,15 @@ class SuperAdminReportFragment : Fragment() {
             }
             holder.b.rvSales.adapter = adapter
 
+            fun maybeShowInitialSale() {
+                if (this@SuperAdminReportFragment.initialSaleHandled) return
+                val target = this@SuperAdminReportFragment.initialSaleDocId
+                if (target.isNullOrBlank()) return
+                this@SuperAdminReportFragment.initialSaleHandled = true
+                this@SuperAdminReportFragment.initialSaleDocId = null
+                fetchAndShow(target)
+            }
+
             fun CharSequence?.normalizeSaleId(): String =
                 this?.filter { it.isLetterOrDigit() }
                     ?.toString()
@@ -658,6 +699,7 @@ class SuperAdminReportFragment : Fragment() {
                     holder.b.tvKeterangan.visibility = View.VISIBLE
                     holder.b.tvKeterangan.text = "$label : ${allSales.size}"
                     applySalesSearch()
+                    maybeShowInitialSale()
                 }
             }
 

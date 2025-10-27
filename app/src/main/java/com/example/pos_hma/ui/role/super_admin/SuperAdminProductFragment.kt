@@ -83,6 +83,32 @@ private fun EditText.attachRupiahFormatter() {
     })
 }
 
+private fun DocumentSnapshot.toProduct(): Product {
+    val rawName = getString("name") ?: id
+    val rawSku = getString("sku") ?: id
+    val lower = getString("nameLowercase")?.takeIf { it.isNotBlank() } ?: rawName.lowercase()
+    val imagesList = (get("images") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+
+    return Product(
+        id = id,
+        sku = rawSku,
+        name = rawName,
+        nameLowercase = lower,
+        categoryId = getString("categoryId") ?: "",
+        categoryName = getString("categoryName") ?: "",
+        type = getString("type") ?: "goods",
+        trackStock = getBoolean("trackStock") ?: true,
+        stock = (get("stock") as? Number)?.toLong() ?: 0L,
+        lastCost = (get("lastCost") as? Number)?.toLong() ?: 0L,
+        salePrice = (get("salePrice") as? Number)?.toLong() ?: 0L,
+        stagedIncomingQty = (get("stagedIncomingQty") as? Number)?.toLong() ?: 0L,
+        images = imagesList,
+        isActive = getBoolean("isActive") ?: true,
+        createdAt = getTimestamp("createdAt"),
+        updatedAt = getTimestamp("updatedAt")
+    )
+}
+
 private enum class PendingQueueType { SCHEDULED, STAGED }
 
 class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
@@ -343,15 +369,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         (AppFlags.isLoggingOut || FirebaseAuth.getInstance().currentUser == null)) return@addSnapshotListener
                     toast("Gagal: ${e.message}"); return@addSnapshotListener
                 }
-                val items = snap!!.documents.map { d ->
-                    val p = d.toObject(Product::class.java)
-                    val base = p?.copy(id = d.id) ?: Product(
-                        id = d.id,
-                        sku = d.getString("sku") ?: d.id,
-                        name = d.getString("name") ?: d.id
-                    )
-                    if (base.nameLowercase.isBlank()) base.copy(nameLowercase = base.name.lowercase()) else base
-                }
+                val items = snap!!.documents.map { it.toProduct() }
                 allProducts.clear(); allProducts.addAll(items)
                 applyFilter()
             }
@@ -361,7 +379,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         db.collection("products").orderBy("nameLowercase").get()
             .addOnSuccessListener { qs ->
                 allProducts.clear()
-                allProducts.addAll(qs.documents.map { d -> d.toObject(Product::class.java)!!.copy(id = d.id) })
+                allProducts.addAll(qs.documents.map { it.toProduct() })
                 applyFilter()
             }
             .addOnFailureListener { e -> toast("Refresh gagal: ${e.message}") }
@@ -487,9 +505,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 form.etPrice.isEnabled = true
                 if (p.salePrice > 0) form.etPrice.setText(rupiah(p.salePrice)) else form.etPrice.setText("")
             } else {
-                form.tilPrice.visibility = View.GONE
-                form.etPrice.isEnabled = false
-                form.etPrice.setText("")
+                form.tilPrice.visibility = View.VISIBLE
+                form.tilPrice.hint = "Harga jual (Rp)"
+                form.etPrice.isEnabled = true
+                if (p.salePrice > 0) form.etPrice.setText(rupiah(p.salePrice)) else form.etPrice.setText("")
             }
 
             if (p.images.firstOrNull().isNullOrBlank()) {
@@ -518,8 +537,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 form.swService.visibility = View.GONE
                 form.tilStock.visibility = View.VISIBLE
                 form.tilInitCost.visibility = View.VISIBLE
-                form.tilPrice.visibility = View.GONE
-                form.etPrice.isEnabled = false
+                form.tilPrice.visibility = View.VISIBLE
+                form.tilPrice.hint = "Harga jual (Rp)"
+                form.etPrice.isEnabled = true
                 form.etPrice.setText("")
             }
         }
@@ -560,8 +580,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     form.tilPrice.hint = "Harga jasa (Rp)"
                     form.etPrice.isEnabled = true
                 } else {
-                    form.tilPrice.visibility = View.GONE
-                    form.etPrice.isEnabled = false
+                    form.tilPrice.visibility = View.VISIBLE
+                    form.tilPrice.hint = "Harga jual (Rp)"
+                    form.etPrice.isEnabled = true
                     form.etPrice.setText("")
                     form.tilPrice.error = null
                 }
