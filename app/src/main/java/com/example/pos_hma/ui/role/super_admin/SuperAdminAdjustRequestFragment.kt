@@ -252,18 +252,21 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                 } else {
                     // SUB: prefetch ascending until cukup
                     val need = -r.requestedDelta
-                    fun fetchEnough(acc: MutableList<DocumentSnapshot> = mutableListOf(), startAfter: DocumentSnapshot? = null) {
-                        var q = db.collection("stock_batches")
+                    fun fetchEnough() {
+                        db.collection("stock_batches")
                             .whereEqualTo("sku", r.sku)
-                            .orderBy("receivedAt", Query.Direction.ASCENDING)
-                            .limit(50)
-                        if (startAfter != null) q = q.startAfter(startAfter)
-                        q.get().addOnSuccessListener { snap ->
-                            val docs = snap.documents
-                            acc.addAll(docs)
-                            val total = acc.sumOf { it.getLong("remainingQty") ?: 0L }
-                            if (total < need && docs.isNotEmpty()) fetchEnough(acc, docs.last()) else consume(acc)
-                        }.addOnFailureListener { e -> toast(e.message ?: "Gagal memuat batch") }
+                            .get()
+                            .addOnSuccessListener { snap ->
+                                val docs = snap.documents
+                                    .sortedBy { it.getTimestamp("receivedAt")?.toDate()?.time ?: Long.MAX_VALUE }
+                                val total = docs.sumOf { it.getLong("remainingQty") ?: 0L }
+                                if (total < need) {
+                                    toast("Batch stok tidak cukup")
+                                } else {
+                                    consume(docs as MutableList<DocumentSnapshot>)
+                                }
+                            }
+                            .addOnFailureListener { e -> toast(e.message ?: "Gagal memuat batch") }
                     }
                     fun consume(batches: List<DocumentSnapshot>) {
                         val avail = batches.sumOf { it.getLong("remainingQty") ?: 0L }

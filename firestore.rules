@@ -95,13 +95,15 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).changedKeys().hasOnly([
           'remainingQty','unitCost','receivedAt','activatedAt','updatedAt',
           'purchaseId','invoiceNo','supplierName','supplierId',
-          'dueDate','termDays','state','salePrice','returnRequestId','source'
+          'dueDate','termDays','state','salePrice','returnRequestId','source',
+          'productName'
         ])
         && request.resource.data.remainingQty is int
         && request.resource.data.remainingQty >= 0
         && (!('salePrice' in request.resource.data) || (request.resource.data.salePrice is int && request.resource.data.salePrice >= 0))
         && (!('state' in request.resource.data) || request.resource.data.state in ['HOLD','OPEN','CLEARED'])
         && (!('updatedAt' in request.resource.data) || request.resource.data.updatedAt is timestamp)
+        && (!('productName' in request.resource.data) || request.resource.data.productName is string)
         && (!('returnRequestId' in request.resource.data) || request.resource.data.returnRequestId is string)
         && (!('source' in request.resource.data) || request.resource.data.source is string);
       allow delete: if isOwnerOrSuper();
@@ -330,6 +332,7 @@ service cloud.firestore {
         && request.resource.data.status == 'PENDING';
       allow update, delete: if isOwnerOrSuper();
     }
+
 
     match /notifications/{id} {
       allow read: if isAdminLike();

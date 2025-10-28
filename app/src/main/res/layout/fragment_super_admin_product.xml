@@ -90,4 +90,21 @@
         app:layout_anchorGravity="bottom|end"
         app:srcCompat="@android:drawable/ic_input_add"
         app:tint="@android:color/white"/>
+
+    <FrameLayout
+        android:id="@+id/saveOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#80000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:visibility="gone">
+
+        <com.google.android.material.progressindicator.CircularProgressIndicator
+            android:id="@+id/progressSaving"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="center"
+            android:indeterminate="true"/>
+    </FrameLayout>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
