@@ -204,8 +204,12 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         }
         setupUi()
         loadCurrentRole()
-        listenProducts()
         listenCategoriesForUi()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        listenProducts()
     }
 
     override fun onStop() { super.onStop(); disposeSnapshots() }
@@ -356,20 +360,24 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
     // ===== realtime products =====
     private fun listenProducts() {
+        val b = _binding ?: return
+        b.swipeRefresh.isRefreshing = true
         disposeSnapshots()
         productsReg = db.collection("products")
             .orderBy("nameLowercase")
             .addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
-                if (_binding == null) return@addSnapshotListener
+                val binding = _binding ?: return@addSnapshotListener
                 if (e != null) {
                     if (e is FirebaseFirestoreException &&
                         e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED &&
                         (AppFlags.isLoggingOut || FirebaseAuth.getInstance().currentUser == null)) return@addSnapshotListener
+                    binding.swipeRefresh.isRefreshing = false
                     toast("Gagal: ${e.message}"); return@addSnapshotListener
                 }
                 val items = snap!!.documents.map { it.toProduct() }
                 allProducts.clear(); allProducts.addAll(items)
                 applyFilter()
+                binding.swipeRefresh.isRefreshing = false
             }
     }
 
@@ -731,14 +739,13 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
                 if (!ok) return@setOnClickListener
 
-                setSavingState(true, btn)
-
                 val name = form.etName.text.toString().trim()
                 val cat = selectedFormCategory
                 val catId = cat?.id.orEmpty()
                 val catName = cat?.name.orEmpty()
 
                 if (!isEditing) {
+                    setSavingState(true, btn)
                     val sku = normalizeSku(form.etSKU.text.toString())
                     val pRef = db.collection("products").document(sku)
                     db.runTransaction { trx ->
@@ -819,6 +826,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         } else toast("Gagal simpan: ${e.message}")
                     }
                 } else {
+                    setSavingState(true, btn)
                     val docId = p!!.sku.ifBlank { p.id }
                     val docRef = db.collection("products").document(docId)
                     val updates = mutableMapOf<String, Any>(
@@ -1658,36 +1666,6 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         currentDialog?.dismiss(); currentDialog = receiveDlg
         receiveDlg.setOnDismissListener { currentDialog = null }
 
-        fun promptPriceDialog(force: Boolean, onOk: (Long, Long) -> Unit) {
-            val priceBinding = DialogUpdatePricesBinding.inflate(layoutInflater)
-            if (p.lastCost > 0) priceBinding.etUnitCost.setText(rupiah(p.lastCost))
-            if (p.salePrice > 0) priceBinding.etNewSalePrice.setText(rupiah(p.salePrice))
-            priceBinding.etUnitCost.attachRupiahFormatter()
-            priceBinding.etNewSalePrice.attachRupiahFormatter()
-            val title = if (force) "Isi harga ${p.name}" else "Ubah harga ${p.name}"
-            val priceDlg = MaterialAlertDialogBuilder(requireContext())
-                .setTitle(title)
-                .setView(priceBinding.root)
-                .setNegativeButton("Batal", null)
-                .setPositiveButton("Simpan", null)
-                .create()
-            showDialogOnce(priceDlg)
-            priceDlg.setOnShowListener {
-                val save = priceDlg.getButton(AlertDialog.BUTTON_POSITIVE)
-                save.setOnClickListener {
-                    priceBinding.tilUnitCost.error = null; priceBinding.tilNewSalePrice.error = null
-                    val unitCost = priceBinding.etUnitCost.text.asCleanLongOrNull() ?: 0L
-                    val salePrice = priceBinding.etNewSalePrice.text.asCleanLongOrNull() ?: 0L
-                    var ok = true
-                    if (unitCost <= 0) { priceBinding.tilUnitCost.error = "Wajib"; ok = false }
-                    if (salePrice <= 0) { priceBinding.tilNewSalePrice.error = "Wajib"; ok = false }
-                    if (!ok) return@setOnClickListener
-                    priceDlg.dismiss()
-                    onOk(unitCost, salePrice)
-                }
-            }
-        }
-
         receiveDlg.setOnShowListener {
             val save = receiveDlg.getButton(AlertDialog.BUTTON_POSITIVE)
             save.setOnClickListener {
@@ -1698,24 +1676,23 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 }
 
                 if (receiveBinding.rbActual.isChecked) {
-                    receiveDlg.dismiss()
-                    val baseCost = p.lastCost.takeIf { it > 0 } ?: 0L
-                    val baseSale = p.salePrice.takeIf { it > 0 } ?: 0L
-                    if (baseCost <= 0 || baseSale <= 0) {
-                        promptPriceDialog(force = true) { unitCost, sale ->
-                            addActualStock(p, qty, unitCost, sale, anchorView)
-                        }
-                    } else {
-                        MaterialAlertDialogBuilder(requireContext())
-                            .setMessage("Update harga beli & harga jual sekalian?")
-                            .setNegativeButton("Tidak") { _, _ -> addActualStock(p, qty, baseCost, baseSale, anchorView) }
-                            .setPositiveButton("Ya") { _, _ ->
-                                promptPriceDialog(force = false) { unitCost, sale ->
-                                    addActualStock(p, qty, unitCost, sale, anchorView)
-                                }
-                            }
-                            .show()
+                    val unitCost = p.lastCost.takeIf { it > 0 } ?: 0L
+                    val salePrice = p.salePrice.takeIf { it > 0 } ?: unitCost
+                    val msg = buildString {
+                        append("Tambah stok aktual?\n\n")
+                        append("Qty: $qty\n")
+                        append("Harga modal saat ini: ${if (unitCost > 0) "Rp ${rupiah(unitCost)}" else "-"}\n")
+                        append("Harga jual saat ini: ${if (salePrice > 0) "Rp ${rupiah(salePrice)}" else "-"}")
                     }
+                    MaterialAlertDialogBuilder(requireContext())
+                        .setTitle("Konfirmasi")
+                        .setMessage(msg)
+                        .setNegativeButton("Batal", null)
+                        .setPositiveButton("Ya, Simpan") { _, _ ->
+                            receiveDlg.dismiss()
+                            addActualStock(p, qty, unitCost, salePrice, anchorView)
+                        }
+                        .show()
                     return@setOnClickListener
                 }
 
@@ -1790,20 +1767,35 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     if (current > 0) current else unitCost
                 }
 
-                receiveDlg.dismiss()
-                val dueTs = com.google.firebase.Timestamp(dueDate)
-                receiveStockAndUpdatePrice(
-                    sku = p.sku.ifBlank { p.id },
-                    productName = p.name,
-                    qty = qty,
-                    unitCost = unitCost,
-                    newSalePrice = salePrice,
-                    dueDate = dueTs,
-                    supplierName = chosenSupplier.name,
-                    supplierId = chosenSupplier.id,
-                    supplierTermDays = chosenSupplier.term,
-                    anchorView = anchorView
-                )
+                val confirmMsg = buildString {
+                    append("Terima stok via invoice?\n\n")
+                    append("Qty: $qty\n")
+                    append("Harga modal: Rp ${rupiah(unitCost)}\n")
+                    append("Harga jual: Rp ${rupiah(salePrice)}\n")
+                    append("Supplier: ${chosenSupplier.name}\n")
+                    append("Jatuh tempo: ${dfDate.format(dueDate)} ${dfTime.format(dueDate)}")
+                }
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Konfirmasi")
+                    .setMessage(confirmMsg)
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Ya, Simpan") { _, _ ->
+                        receiveDlg.dismiss()
+                        val dueTs = com.google.firebase.Timestamp(dueDate)
+                        receiveStockAndUpdatePrice(
+                            sku = p.sku.ifBlank { p.id },
+                            productName = p.name,
+                            qty = qty,
+                            unitCost = unitCost,
+                            newSalePrice = salePrice,
+                            dueDate = dueTs,
+                            supplierName = chosenSupplier.name,
+                            supplierId = chosenSupplier.id,
+                            supplierTermDays = chosenSupplier.term,
+                            anchorView = anchorView
+                        )
+                    }
+                    .show()
             }
         }
 

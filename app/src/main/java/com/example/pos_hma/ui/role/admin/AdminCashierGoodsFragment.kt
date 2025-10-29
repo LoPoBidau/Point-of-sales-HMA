@@ -302,6 +302,7 @@ private class GoodsAdapter(
 
             // Hide pending button in cashier view
             b.btnPending.visibility = View.GONE
+            b.btnStockOpname.visibility = View.GONE
             val params = b.btnAdd.layoutParams as androidx.constraintlayout.widget.ConstraintLayout.LayoutParams
             params.startToStart = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID
             params.endToEnd = androidx.constraintlayout.widget.ConstraintLayout.LayoutParams.PARENT_ID

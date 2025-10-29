@@ -120,6 +120,7 @@ service cloud.firestore {
             || request.resource.data.type == 'PURCHASE'
             || request.resource.data.type == 'ADJUSTMENT'
             || request.resource.data.type == 'ACTUAL_STOCK'
+            || request.resource.data.type == 'ADJUST'
             || request.resource.data.type == 'RETURN')
         && (!('batchId' in request.resource.data) || request.resource.data.batchId is string)
         && (!('saleId' in request.resource.data) || request.resource.data.saleId is string)
