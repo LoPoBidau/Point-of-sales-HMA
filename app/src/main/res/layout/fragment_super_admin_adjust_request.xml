@@ -19,27 +19,27 @@
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chipPending"
-            style="@style/Widget.MaterialComponents.Chip.Filter"
+            style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Menunggu"
-            app:checkedIconVisible="true" />
+            app:checkedIconVisible="false" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chipRejected"
-            style="@style/Widget.MaterialComponents.Chip.Filter"
+            style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Ditolak"
-            app:checkedIconVisible="true" />
+            app:checkedIconVisible="false" />
 
         <com.google.android.material.chip.Chip
             android:id="@+id/chipApproved"
-            style="@style/Widget.MaterialComponents.Chip.Filter"
+            style="@style/Widget.MaterialComponents.Chip.Choice"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Disetujui"
-            app:checkedIconVisible="true" />
+            app:checkedIconVisible="false" />
     </com.google.android.material.chip.ChipGroup>
 
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
