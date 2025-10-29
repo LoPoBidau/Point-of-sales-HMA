@@ -80,9 +80,6 @@ class SuperAdminMainActivity : AppCompatActivity() {
         binding = ActivitySuperAdminMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         val baseToolbarPadding = binding.toolbar.paddingTop
-        val baseBottomPadding = binding.bottomNav.paddingBottom
-        val baseContentPadding = binding.navHostOwner.paddingBottom
-
         ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
             view.updatePadding(top = baseToolbarPadding + systemBars.top)
@@ -90,12 +87,12 @@ class SuperAdminMainActivity : AppCompatActivity() {
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(bottom = baseBottomPadding + systemBars.bottom)
+            view.updatePadding(bottom = systemBars.bottom)
             insets
         }
+        val baseContentPadding = binding.navHostOwner.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(binding.navHostOwner) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(bottom = baseContentPadding + systemBars.bottom)
+            view.updatePadding(bottom = baseContentPadding)
             insets
         }
         ViewCompat.requestApplyInsets(binding.root)

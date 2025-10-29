@@ -43,7 +43,16 @@ class AdminCashierMainActivity : AppCompatActivity() {
 
         val baseToolbarPadding = binding.toolbar.paddingTop
         val baseBottomPadding = binding.bottomNav.paddingBottom
-        val baseContentPadding = binding.navHostCashier.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(top = baseToolbarPadding + systemBars.top)
+            insets
+        }
+        ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { view, insets ->
+            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.updatePadding(bottom = systemBars.bottom)
+            insets
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(binding.toolbar) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -52,12 +61,12 @@ class AdminCashierMainActivity : AppCompatActivity() {
         }
         ViewCompat.setOnApplyWindowInsetsListener(binding.bottomNav) { view, insets ->
             val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(bottom = baseBottomPadding + systemBars.bottom)
+            view.updatePadding(bottom = systemBars.bottom)
             insets
         }
+        val baseContentPadding = binding.navHostCashier.paddingBottom
         ViewCompat.setOnApplyWindowInsetsListener(binding.navHostCashier) { view, insets ->
-            val systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            view.updatePadding(bottom = baseContentPadding + systemBars.bottom)
+            view.updatePadding(bottom = baseContentPadding)
             insets
         }
         ViewCompat.requestApplyInsets(binding.root)
