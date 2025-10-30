@@ -16,6 +16,7 @@ import com.example.pos_hma.R
 import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.FragmentAdminCashierGoodsBinding
 import com.example.pos_hma.databinding.ItemProductSuperAdminBinding
+import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -26,7 +27,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlin.math.roundToInt
 
-class AdminCashierGoodsFragment : Fragment() {
+class AdminCashierGoodsFragment : Fragment(), SnapshotDisposable {
 
     private var _b: FragmentAdminCashierGoodsBinding? = null
     private val b get() = _b!!
@@ -37,6 +38,10 @@ class AdminCashierGoodsFragment : Fragment() {
     private val adapter = GoodsAdapter { p -> onGoodsClicked(p) }
     private val filterCategories = linkedSetOf<String>()
     private var availableCategories: List<String> = emptyList()
+
+    private companion object {
+        private const val MAX_PRODUCTS = 200L
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, s: Bundle?): View {
         _b = FragmentAdminCashierGoodsBinding.inflate(inflater, container, false)
@@ -57,15 +62,21 @@ class AdminCashierGoodsFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        reg?.remove(); reg = null
+        disposeSnapshots()
         _b = null
         super.onDestroyView()
+    }
+
+    override fun disposeSnapshots() {
+        reg?.remove()
+        reg = null
     }
 
     private fun listen() {
         reg?.remove(); reg = null
         reg = db.collection("products")
             .orderBy("nameLowercase")
+            .limit(MAX_PRODUCTS)
             .addSnapshotListener { snap, e ->
                 if (e != null) { Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show(); return@addSnapshotListener }
                 val items = snap!!.documents.mapNotNull { d ->

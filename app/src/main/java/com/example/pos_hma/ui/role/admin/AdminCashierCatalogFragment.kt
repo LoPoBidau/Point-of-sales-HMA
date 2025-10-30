@@ -2,8 +2,10 @@ package com.example.pos_hma.ui.role.admin
 
 import android.os.Bundle
 import android.text.Editable
+import android.text.InputType
 import android.text.TextWatcher
 import android.view.*
+import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -19,6 +21,7 @@ import com.example.pos_hma.R
 import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.FragmentAdminCashierCatalogBinding
 import com.example.pos_hma.databinding.ItemProductCatalogGoodsBinding
+import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -27,8 +30,10 @@ import kotlin.math.roundToInt
 
 private val ID_LOCALE = java.util.Locale("in","ID")
 private fun rupiah(v: Long) = java.text.NumberFormat.getInstance(ID_LOCALE).format(v)
+private const val MAX_PRODUCTS = 200L
+private enum class StockFilter { ALL, IN_STOCK, OUT_OF_STOCK }
 
-class AdminCashierCatalogFragment : Fragment() {
+class AdminCashierCatalogFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentAdminCashierCatalogBinding? = null
     private val binding get() = _binding!!
@@ -44,6 +49,7 @@ class AdminCashierCatalogFragment : Fragment() {
     // Filter state
     private val filterCategories = linkedSetOf<String>()
     private var availableCategories: List<String> = emptyList()
+    private var stockFilter: StockFilter = StockFilter.ALL
 
     // App bar cart action view + badge (untuk animasi)
     private var cartActionView: View? = null
@@ -77,6 +83,26 @@ class AdminCashierCatalogFragment : Fragment() {
 
         // Open filter dialog from filter icon
         binding.tilSearch.setStartIconOnClickListener { showFilterDialog() }
+
+        val stockOptions = listOf("Semua", "Stok tersedia", "Stok habis")
+        val stockAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, stockOptions)
+        binding.actStock.apply {
+            inputType = InputType.TYPE_NULL
+            keyListener = null
+            isCursorVisible = false
+            setAdapter(stockAdapter)
+            setText(stockOptions.first(), false)
+            setOnClickListener { showDropDown() }
+            setOnItemClickListener { _, _, pos, _ ->
+                stockFilter = when (pos) {
+                    1 -> StockFilter.IN_STOCK
+                    2 -> StockFilter.OUT_OF_STOCK
+                    else -> StockFilter.ALL
+                }
+                applyFilter()
+            }
+        }
+        binding.tilStock.setEndIconOnClickListener { binding.actStock.showDropDown() }
 
         attachProductsListener()
 
@@ -116,9 +142,14 @@ class AdminCashierCatalogFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        reg?.remove(); reg = null
+        disposeSnapshots()
         _binding = null
         super.onDestroyView()
+    }
+
+    override fun disposeSnapshots() {
+        reg?.remove()
+        reg = null
     }
 
     override fun onCreateOptionsMenu(menu: Menu, inflater: MenuInflater) {
@@ -155,6 +186,7 @@ class AdminCashierCatalogFragment : Fragment() {
         reg?.remove(); reg = null
         reg = db.collection("products")
             .orderBy("nameLowercase")
+            .limit(MAX_PRODUCTS)
             .addSnapshotListener { snap, e ->
                 if (e != null) {
                     Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show()
@@ -204,14 +236,28 @@ class AdminCashierCatalogFragment : Fragment() {
         fun nameOk(p: Product) = q.isEmpty() || p.nameLowercase.contains(q)
         fun catOk(p: Product) = filterCategories.isEmpty() || filterCategories.contains(p.categoryName)
 
+        fun stockOk(p: Product): Boolean = when (stockFilter) {
+            StockFilter.ALL -> true
+            StockFilter.IN_STOCK -> {
+                if (!p.trackStock) true else p.stock > 0L
+            }
+            StockFilter.OUT_OF_STOCK -> p.trackStock && p.stock <= 0L
+        }
+
         val goods = all
-            .filter { !it.isService && nameOk(it) && catOk(it) }
+            .filter { !it.isService && nameOk(it) && catOk(it) && stockOk(it) }
             .sortedWith(compareBy<Product> { p ->
                 val trackable = p.trackStock && !p.isService
                 if (trackable && p.stock <= 0L) 1 else 0
             }.thenBy { it.nameLowercase })
         goodsAdapter.submit(goods)
         binding.tvSectionGoods.isVisible = goods.isNotEmpty()
+        binding.tilSearch.helperText = if (filterCategories.isEmpty()) null else "${filterCategories.size} kategori dipilih"
+        binding.tilStock.helperText = when (stockFilter) {
+            StockFilter.ALL -> null
+            StockFilter.IN_STOCK -> "Menampilkan stok tersedia"
+            StockFilter.OUT_OF_STOCK -> "Menampilkan stok habis"
+        }
     }
 
     private fun updateCartBarState() {

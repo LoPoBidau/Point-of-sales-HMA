@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator
 import com.example.pos_hma.databinding.ActivityLoginBinding
 import com.example.pos_hma.ui.role.admin.AdminCashierMainActivity
 import com.example.pos_hma.ui.role.super_admin.SuperAdminMainActivity
@@ -112,9 +113,64 @@ class LoginActivity : AppCompatActivity() {
         finish()
     }
 
-    private fun setLoading(b: Boolean) {
-        binding.progress.visibility = if (b) View.VISIBLE else View.GONE
-        binding.btnLogin.isEnabled = !b
+    private fun setLoading(show: Boolean) {
+        if (show) {
+            binding.loadingOverlay.apply {
+                if (visibility != View.VISIBLE) {
+                    alpha = 0f
+                    visibility = View.VISIBLE
+                    bringToFront()
+                }
+                animate().cancel()
+                animate()
+                    .alpha(1f)
+                    .setDuration(200L)
+                    .setListener(null)
+                    .start()
+            }
+            binding.loadingContainer.apply {
+                animate().cancel()
+                scaleX = 0.9f
+                scaleY = 0.9f
+                alpha = 0f
+                animate()
+                    .alpha(1f)
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(220L)
+                    .setInterpolator(FastOutSlowInInterpolator())
+                    .start()
+            }
+        } else {
+            binding.loadingContainer.animate().cancel()
+            binding.loadingOverlay.animate().cancel()
+            binding.loadingContainer.animate()
+                .alpha(0f)
+                .scaleX(0.9f)
+                .scaleY(0.9f)
+                .setDuration(180L)
+                .setInterpolator(FastOutSlowInInterpolator())
+                .withEndAction {
+                    binding.loadingContainer.alpha = 1f
+                    binding.loadingContainer.scaleX = 1f
+                    binding.loadingContainer.scaleY = 1f
+                }
+                .start()
+            binding.loadingOverlay.animate()
+                .alpha(0f)
+                .setDuration(200L)
+                .withEndAction {
+                    binding.loadingOverlay.visibility = View.GONE
+                    binding.loadingOverlay.alpha = 1f
+                }
+                .start()
+        }
+
+        binding.btnLogin.isEnabled = !show
+        binding.tilEmail.isEnabled = !show
+        binding.tilPassword.isEnabled = !show
+        binding.etEmail.isEnabled = !show
+        binding.etPassword.isEnabled = !show
     }
 
     private fun setLoginOnlineUi(online: Boolean) {

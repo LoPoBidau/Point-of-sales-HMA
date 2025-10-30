@@ -15,6 +15,9 @@ import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentSuperAdminDashboardBinding
 import com.example.pos_hma.ui.login.LoginActivity
 import com.github.mikephil.charting.components.XAxis
+import com.github.mikephil.charting.data.BarData
+import com.github.mikephil.charting.data.BarDataSet
+import com.github.mikephil.charting.data.BarEntry
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
@@ -29,6 +32,7 @@ import com.google.android.material.color.MaterialColors
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 import com.example.pos_hma.data.SaleStatus
 import com.google.firebase.firestore.Query
 import java.text.NumberFormat
@@ -50,6 +54,7 @@ class SuperAdminDashboardFragment : Fragment() {
     private val dateFormatUpdated by lazy { SimpleDateFormat("dd MMM yyyy HH:mm", localeId) }
     private val dateFormatDay by lazy { SimpleDateFormat("EEEE, dd MMM yyyy", localeId) }
     private var loadToken: Int = 0
+    private var salesListener: ListenerRegistration? = null
 
     private enum class TimeRange(val days: Int, val chipId: Int, val label: String) {
         TODAY(1, R.id.chipRangeToday, "Hari Ini"),
@@ -110,6 +115,7 @@ class SuperAdminDashboardFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        salesListener?.remove(); salesListener = null
         _binding = null
         super.onDestroyView()
     }
@@ -131,8 +137,10 @@ class SuperAdminDashboardFragment : Fragment() {
         val token = ++loadToken
         val b = _binding ?: return
 
+        salesListener?.remove(); salesListener = null
         showSummaryLoading(range)
         showTrendLoading(range)
+        showCompositionLoading(range)
         showTopProductsLoading(range)
         if (range == TimeRange.TODAY) {
             showTodaySummaryLoading()
@@ -141,22 +149,37 @@ class SuperAdminDashboardFragment : Fragment() {
         }
 
         val (start, endExclusive) = computeRange(range)
-        db.collection("sales")
+        salesListener = db.collection("sales")
             .whereGreaterThanOrEqualTo("createdAt", start)
             .whereLessThan("createdAt", endExclusive)
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(500)
-            .get()
-            .addOnSuccessListener { snap ->
-                if (token != loadToken) return@addOnSuccessListener
-                val analytics = aggregateAnalytics(snap.documents, start, endExclusive)
+            .addSnapshotListener { snap, error ->
+                if (token != loadToken) return@addSnapshotListener
+                if (error != null) {
+                    val message = error.localizedMessage ?: "Gagal memuat data penjualan."
+                    showSummaryStatus(message)
+                    showTrendStatus(message)
+                    showCompositionStatus(message)
+                    showTopProductsStatus(message)
+                    if (range == TimeRange.TODAY) {
+                        showTodaySummaryStatus(message)
+                    } else {
+                        b.cardTodaySummary.isVisible = false
+                    }
+                    return@addSnapshotListener
+                }
+                val docs = snap?.documents ?: emptyList()
+                val analytics = aggregateAnalytics(docs, start, endExclusive)
                 if (analytics.transactionCount == 0) {
                     showSummaryStatus("Belum ada transaksi pada periode ini.")
                     showTrendStatus("Belum ada data pendapatan untuk periode ini.")
+                    showCompositionStatus("Belum ada data perbandingan pendapatan pada periode ini.")
                     showTopProductsStatus("Belum ada penjualan barang pada periode ini.")
                 } else {
                     renderSummary(range, analytics)
                     renderTrend(range, analytics)
+                    renderComposition(range, analytics)
                     renderTopProducts(analytics)
                 }
                 if (range == TimeRange.TODAY) {
@@ -165,18 +188,6 @@ class SuperAdminDashboardFragment : Fragment() {
                     } else {
                         renderTodaySummary(analytics)
                     }
-                } else {
-                    b.cardTodaySummary.isVisible = false
-                }
-            }
-            .addOnFailureListener { e ->
-                if (token != loadToken) return@addOnFailureListener
-                val message = e.localizedMessage ?: "Gagal memuat data penjualan."
-                showSummaryStatus(message)
-                showTrendStatus(message)
-                showTopProductsStatus(message)
-                if (range == TimeRange.TODAY) {
-                    showTodaySummaryStatus(message)
                 } else {
                     b.cardTodaySummary.isVisible = false
                 }
@@ -234,7 +245,8 @@ class SuperAdminDashboardFragment : Fragment() {
         b.containerTodaySummary.isVisible = false
         b.tvTodaySummaryStatus.isVisible = true
         b.tvTodaySummaryStatus.text = message
-        b.tvTodaySummarySubtitle.text = dateFormatDay.format(Date())
+        val todayLabel = dateFormatDay.format(Date())
+        b.tvTodaySummarySubtitle.text = "Periode: $todayLabel"
     }
 
     private fun renderTodaySummary(analytics: DashboardAnalytics) {
@@ -245,11 +257,11 @@ class SuperAdminDashboardFragment : Fragment() {
         b.containerTodaySummary.isVisible = true
         val todayLabel = dateFormatDay.format(Date())
         b.tvTodaySummarySubtitle.text = "Periode: $todayLabel"
-        b.tvTodayGross.text = "Omzet barang: ${formatCurrency(analytics.todayGoodsRevenue)}"
-        b.tvTodayTransactions.text = "Transaksi: ${numberFormat.format(analytics.todayTransactions)}"
-        b.tvTodayService.text = "Pendapatan jasa: ${formatCurrency(analytics.todayServiceRevenue)}"
-        b.tvTodayNet.text = "Laba bersih: ${formatCurrency(analytics.todayNetProfit)}"
-        b.tvTodayGoods.text = "Barang terjual: ${numberFormat.format(analytics.todayGoodsQuantity)}"
+        b.tvTodayGross.text = formatCurrency(analytics.todayGoodsRevenue)
+        b.tvTodayTransactions.text = numberFormat.format(analytics.todayTransactions)
+        b.tvTodayService.text = formatCurrency(analytics.todayServiceRevenue)
+        b.tvTodayNet.text = formatCurrency(analytics.todayNetProfit)
+        b.tvTodayGoods.text = numberFormat.format(analytics.todayGoodsQuantity)
     }
 
     private fun renderSummary(range: TimeRange, analytics: DashboardAnalytics) {
@@ -377,6 +389,103 @@ class SuperAdminDashboardFragment : Fragment() {
         b.tvRevenueTrendStatus.isVisible = false
         chart.isVisible = true
         b.tvRevenueTrendSubtitle.text = "Pergerakan omzet & jasa (${range.label})"
+    }
+
+    private fun showCompositionLoading(range: TimeRange) {
+        val b = _binding ?: return
+        b.tvRevenueCompositionSubtitle.text = "Perbandingan omzet & laba (${range.label})"
+        b.progressRevenueComposition.isVisible = true
+        b.tvRevenueCompositionStatus.isVisible = false
+        b.chartRevenueComposition.isVisible = false
+    }
+
+    private fun showCompositionStatus(message: String) {
+        val b = _binding ?: return
+        b.progressRevenueComposition.isVisible = false
+        b.chartRevenueComposition.clear()
+        b.chartRevenueComposition.isVisible = false
+        b.tvRevenueCompositionStatus.isVisible = true
+        b.tvRevenueCompositionStatus.text = message
+    }
+
+    private fun renderComposition(range: TimeRange, analytics: DashboardAnalytics) {
+        val b = _binding ?: return
+        val chart = b.chartRevenueComposition
+        val metrics = listOf(
+            "Omzet Barang" to analytics.goodsRevenue,
+            "Pendapatan Jasa" to analytics.serviceRevenue,
+            "Total Modal" to analytics.totalCost,
+            "Laba Bersih" to analytics.netProfit
+        )
+        if (metrics.all { it.second == 0L }) {
+            showCompositionStatus("Belum ada data perbandingan pendapatan pada periode ini.")
+            return
+        }
+
+        val entries = metrics.mapIndexed { index, (label, value) ->
+            BarEntry(index.toFloat(), value.toFloat(), label)
+        }
+        val labels = metrics.map { it.first }
+        val onSurfaceColor = MaterialColors.getColor(chart, com.google.android.material.R.attr.colorOnSurface)
+        val outlineColor = MaterialColors.getColor(chart, com.google.android.material.R.attr.colorOutline)
+        val palette = mutableListOf<Int>().apply {
+            addAll(ColorTemplate.MATERIAL_COLORS.toList())
+            addAll(ColorTemplate.COLORFUL_COLORS.toList())
+            addAll(ColorTemplate.VORDIPLOM_COLORS.toList())
+        }
+
+        val dataSet = BarDataSet(entries, "").apply {
+            colors = palette.take(entries.size)
+            valueTextColor = onSurfaceColor
+            valueTextSize = 12f
+            valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String = formatCurrency(value.toLong())
+            }
+        }
+
+        chart.data = BarData(dataSet).apply { barWidth = 0.6f }
+        chart.description.isEnabled = false
+        chart.setNoDataText("Data komposisi belum tersedia.")
+        chart.setNoDataTextColor(onSurfaceColor)
+        chart.legend.isEnabled = false
+        chart.axisRight.isEnabled = false
+        chart.setFitBars(true)
+        chart.setDrawValueAboveBar(true)
+        chart.animateY(600)
+
+        chart.xAxis.apply {
+            position = XAxis.XAxisPosition.BOTTOM
+            textColor = onSurfaceColor
+            setDrawGridLines(false)
+            granularity = 1f
+            axisMinimum = -0.5f
+            axisMaximum = metrics.size - 0.5f
+            valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    val index = value.roundToInt()
+                    return labels.getOrNull(index) ?: ""
+                }
+            }
+        }
+        chart.axisLeft.apply {
+            setDrawGridLines(true)
+            gridColor = outlineColor
+            axisLineColor = outlineColor
+            textColor = onSurfaceColor
+            setDrawZeroLine(true)
+            zeroLineColor = outlineColor
+            zeroLineWidth = 1f
+            valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String = formatCurrency(value.toLong())
+            }
+        }
+
+        chart.invalidate()
+
+        b.progressRevenueComposition.isVisible = false
+        b.tvRevenueCompositionStatus.isVisible = false
+        chart.isVisible = true
+        b.tvRevenueCompositionSubtitle.text = "Perbandingan omzet & laba (${range.label})"
     }
 
     private fun showTopProductsLoading(range: TimeRange) {

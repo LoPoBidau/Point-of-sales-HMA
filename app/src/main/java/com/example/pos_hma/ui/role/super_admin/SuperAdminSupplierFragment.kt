@@ -23,6 +23,8 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 
+private const val MAX_SUPPLIERS = 200L
+
 class SuperAdminSupplierFragment : Fragment() {
 
     private var _b: FragmentSuperAdminSupplierBinding? = null
@@ -56,7 +58,7 @@ class SuperAdminSupplierFragment : Fragment() {
 
     private fun listen() {
         reg?.remove(); reg = null
-        reg = db.collection("suppliers").orderBy("nameLowercase").addSnapshotListener { snap, e ->
+        reg = db.collection("suppliers").orderBy("nameLowercase").limit(MAX_SUPPLIERS).addSnapshotListener { snap, e ->
             if (e != null) { toast(e.message ?: "Gagal memuat"); return@addSnapshotListener }
             val list = snap!!.documents.map { d ->
                 Supplier(

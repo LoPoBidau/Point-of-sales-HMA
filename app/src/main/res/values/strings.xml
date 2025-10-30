@@ -62,4 +62,5 @@
     <string name="print_status_success">Nota berhasil dikirim</string>
     <string name="print_status_failed">Gagal cetak: %1$s</string>
     <string name="notification_empty_state">Belum ada notifikasi</string>
+    <string name="loading_login">Sedang masuk...</string>
 </resources>

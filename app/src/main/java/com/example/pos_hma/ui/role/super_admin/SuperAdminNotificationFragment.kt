@@ -26,6 +26,8 @@ import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Compan
 import java.text.SimpleDateFormat
 import java.util.Locale
 
+private const val MAX_NOTIFICATIONS = 200L
+
 class SuperAdminNotificationFragment : Fragment() {
     private var _b: FragmentSuperAdminNotificationBinding? = null
     private val b get() = _b!!
@@ -56,6 +58,7 @@ class SuperAdminNotificationFragment : Fragment() {
         reg?.remove(); reg = null
         reg = db.collection("notifications")
             .whereEqualTo("toRole", "super-admin")
+            .limit(MAX_NOTIFICATIONS)
             .addSnapshotListener { snap, e ->
                 if (e != null) {
                     b.empty.visibility = View.VISIBLE
@@ -92,6 +95,7 @@ class SuperAdminNotificationFragment : Fragment() {
     private fun refreshOnce() {
         db.collection("notifications")
             .whereEqualTo("toRole", "super-admin")
+            .limit(MAX_NOTIFICATIONS)
             .get()
             .addOnSuccessListener { qs ->
                 var list = qs.documents.map { d ->

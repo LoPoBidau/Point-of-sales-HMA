@@ -24,6 +24,8 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.DocumentSnapshot
 
+private const val MAX_ADJUST_REQUESTS = 200L
+
 class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentSuperAdminAdjustRequestBinding? = null
@@ -109,7 +111,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
         disposeSnapshots()
         var q = db.collection("stock_adjust_requests") as com.google.firebase.firestore.Query
         if (currentStatus != StatusFilter.ALL) q = q.whereEqualTo("status", currentStatus.name)
-        q = q.orderBy("createdAt", Query.Direction.DESCENDING)
+        q = q.orderBy("createdAt", Query.Direction.DESCENDING).limit(MAX_ADJUST_REQUESTS)
         reg = q.addSnapshotListener { snap, e ->
             if (e != null) {
                 // kalau rules/index bermasalah, tampilkan reason
@@ -150,7 +152,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
     private fun refreshOnce() {
         var q = db.collection("stock_adjust_requests") as com.google.firebase.firestore.Query
         if (currentStatus != StatusFilter.ALL) q = q.whereEqualTo("status", currentStatus.name)
-        q = q.orderBy("createdAt", Query.Direction.DESCENDING)
+        q = q.orderBy("createdAt", Query.Direction.DESCENDING).limit(MAX_ADJUST_REQUESTS)
         q.get()
             .addOnSuccessListener { qs ->
                 var list = qs.documents.map { d ->

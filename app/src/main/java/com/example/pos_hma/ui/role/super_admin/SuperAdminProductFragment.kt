@@ -32,6 +32,8 @@ import com.example.pos_hma.databinding.*
 import com.example.pos_hma.utils.StockNotificationHelper
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.google.android.material.chip.Chip
+import com.google.android.material.chip.ChipGroup
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.MaterialAutoCompleteTextView
@@ -47,6 +49,8 @@ import java.util.Calendar
 
 // ===== formatter uang "10.000" =====
 private val ID_LOCALE = Locale("in", "ID")
+private const val MAX_PRODUCTS = 200L
+private const val MAX_CATEGORY_OPTIONS = 200L
 private fun rupiah(v: Long): String = NumberFormat.getInstance(ID_LOCALE).format(v)
 
 private fun CharSequence?.digitsOnly(): String = this?.toString()?.filter { it.isDigit() } ?: ""
@@ -110,6 +114,7 @@ private fun DocumentSnapshot.toProduct(): Product {
 }
 
 private enum class PendingQueueType { SCHEDULED, STAGED }
+private enum class StockFilter { ALL, IN_STOCK, OUT_OF_STOCK }
 
 class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
@@ -165,9 +170,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     // kategori
     private val catFilterList = mutableListOf<Category>()
     private val catFormList = mutableListOf<Category>()
-    private var selectedFilterCategory: Category? = null
+    private val selectedCategoryIds = linkedSetOf<String>()
     private var categoriesReg: ListenerRegistration? = null
     private var activeCategoryIds: MutableSet<String> = mutableSetOf()
+    private var stockFilter: StockFilter = StockFilter.ALL
 
     private fun createTempImageUri(): Uri? {
         return try {
@@ -241,27 +247,38 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) { applyFilter() }
         })
 
-        // Filter kategori (exposed dropdown di layar utama)
-        binding.actCategory.inputType = InputType.TYPE_NULL
-        binding.actCategory.keyListener = null
-        binding.actCategory.isCursorVisible = false
-        binding.actCategory.setOnClickListener { binding.actCategory.showDropDown() }
-        binding.tilCategory.setEndIconOnClickListener { binding.actCategory.showDropDown() }
-        binding.actCategory.setOnItemClickListener { _, _, pos, _ ->
-            selectedFilterCategory = if (pos == 0) null else catFilterList.getOrNull(pos - 1)
-            applyFilter()
+        binding.tilSearch.setStartIconOnClickListener { showFilterDialog() }
+
+        val stockOptions = listOf("Semua", "Stok tersedia", "Stok habis")
+        val stockAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, stockOptions)
+        binding.actStock.apply {
+            inputType = InputType.TYPE_NULL
+            keyListener = null
+            isCursorVisible = false
+            setAdapter(stockAdapter)
+            setText(stockOptions.first(), false)
+            setOnClickListener { showDropDown() }
+            setOnItemClickListener { _, _, pos, _ ->
+                stockFilter = when (pos) {
+                    1 -> StockFilter.IN_STOCK
+                    2 -> StockFilter.OUT_OF_STOCK
+                    else -> StockFilter.ALL
+                }
+                applyFilter()
+            }
         }
+        binding.tilStock.setEndIconOnClickListener { binding.actStock.showDropDown() }
+
         loadCategoriesForFilter()
 
         binding.swipeRefresh.setOnRefreshListener { refreshOnce() }
     }
 
     private fun loadCategoriesForFilter() {
-        db.collection("categories").get()
+        db.collection("categories").limit(MAX_CATEGORY_OPTIONS).get()
             .addOnSuccessListener { qs ->
                 if (!isAdded || view == null) return@addOnSuccessListener
                 if (!viewLifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@addOnSuccessListener
-                val b = _binding ?: return@addOnSuccessListener
                 val list = qs.documents.mapNotNull { d ->
                     val isActive = d.getBoolean("isActive") ?: true
                     if (!isActive) return@mapNotNull null
@@ -275,23 +292,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     )
                 }.sortedWith(compareBy<Category> { it.effectiveOrder }.thenBy { it.name })
 
-                val prevId = selectedFilterCategory?.id
                 catFilterList.clear(); catFilterList.addAll(list)
                 activeCategoryIds = list.map { it.id }.toMutableSet()
-                val names = mutableListOf("Semua").apply { addAll(list.map { it.name }) }
-
-                // PERBAIKAN: Gunakan ArrayAdapter
-                val categoryAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, names)
-                b.actCategory.setAdapter(categoryAdapter)
-
-                val idx = if (prevId != null) list.indexOfFirst { it.id == prevId } else -1
-                if (idx >= 0) {
-                    b.actCategory.setText(names[idx + 1], false)
-                    selectedFilterCategory = list[idx]
-                } else {
-                    b.actCategory.setText(names.first(), false)
-                    selectedFilterCategory = null
-                }
+                selectedCategoryIds.retainAll(activeCategoryIds)
                 adapter.updateKnownCategoryIds(activeCategoryIds)
                 applyFilter()
             }
@@ -300,7 +303,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
     private fun listenCategoriesForUi() {
         categoriesReg?.remove()
-        categoriesReg = db.collection("categories").addSnapshotListener { snap, e ->
+        categoriesReg = db.collection("categories").limit(MAX_CATEGORY_OPTIONS).addSnapshotListener { snap, e ->
             if (_binding == null) return@addSnapshotListener
             if (e != null) return@addSnapshotListener
             if (snap == null) return@addSnapshotListener
@@ -323,24 +326,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             val removedDocs = snap.documentChanges.filter { it.type == DocumentChange.Type.REMOVED }.map { it.document.id }
             val removedAll = (removedActive + removedDocs).toSet()
 
-            val prevId = selectedFilterCategory?.id
             activeCategoryIds = newIds
             catFilterList.clear(); catFilterList.addAll(activeList)
-            val names = mutableListOf("Semua").apply { addAll(activeList.map { it.name }) }
-            val b = _binding ?: return@addSnapshotListener
-
-            // PERBAIKAN: Gunakan ArrayAdapter
-            val categoryAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, names)
-            b.actCategory.setAdapter(categoryAdapter)
-
-            val idx = if (prevId != null) activeList.indexOfFirst { it.id == prevId } else -1
-            if (idx >= 0) {
-                b.actCategory.setText(names[idx + 1], false)
-                selectedFilterCategory = activeList[idx]
-            } else {
-                b.actCategory.setText(names.first(), false)
-                selectedFilterCategory = null
-            }
+            selectedCategoryIds.retainAll(activeCategoryIds)
             adapter.updateKnownCategoryIds(activeCategoryIds)
             applyFilter()
 
@@ -365,6 +353,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         disposeSnapshots()
         productsReg = db.collection("products")
             .orderBy("nameLowercase")
+            .limit(MAX_PRODUCTS)
             .addSnapshotListener(MetadataChanges.INCLUDE) { snap, e ->
                 val binding = _binding ?: return@addSnapshotListener
                 if (e != null) {
@@ -382,7 +371,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     }
 
     private fun refreshOnce() {
-        db.collection("products").orderBy("nameLowercase").get()
+        db.collection("products").orderBy("nameLowercase").limit(MAX_PRODUCTS).get()
             .addOnSuccessListener { qs ->
                 allProducts.clear()
                 allProducts.addAll(qs.documents.map { it.toProduct() })
@@ -392,15 +381,83 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .addOnCompleteListener { _binding?.swipeRefresh?.isRefreshing = false }
     }
 
+    private fun showFilterDialog() {
+        val ctx = requireContext()
+        val view = layoutInflater.inflate(R.layout.dialog_catalog_filter, null, false)
+        val chipGroup = view.findViewById<ChipGroup>(R.id.chipGroupCategories)
+
+        chipGroup.removeAllViews()
+        val anyChip = Chip(ctx).apply {
+            text = "Semua"
+            isCheckable = true
+            isChecked = selectedCategoryIds.isEmpty()
+            setOnClickListener {
+                if (isChecked) {
+                    for (i in 0 until chipGroup.childCount) {
+                        val child = chipGroup.getChildAt(i)
+                        if (child is Chip && child != this) child.isChecked = false
+                    }
+                }
+            }
+        }
+        chipGroup.addView(anyChip)
+
+        catFilterList.forEach { cat ->
+            val chip = Chip(ctx).apply {
+                text = cat.name
+                tag = cat.id
+                isCheckable = true
+                isChecked = selectedCategoryIds.contains(cat.id)
+                setOnCheckedChangeListener { _, checked ->
+                    if (checked) anyChip.isChecked = false
+                }
+            }
+            chipGroup.addView(chip)
+        }
+
+        MaterialAlertDialogBuilder(ctx)
+            .setTitle("Filter Kategori")
+            .setView(view)
+            .setNegativeButton("Batal", null)
+            .setNeutralButton("Reset") { _, _ ->
+                selectedCategoryIds.clear()
+                applyFilter()
+            }
+            .setPositiveButton("Terapkan") { _, _ ->
+                val selected = linkedSetOf<String>()
+                for (i in 0 until chipGroup.childCount) {
+                    val child = chipGroup.getChildAt(i)
+                    if (child is Chip && child != anyChip && child.isChecked) {
+                        (child.tag as? String)?.let { selected.add(it) }
+                    }
+                }
+                selectedCategoryIds.clear()
+                selectedCategoryIds.addAll(selected)
+                applyFilter()
+            }
+            .show()
+    }
+
     private fun applyFilter() {
         val b = _binding ?: return
         val q = b.etSearch.text?.toString()?.trim()?.lowercase().orEmpty()
-        val catId = selectedFilterCategory?.id.orEmpty()
+        val selectedCats = selectedCategoryIds.toSet()
         val filtered = allProducts.filter { p ->
             val okName = q.isEmpty() || p.nameLowercase.contains(q)
-            val okCat  = selectedFilterCategory == null || p.categoryId == catId
+            val okCat  = selectedCats.isEmpty() || selectedCats.contains(p.categoryId)
             val okType = if (forTypeTab == "service") p.isService else !p.isService
-            okName && okCat && okType
+            val okStock = when (stockFilter) {
+                StockFilter.ALL -> true
+                StockFilter.IN_STOCK -> {
+                    when {
+                        p.isService -> true
+                        !p.trackStock -> true
+                        else -> p.stock > 0L
+                    }
+                }
+                StockFilter.OUT_OF_STOCK -> p.trackStock && !p.isService && p.stock <= 0L
+            }
+            okName && okCat && okType && okStock
         }
         val sorted = filtered.sortedWith(compareBy<Product> { p ->
             val trackable = p.trackStock && !p.isService
@@ -408,6 +465,17 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         }.thenBy { it.nameLowercase })
         adapter.submitList(sorted)
         b.tvCount.text = "Total: ${sorted.size}"
+        updateFilterIndicator()
+    }
+
+    private fun updateFilterIndicator() {
+        val b = _binding ?: return
+        b.tilSearch.helperText = if (selectedCategoryIds.isEmpty()) null else "${selectedCategoryIds.size} kategori dipilih"
+        b.tilStock.helperText = when (stockFilter) {
+            StockFilter.ALL -> null
+            StockFilter.IN_STOCK -> "Menampilkan stok tersedia"
+            StockFilter.OUT_OF_STOCK -> "Menampilkan stok habis"
+        }
     }
 
     private fun setSavingState(active: Boolean, button: Button) {
@@ -458,6 +526,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     // ====== MUAT KATEGORI AKTIF untuk FORM ======
     private fun loadCategoriesForForm(onDone: (() -> Unit)? = null) {
         db.collection("categories")
+            .limit(MAX_CATEGORY_OPTIONS)
             .get()
             .addOnSuccessListener { qs ->
                 val categories = qs.documents.mapNotNull { d ->

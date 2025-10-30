@@ -42,6 +42,7 @@ import com.google.android.material.datepicker.MaterialDatePicker
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.example.pos_hma.print.DirectEscPosPrinter
 import com.example.pos_hma.utils.PrintersPref
+import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -52,7 +53,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
 
-class SuperAdminReportFragment : Fragment() {
+class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
 
     companion object {
         const val ARG_INITIAL_SALE_DOC_ID = "initialSaleDocId"
@@ -63,6 +64,7 @@ class SuperAdminReportFragment : Fragment() {
     private val binding get() = _binding!!
 
     private val tabs = listOf("Penjualan", "Pembelian", "Stok & Valuasi")
+    private var pagerAdapter: ReportPagerAdapter? = null
 
     private val btRequestCode = 402
     private var pendingReceiptToPrint: String? = null
@@ -183,7 +185,9 @@ class SuperAdminReportFragment : Fragment() {
     }
 
     override fun onViewCreated(v: View, s: Bundle?) {
-        binding.pager.adapter = ReportPagerAdapter(tabs)
+        val adapter = ReportPagerAdapter(tabs)
+        binding.pager.adapter = adapter
+        pagerAdapter = adapter
         TabLayoutMediator(binding.tabs, binding.pager) { tab, pos ->
             tab.text = tabs[pos]
         }.attach()
@@ -200,6 +204,9 @@ class SuperAdminReportFragment : Fragment() {
     }
 
     override fun onDestroyView() {
+        pagerAdapter?.dispose()
+        _binding?.pager?.adapter = null
+        pagerAdapter = null
         stopDialogPrinterAnimation()
         printingDialog?.dismiss()
         printingDialog = null
@@ -404,6 +411,10 @@ class SuperAdminReportFragment : Fragment() {
         }
     }
 
+    override fun disposeSnapshots() {
+        pagerAdapter?.dispose()
+    }
+
     private inner class ReportPagerAdapter(private val titles: List<String>) :
         RecyclerView.Adapter<ReportPagerAdapter.VH>() {
 
@@ -419,6 +430,12 @@ class SuperAdminReportFragment : Fragment() {
         private fun clearPurchaseListener() {
             purchaseListener?.remove()
             purchaseListener = null
+        }
+
+        fun dispose() {
+            clearPurchaseListener()
+            purchaseHolder = null
+            stockHolder = null
         }
 
 

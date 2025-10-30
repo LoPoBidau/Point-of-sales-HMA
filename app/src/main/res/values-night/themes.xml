@@ -52,9 +52,7 @@
         <!-- Customize your dark theme here. -->
         <!-- <item name="colorPrimary">@color/my_dark_primary</item> -->
     </style>
-    <style name="Theme.POSHMA.Splash" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.POSHMA.Splash" parent="@style/AppTheme">
         <item name="android:windowBackground">@drawable/bg_login_gradient</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

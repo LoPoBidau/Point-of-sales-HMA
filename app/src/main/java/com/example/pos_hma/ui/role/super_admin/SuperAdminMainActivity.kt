@@ -219,9 +219,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        regPending?.remove(); regPending = null
-        regReturn?.remove(); regReturn = null
-        regNotif?.remove(); regNotif = null
+        disposeSelfSnapshotListeners()
         // Unregister network callback if registered
         NetworkUtil.unregisterNetworkCallback(this, netCb)
         netCb = null
@@ -307,6 +305,7 @@ class SuperAdminMainActivity : AppCompatActivity() {
         btnLogout.setOnClickListener {
             // cegah listener nge-log error saat signOut
             AppFlags.isLoggingOut = true
+            disposeSelfSnapshotListeners()
             disposeAllChildSnapshotListeners()
             FirebaseAuth.getInstance().signOut()
             dlg.dismiss()
@@ -331,6 +330,12 @@ class SuperAdminMainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private fun disposeSelfSnapshotListeners() {
+        regPending?.remove(); regPending = null
+        regReturn?.remove(); regReturn = null
+        regNotif?.remove(); regNotif = null
     }
 
     private fun ensureRoleAllowedOrExit(allowed: Set<String>, onOk: () -> Unit) {

@@ -249,7 +249,10 @@ class AdminCashierReportFragment : Fragment() {
     }
 
     private fun applySalesFilter() {
-        val query = b.etSearchSaleId.text?.toString()?.trim().orEmpty().lowercase(Locale("in","ID"))
+        val query = _b?.etSearchSaleId?.text?.toString()
+            ?.trim()
+            ?.lowercase(Locale("in", "ID"))
+            ?: ""
         filteredSales.clear()
         if (query.isBlank()) {
             filteredSales.addAll(sales)

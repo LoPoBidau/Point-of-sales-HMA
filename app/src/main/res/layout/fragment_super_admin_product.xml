@@ -8,25 +8,29 @@
 
     <LinearLayout
         android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:orientation="vertical"
         android:paddingHorizontal="12dp"
         android:paddingTop="12dp"
-        android:paddingBottom="0dp"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:paddingBottom="0dp">
 
-        <!-- search + kategori -->
+        <!-- search + filter -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
             <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/tilSearch"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:hint="Cari barang…"
-                app:startIconDrawable="@drawable/ic_search">
+                android:hint="Cari barang..."
+                app:startIconDrawable="@drawable/ic_filter_list"
+                app:endIconMode="custom"
+                app:endIconDrawable="@drawable/ic_search">
+
                 <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/etSearch"
                     android:layout_width="match_parent"
@@ -35,18 +39,19 @@
                     android:singleLine="true"/>
             </com.google.android.material.textfield.TextInputLayout>
 
-            <Space android:layout_width="8dp" android:layout_height="1dp"/>
+            <Space
+                android:layout_width="8dp"
+                android:layout_height="1dp"/>
 
-            <!-- PENTING: pakai style exposed dropdown + MaterialAutoCompleteTextView -->
             <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/tilCategory"
+                android:id="@+id/tilStock"
                 style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
-                android:layout_width="140dp"
+                android:layout_width="150dp"
                 android:layout_height="wrap_content"
-                android:hint="Kategori">
+                android:hint="Status stok">
 
                 <com.google.android.material.textfield.MaterialAutoCompleteTextView
-                    android:id="@+id/actCategory"
+                    android:id="@+id/actStock"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="none"

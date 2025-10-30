@@ -17,12 +17,15 @@ import com.example.pos_hma.R
 import com.example.pos_hma.data.Category
 import com.example.pos_hma.databinding.DialogCategoryFormBinding
 import com.example.pos_hma.databinding.FragmentSuperAdminCategoryBinding
+import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 
-class SuperAdminCategoryFragment : Fragment() {
+private const val MAX_CATEGORIES = 200L
+
+class SuperAdminCategoryFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentSuperAdminCategoryBinding? = null
     private val binding get() = _binding!!
@@ -45,10 +48,15 @@ class SuperAdminCategoryFragment : Fragment() {
 
     override fun onStop() { super.onStop(); catsReg?.remove(); catsReg = null }
     override fun onDestroyView() {
-        catsReg?.remove(); catsReg = null
+        disposeSnapshots()
         requiredAlert?.dismiss(); requiredAlert = null
         _binding = null
         super.onDestroyView()
+    }
+
+    override fun disposeSnapshots() {
+        catsReg?.remove()
+        catsReg = null
     }
 
     private fun setupUi() {
@@ -65,6 +73,7 @@ class SuperAdminCategoryFragment : Fragment() {
         catsReg?.remove()
         binding.swipeRefresh.isRefreshing = true
         catsReg = db.collection("categories")
+            .limit(MAX_CATEGORIES)
             .addSnapshotListener { snap, e ->
                 if (e != null) { toast("Gagal memuat: ${e.message}"); return@addSnapshotListener }
                 val list = snap?.documents?.map { d ->
@@ -174,7 +183,7 @@ class SuperAdminCategoryFragment : Fragment() {
 
     private fun refreshOnce() {
         binding.swipeRefresh.isRefreshing = true
-        db.collection("categories").get()
+        db.collection("categories").limit(MAX_CATEGORIES).get()
             .addOnSuccessListener { qs ->
                 val list = qs.documents.map { d ->
                     d.toObject(Category::class.java)?.copy(id = d.id) ?: Category(

@@ -15,6 +15,7 @@ import com.example.pos_hma.data.SaleStatus
 import com.example.pos_hma.data.toSaleLineItems
 import com.example.pos_hma.databinding.FragmentAdminCashierReturnBinding
 import com.example.pos_hma.databinding.ItemReturnRequestRowBinding
+import com.example.pos_hma.utils.SnapshotDisposable
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -31,7 +32,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class AdminCashierReturnFragment : Fragment() {
+class AdminCashierReturnFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentAdminCashierReturnBinding? = null
     private val binding get() = _binding!!
@@ -58,10 +59,14 @@ class AdminCashierReturnFragment : Fragment() {
     }
 
     override fun onDestroyView() {
-        registration?.remove()
-        registration = null
+        disposeSnapshots()
         _binding = null
         super.onDestroyView()
+    }
+
+    override fun disposeSnapshots() {
+        registration?.remove()
+        registration = null
     }
 
     private fun startListening() {
