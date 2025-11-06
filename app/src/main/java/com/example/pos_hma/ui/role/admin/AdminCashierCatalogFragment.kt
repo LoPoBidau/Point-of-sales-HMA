@@ -452,10 +452,9 @@ private class CashierGoodsRowAdapter(
     ) : RecyclerView.ViewHolder(b.root) {
         fun bind(p: Product) {
             val key = p.sku.ifBlank { p.id }
-            val firstImage = p.images.firstOrNull()
+            val imageUrl = p.images.firstOrNull()?.takeIf { it.isNotBlank() }
             val padding = (8 * b.root.resources.displayMetrics.density).roundToInt()
-            if (firstImage.isNullOrBlank()) {
-                b.img.setImageResource(R.drawable.ic_product_placeholder)
+            if (imageUrl == null) {
                 b.img.scaleType = ImageView.ScaleType.CENTER_INSIDE
                 b.img.setPadding(padding, padding, padding, padding)
                 b.img.alpha = 0.7f
@@ -463,7 +462,11 @@ private class CashierGoodsRowAdapter(
                 b.img.alpha = 1f
                 b.img.setPadding(0, 0, 0, 0)
                 b.img.scaleType = ImageView.ScaleType.CENTER_CROP
-                b.img.load(firstImage)
+            }
+            b.img.load(imageUrl) {
+                placeholder(R.drawable.ic_product_placeholder)
+                error(R.drawable.ic_product_placeholder)
+                fallback(R.drawable.ic_product_placeholder)
             }
             b.tvName.text = p.name
             b.tvCategory.text = if (p.categoryName.isNotBlank()) "Kategori : ${p.categoryName}" else "Kategori : -"

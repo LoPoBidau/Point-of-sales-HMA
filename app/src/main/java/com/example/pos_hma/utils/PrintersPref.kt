@@ -12,4 +12,7 @@ object PrintersPref {
 
     fun getMac(ctx: Context): String? =
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY_MAC, null)
+
+    fun clearMac(ctx: Context) =
+        ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit { remove(KEY_MAC) }
 }

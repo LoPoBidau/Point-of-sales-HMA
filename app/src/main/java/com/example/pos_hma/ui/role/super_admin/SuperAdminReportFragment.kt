@@ -259,7 +259,9 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
         isPrinting = true
         dialogBinding.progress.isVisible = true
         dialogBinding.btnRetry.isVisible = false
+        dialogBinding.btnSaveWithoutPrint.isVisible = false
         dialogBinding.btnClose.isVisible = false
+        dialogBinding.btnClose.setOnClickListener(null)
         dialogBinding.ivStatus.setImageResource(R.drawable.ic_printer)
         dialogBinding.ivStatus.imageTintList = ColorStateList.valueOf(
             MaterialColors.getColor(
@@ -300,7 +302,9 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
         }
         dialog.show()
         printingDialog = dialog
-        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        binding.btnClose.isVisible = false
+        binding.btnClose.setOnClickListener(null)
+        binding.btnSaveWithoutPrint.isVisible = false
         return binding
     }
 
@@ -316,11 +320,8 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
         )
         binding.tvStatus.text = getString(R.string.print_status_success)
         binding.btnRetry.isVisible = false
-        binding.btnClose.apply {
-            text = getString(R.string.print_status_close)
-            isVisible = true
-            setOnClickListener { printingDialog?.dismiss() }
-        }
+        binding.btnSaveWithoutPrint.isVisible = false
+        binding.btnClose.isVisible = false
         binding.root.postDelayed({ printingDialog?.dismiss() }, 1200)
         toast("Terkirim ke printer")
     }
@@ -337,7 +338,6 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
         val message = error.message?.takeUnless { it.isBlank() } ?: "-"
         binding.tvStatus.text = getString(R.string.print_status_failed, message)
         binding.btnRetry.isVisible = true
-        binding.btnClose.isVisible = true
         binding.btnRetry.setOnClickListener {
             val retryText = pendingReceiptToPrint
             if (retryText.isNullOrBlank()) {
@@ -357,7 +357,11 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
             binding.tvStatus.text = getString(R.string.print_status_sending)
             ensureBtPermissions { beginPrintWorkflow(retryText) }
         }
-        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        binding.btnClose.apply {
+            isVisible = true
+            text = getString(R.string.print_status_close)
+            setOnClickListener { printingDialog?.dismiss() }
+        }
         toast("Gagal cetak: $message")
     }
 

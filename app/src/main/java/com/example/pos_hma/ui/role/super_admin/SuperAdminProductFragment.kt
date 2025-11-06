@@ -46,6 +46,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
 import java.util.Calendar
+import kotlin.math.roundToInt
 
 // ===== formatter uang "10.000" =====
 private val ID_LOCALE = Locale("in", "ID")
@@ -142,8 +143,12 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private var selectedImageUri: Uri? = null
     private var formImgPreview: ImageView? = null
     private var formRemoveImageButton: ImageButton? = null
+    private var originalImageUrl: String? = null
+    private var clearExistingImage: Boolean = false
+    private var isSavingProduct: Boolean = false
     private val pickImage = registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
+            clearExistingImage = false
             selectedImageUri = uri
             formImgPreview?.let {
                 it.load(uri)
@@ -155,6 +160,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private var cameraTempUri: Uri? = null
     private val takePhoto = registerForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success && cameraTempUri != null) {
+            clearExistingImage = false
             selectedImageUri = cameraTempUri
             formImgPreview?.let {
                 it.load(cameraTempUri)
@@ -479,8 +485,21 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     }
 
     private fun setSavingState(active: Boolean, button: Button) {
+        isSavingProduct = active
         button.isEnabled = !active
         button.alpha = if (active) 0.6f else 1f
+        currentDialog?.let { dlg ->
+            dlg.getButton(AlertDialog.BUTTON_NEGATIVE)?.let { cancelBtn ->
+                cancelBtn.isEnabled = !active
+                cancelBtn.alpha = if (active) 0.6f else 1f
+            }
+            dlg.getButton(AlertDialog.BUTTON_NEUTRAL)?.let { neutralBtn ->
+                neutralBtn.isEnabled = !active
+                neutralBtn.alpha = if (active) 0.6f else 1f
+            }
+            dlg.setCancelable(!active)
+            dlg.setCanceledOnTouchOutside(!active)
+        }
         showSavingOverlay(active)
     }
 
@@ -588,6 +607,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
     private fun openForm(p: Product?) {
         selectedImageUri = null
         cameraTempUri = null
+        clearExistingImage = false
+        originalImageUrl = null
         showSavingOverlay(false)
         val form = DialogProductFormBinding.inflate(layoutInflater)
         formImgPreview = form.imgPreview
@@ -611,6 +632,8 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         // ===== Prefill non-kategori =====
         if (isEditing) {
             val editingProduct = p!!
+            val existingImage = editingProduct.images.firstOrNull().orEmpty()
+            originalImageUrl = existingImage.takeIf { it.isNotBlank() }
             form.swService.visibility = View.GONE
             form.tilStock.visibility = View.GONE
             if (fixedIsService) {
@@ -637,12 +660,12 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 if (editingProduct.salePrice > 0) form.etPrice.setText(rupiah(editingProduct.salePrice)) else form.etPrice.setText("")
             }
 
-            if (editingProduct.images.firstOrNull().isNullOrBlank()) {
+            if (originalImageUrl == null) {
                 form.imgPreview.setImageResource(R.drawable.ic_product_placeholder); form.imgPreview.alpha = .25f
                 form.btnRemoveImage.isVisible = false
             } else {
                 form.imgPreview.alpha = 1f
-                form.imgPreview.load(editingProduct.images.first())
+                form.imgPreview.load(originalImageUrl)
                 form.btnRemoveImage.isVisible = true
             }
         } else {
@@ -733,12 +756,28 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             takePhoto.launch(uri)
         }
         form.btnRemoveImage.setOnClickListener {
-            selectedImageUri = null
-            cameraTempUri = null
-            form.imgPreview.setImageResource(R.drawable.ic_product_placeholder)
-            form.imgPreview.alpha = .25f
-            form.btnRemoveImage.isVisible = false
-            formRemoveImageButton?.isVisible = false
+            fun applyRemoval() {
+                selectedImageUri = null
+                cameraTempUri = null
+                clearExistingImage = isEditing && originalImageUrl != null
+                form.imgPreview.setImageResource(R.drawable.ic_product_placeholder)
+                form.imgPreview.scaleType = ImageView.ScaleType.FIT_CENTER
+                form.imgPreview.setPadding(0, 0, 0, 0)
+                form.imgPreview.alpha = .25f
+                form.btnRemoveImage.isVisible = false
+                formRemoveImageButton?.isVisible = false
+            }
+            val mustConfirm = isEditing && (originalImageUrl != null || selectedImageUri != null)
+            if (mustConfirm) {
+                MaterialAlertDialogBuilder(requireContext())
+                    .setTitle("Hapus Foto Produk?")
+                    .setMessage("Foto saat ini akan dihapus dan diganti placeholder.")
+                    .setNegativeButton("Batal", null)
+                    .setPositiveButton("Ya, Hapus") { _, _ -> applyRemoval() }
+                    .show()
+            } else {
+                applyRemoval()
+            }
         }
 
         // Build dialog & tombol SIMPAN
@@ -754,7 +793,13 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             currentDialog = null
             formImgPreview = null
             formRemoveImageButton = null
+            originalImageUrl = null
+            clearExistingImage = false
+            isSavingProduct = false
             showSavingOverlay(false)
+        }
+        dlg.setOnKeyListener { _, keyCode, _ ->
+            keyCode == KeyEvent.KEYCODE_BACK && isSavingProduct
         }
 
         dlg.setOnShowListener {
@@ -911,6 +956,11 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     val newCostForBatches = if (!isService) initCost.takeIf { it > 0 } ?: 0L else 0L
                     val newSaleForBatches = if (!isService) salePrice else 0L
                     val uri = selectedImageUri
+                    val previousImageUrl = originalImageUrl
+                    val shouldClearImage = clearExistingImage && uri == null
+                    if (shouldClearImage) {
+                        updates["images"] = emptyList<String>()
+                    }
                     if (uri != null) {
                         uploadImageThen(
                             docId,
@@ -920,6 +970,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                                 docRef.update(updates)
                                     .addOnSuccessListener {
                                         updateOpenBatchPricing(docId, newSaleForBatches, newCostForBatches)
+                                        if (!previousImageUrl.isNullOrBlank() && previousImageUrl != url) {
+                                            deleteImageFromStorage(previousImageUrl)
+                                        }
                                         toast("Diupdate + foto baru")
                                         setSavingState(false, btn)
                                         dlg.dismiss()
@@ -938,6 +991,9 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         docRef.update(updates)
                             .addOnSuccessListener {
                                 updateOpenBatchPricing(docId, newSaleForBatches, newCostForBatches)
+                                if (shouldClearImage && !previousImageUrl.isNullOrBlank()) {
+                                    deleteImageFromStorage(previousImageUrl)
+                                }
                                 toast("Diupdate")
                                 setSavingState(false, btn)
                                 dlg.dismiss()
@@ -2293,6 +2349,14 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             }
     }
 
+    private fun deleteImageFromStorage(url: String?) {
+        if (url.isNullOrBlank()) return
+        try {
+            FirebaseStorage.getInstance().getReferenceFromUrl(url).delete()
+        } catch (_: Exception) {
+        }
+    }
+
     private fun confirmDelete(p: Product) {
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Hapus ${p.name}?")
@@ -2376,13 +2440,21 @@ private class ProductsAdapter(
 
     override fun onBindViewHolder(h: VH, position: Int) {
         val product = getItem(position)
-        val firstImage = product.images.firstOrNull()
-        if (firstImage.isNullOrBlank()) {
-            h.img.setImageResource(R.drawable.ic_product_placeholder)
+        val imageUrl = product.images.firstOrNull()?.takeIf { it.isNotBlank() }
+        val padding = (16 * h.img.resources.displayMetrics.density).roundToInt()
+        if (imageUrl == null) {
             h.img.alpha = 0.65f
+            h.img.scaleType = ImageView.ScaleType.CENTER_INSIDE
+            h.img.setPadding(padding, padding, padding, padding)
         } else {
             h.img.alpha = 1f
-            h.img.load(firstImage)
+            h.img.scaleType = ImageView.ScaleType.CENTER_CROP
+            h.img.setPadding(0, 0, 0, 0)
+        }
+        h.img.load(imageUrl) {
+            placeholder(R.drawable.ic_product_placeholder)
+            error(R.drawable.ic_product_placeholder)
+            fallback(R.drawable.ic_product_placeholder)
         }
         val inStock = product.isService || product.stock > 0
         h.tvBadge.text = if (product.isService) "Jasa" else if (inStock) "Stock Tersedia" else "Stock Habis"

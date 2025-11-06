@@ -2,6 +2,7 @@ package com.example.pos_hma.ui.role.admin
 
 import android.os.Bundle
 import android.view.*
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -17,6 +18,7 @@ import com.example.pos_hma.databinding.ItemCartLineCashierBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
+import kotlin.math.roundToInt
 
 private val ID_LOCALE = java.util.Locale("in","ID")
 private fun rupiah(v: Long) = java.text.NumberFormat.getInstance(ID_LOCALE).format(v)
@@ -153,13 +155,21 @@ private class CartLinesAdapter(
     ) : RecyclerView.ViewHolder(b.root) {
         fun bind(l: CartLine) {
             val p = l.product
-            val firstImage = p.images.firstOrNull()
-            if (firstImage.isNullOrBlank()) {
-                b.img.setImageResource(R.drawable.ic_product_placeholder)
+            val imageUrl = p.images.firstOrNull()?.takeIf { it.isNotBlank() }
+            val padding = (8 * b.root.resources.displayMetrics.density).roundToInt()
+            if (imageUrl == null) {
                 b.img.alpha = 0.65f
+                b.img.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                b.img.setPadding(padding, padding, padding, padding)
             } else {
                 b.img.alpha = 1f
-                b.img.load(firstImage)
+                b.img.scaleType = ImageView.ScaleType.CENTER_CROP
+                b.img.setPadding(0, 0, 0, 0)
+            }
+            b.img.load(imageUrl) {
+                placeholder(R.drawable.ic_product_placeholder)
+                error(R.drawable.ic_product_placeholder)
+                fallback(R.drawable.ic_product_placeholder)
             }
             b.tvName.text = p.name
             b.tvUnitPrice.text = "Unit: Rp ${rupiah(p.salePrice)}"

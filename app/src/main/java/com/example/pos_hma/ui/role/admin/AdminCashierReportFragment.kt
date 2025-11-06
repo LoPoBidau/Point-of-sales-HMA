@@ -459,6 +459,7 @@ class AdminCashierReportFragment : Fragment() {
         dialogBinding.progress.isVisible = true
         dialogBinding.btnRetry.isVisible = false
         dialogBinding.btnRetry.setOnClickListener(null)
+        dialogBinding.btnSaveWithoutPrint.isVisible = false
         dialogBinding.btnClose.isVisible = false
         dialogBinding.btnClose.setOnClickListener(null)
         dialogBinding.ivStatus.setImageResource(R.drawable.ic_printer)
@@ -489,11 +490,8 @@ class AdminCashierReportFragment : Fragment() {
         )
         binding.tvStatus.text = getString(R.string.print_status_success)
         binding.btnRetry.isVisible = false
-        binding.btnClose.apply {
-            text = getString(R.string.print_status_close)
-            isVisible = true
-            setOnClickListener { printingDialog?.dismiss() }
-        }
+        binding.btnSaveWithoutPrint.isVisible = false
+        binding.btnClose.isVisible = false
         toast("Terkirim ke printer")
         binding.root.postDelayed({ printingDialog?.dismiss() }, 1200)
     }
@@ -509,7 +507,6 @@ class AdminCashierReportFragment : Fragment() {
         val message = error.message?.takeUnless { it.isBlank() } ?: "-"
         binding.tvStatus.text = getString(R.string.print_status_failed, message)
         binding.btnRetry.isVisible = true
-        binding.btnClose.isVisible = true
         binding.btnRetry.setOnClickListener {
             val retryText = pendingReceiptToPrint
             if (retryText.isNullOrBlank()) {
@@ -519,7 +516,11 @@ class AdminCashierReportFragment : Fragment() {
                 startDirectPrintFromDialog(retryText)
             }
         }
-        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        binding.btnClose.apply {
+            isVisible = true
+            text = getString(R.string.print_status_close)
+            setOnClickListener { printingDialog?.dismiss() }
+        }
         toast("Gagal cetak: $message")
     }
 
@@ -566,7 +567,8 @@ class AdminCashierReportFragment : Fragment() {
         }
         dialog.show()
         printingDialog = dialog
-        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        binding.btnClose.isVisible = false
+        binding.btnClose.setOnClickListener(null)
         return binding
     }
 

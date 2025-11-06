@@ -55,4 +55,12 @@
         android:text="@string/print_status_close"
         android:visibility="gone" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btnSaveWithoutPrint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="Simpan Transaksi Tanpa Cetak Nota"
+        android:visibility="gone" />
+
 </LinearLayout>

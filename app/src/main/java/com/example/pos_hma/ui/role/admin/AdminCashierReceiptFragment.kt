@@ -10,7 +10,6 @@ import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.os.Build
 import android.os.Bundle
-import android.print.PrintManager
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -29,7 +28,6 @@ import com.example.pos_hma.R
 import com.example.pos_hma.databinding.FragmentAdminCashierReceiptBinding
 import com.example.pos_hma.databinding.DialogReceiptPrintStatusBinding
 import com.example.pos_hma.print.DirectEscPosPrinter
-import com.example.pos_hma.ui.role.admin.print.CenteredReceiptPrintAdapter
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.example.pos_hma.utils.PrintersPref
 import com.google.android.material.color.MaterialColors
@@ -156,19 +154,39 @@ class AdminCashierReceiptFragment : Fragment() {
 
     @SuppressLint("MissingPermission")
     private fun beginPrintWorkflow(text: String) {
-        pendingReceiptToPrint = text
+        if (!ensureBluetoothReady()) {
+            resetPrintingState(clearPending = true)
+            return
+        }
+        val normalizedText = if (text.isBlank()) " " else text
+        pendingReceiptToPrint = normalizedText
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        val bonded = adapter?.bondedDevices?.toList().orEmpty()
         val savedMac = PrintersPref.getMac(requireContext())
-        if (savedMac.isNullOrBlank()) {
-            showBtPicker { mac ->
-                PrintersPref.saveMac(requireContext(), mac)
-                beginDirectPrint(mac, text)
-            }
-        } else {
-            beginDirectPrint(savedMac, text)
+        val isSavedMacValid = !savedMac.isNullOrBlank() && bonded.any { it.address == savedMac }
+        if (isSavedMacValid) {
+            beginDirectPrint(savedMac!!, normalizedText)
+            return
+        }
+        if (!savedMac.isNullOrBlank()) {
+            PrintersPref.clearMac(requireContext())
+        }
+        if (bonded.isEmpty()) {
+            showNoPairedPrinterDialog()
+            resetPrintingState()
+            return
+        }
+        showBtPicker { mac ->
+            PrintersPref.saveMac(requireContext(), mac)
+            beginDirectPrint(mac, normalizedText)
         }
     }
 
     private fun beginDirectPrint(mac: String, text: String) {
+        if (!ensureBluetoothReady()) {
+            resetPrintingState()
+            return
+        }
         pendingReceiptToPrint = text
         hasNavigatedAfterPrint = false
         val dialogBinding = ensurePrintingDialog()
@@ -178,6 +196,7 @@ class AdminCashierReceiptFragment : Fragment() {
         dialogBinding.progress.isVisible = true
         dialogBinding.btnRetry.isVisible = false
         dialogBinding.btnRetry.setOnClickListener(null)
+        dialogBinding.btnSaveWithoutPrint.isVisible = false
         dialogBinding.btnClose.isVisible = false
         dialogBinding.btnClose.setOnClickListener(null)
         dialogBinding.ivStatus.setImageResource(R.drawable.ic_printer)
@@ -207,14 +226,8 @@ class AdminCashierReceiptFragment : Fragment() {
         )
         binding.tvStatus.text = getString(R.string.print_status_success)
         binding.btnRetry.isVisible = false
-        binding.btnClose.apply {
-            text = getString(R.string.print_status_close)
-            isVisible = true
-            setOnClickListener {
-                printingDialog?.dismiss()
-                navigateAfterPrintOnce()
-            }
-        }
+        binding.btnSaveWithoutPrint.isVisible = false
+        binding.btnClose.isVisible = false
         toast("Terkirim ke printer")
         binding.root.postDelayed({
             printingDialog?.dismiss()
@@ -230,10 +243,14 @@ class AdminCashierReceiptFragment : Fragment() {
         binding.ivStatus.setImageResource(R.drawable.ic_printer)
         val errorColor = MaterialColors.getColor(binding.ivStatus, com.google.android.material.R.attr.colorError)
         binding.ivStatus.imageTintList = ColorStateList.valueOf(errorColor)
-        val message = error.message?.takeUnless { it.isBlank() } ?: "Tidak diketahui"
-        binding.tvStatus.text = getString(R.string.print_status_failed, message)
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        val userMessage = when {
+            adapter?.isEnabled != true -> "Bluetooth tidak aktif. Nyalakan Bluetooth lalu coba lagi."
+            adapter?.bondedDevices.isNullOrEmpty() -> "Printer belum dipair. Pair-kan printer Bluetooth di pengaturan perangkat, lalu coba lagi."
+            else -> "Gagal mencetak. Pastikan printer menyala dan berada dalam jangkauan, lalu coba ulang."
+        }
+        binding.tvStatus.text = userMessage
         binding.btnRetry.isVisible = true
-        binding.btnClose.isVisible = true
         binding.btnRetry.setOnClickListener {
             val retryText = pendingReceiptToPrint
             if (!retryText.isNullOrBlank()) {
@@ -242,13 +259,18 @@ class AdminCashierReceiptFragment : Fragment() {
                 printingDialog?.dismiss()
             }
         }
-        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
-        toast("Gagal cetak: $message")
+        binding.btnClose.isVisible = false
+        binding.btnClose.setOnClickListener(null)
+        binding.btnSaveWithoutPrint.apply {
+            isVisible = true
+            setOnClickListener {
+                printingDialog?.dismiss()
+                navigateAfterPrintOnce()
+            }
+        }
+        toast(userMessage)
         b.btnSaveAndPrint.isEnabled = true
         pendingReceiptToPrint = fallbackText
-        if (fallbackText.isNotBlank()) {
-            printReceipt(currentSaleId, fallbackText)
-        }
     }
 
     private fun ensurePrintingDialog(): DialogReceiptPrintStatusBinding {
@@ -273,7 +295,13 @@ class AdminCashierReceiptFragment : Fragment() {
         }
         dialog.show()
         printingDialog = dialog
-        binding.btnClose.setOnClickListener { printingDialog?.dismiss() }
+        binding.btnClose.isVisible = false
+        binding.btnClose.setOnClickListener(null)
+        binding.btnSaveWithoutPrint.isVisible = false
+        binding.btnSaveWithoutPrint.setOnClickListener {
+            printingDialog?.dismiss()
+            navigateAfterPrintOnce()
+        }
         return binding
     }
 
@@ -307,10 +335,14 @@ class AdminCashierReceiptFragment : Fragment() {
             requestPermissions(requiredBtPermissions, btRequestCode)
             return
         }
+        if (!ensureBluetoothReady()) {
+            resetPrintingState()
+            return
+        }
         val adapter = BluetoothAdapter.getDefaultAdapter()
         val bonded = adapter?.bondedDevices?.toList().orEmpty()
         if (bonded.isEmpty()) {
-            toast("Tidak ada printer terpasang (pairing dulu)")
+            showNoPairedPrinterDialog()
             resetPrintingState()
             return
         }
@@ -325,13 +357,30 @@ class AdminCashierReceiptFragment : Fragment() {
             .show()
     }
 
-    private fun printReceipt(saleId: String, text: String) {
-        val pm = requireContext().getSystemService(Context.PRINT_SERVICE) as PrintManager
-        pm.print(
-            "Struk-$saleId",
-            CenteredReceiptPrintAdapter(requireContext(), text, desiredContentWidthMm = 72f),
-            null
-        )
+    private fun ensureBluetoothReady(): Boolean {
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+        if (adapter == null) {
+            showBluetoothStatusDialog("Perangkat ini tidak mendukung Bluetooth printer.")
+            return false
+        }
+        if (!adapter.isEnabled) {
+            showBluetoothStatusDialog("Bluetooth tidak nyala. Nyalakan Bluetooth dan pastikan printer sudah dipair sebelum mencetak.")
+            return false
+        }
+        return true
+    }
+
+    private fun showBluetoothStatusDialog(message: String) {
+        if (!isAdded) return
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle("Bluetooth belum siap")
+            .setMessage(message)
+            .setPositiveButton("Mengerti", null)
+            .show()
+    }
+
+    private fun showNoPairedPrinterDialog() {
+        showBluetoothStatusDialog("Printer belum dipair. Pair-kan printer Bluetooth di pengaturan perangkat, lalu coba lagi.")
     }
 
     private fun toast(message: String) {
