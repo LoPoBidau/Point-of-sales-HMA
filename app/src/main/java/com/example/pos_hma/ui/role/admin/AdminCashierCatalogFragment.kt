@@ -22,6 +22,7 @@ import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.FragmentAdminCashierCatalogBinding
 import com.example.pos_hma.databinding.ItemProductCatalogGoodsBinding
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -189,7 +190,7 @@ class AdminCashierCatalogFragment : Fragment(), SnapshotDisposable {
             .limit(MAX_PRODUCTS)
             .addSnapshotListener { snap, e ->
                 if (e != null) {
-                    Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show()
+                    Toast.makeText(requireContext(), e.toUserMessage("Gagal memuat katalog."), Toast.LENGTH_LONG).show()
                     binding.swipeRefresh.isRefreshing = false
                     return@addSnapshotListener
                 }

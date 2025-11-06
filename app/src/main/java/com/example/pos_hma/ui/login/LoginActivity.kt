@@ -10,6 +10,7 @@ import com.example.pos_hma.databinding.ActivityLoginBinding
 import com.example.pos_hma.ui.role.admin.AdminCashierMainActivity
 import com.example.pos_hma.ui.role.super_admin.SuperAdminMainActivity
 import com.example.pos_hma.utils.AppFlags
+import com.example.pos_hma.utils.toUserMessage
 import com.example.pos_hma.utils.NetworkUtil
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -71,7 +72,7 @@ class LoginActivity : AppCompatActivity() {
         auth.signInWithEmailAndPassword(email, pass)
             .addOnSuccessListener { routeByRole(it.user, true) }
             .addOnFailureListener { e ->
-                setLoading(false); Toast.makeText(this,"Login gagal: ${e.message}", Toast.LENGTH_SHORT).show()
+                setLoading(false); Toast.makeText(this, e.toUserMessage("Login gagal. Silakan coba lagi."), Toast.LENGTH_SHORT).show()
             }
     }
 
@@ -96,7 +97,7 @@ class LoginActivity : AppCompatActivity() {
                 } else goToDashboard(role)
             }
             .addOnFailureListener { e ->
-                setLoading(false); Toast.makeText(this, "Gagal baca role: ${e.message}", Toast.LENGTH_SHORT).show()
+                setLoading(false); Toast.makeText(this, e.toUserMessage("Gagal mengambil data pengguna."), Toast.LENGTH_SHORT).show()
             }
     }
 

@@ -16,6 +16,7 @@ import com.example.pos_hma.data.StockAdjustRequest
 import com.example.pos_hma.databinding.FragmentSuperAdminAdjustRequestBinding
 import com.example.pos_hma.databinding.ItemAdjustRequestBinding
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -122,7 +123,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                     e is FirebaseFirestoreException &&
                             e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ->
                         "Permission Firestore ditolak. Cek security rules untuk koleksi stock_adjust_requests."
-                    else -> e.message ?: "Gagal memuat."
+                    else -> e.toUserMessage("Gagal memuat data.")
                 }
                 toast(msg); return@addSnapshotListener
             }
@@ -250,7 +251,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                         toast("Disetujui")
                         stockEventVm.emitAdjustmentEvent()
                     }
-                        .addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
+                        .addOnFailureListener { e -> toast(e.toUserMessage("Gagal menyetujui permintaan.")) }
                 } else {
                     // SUB: prefetch ascending until cukup
                     val need = -r.requestedDelta
@@ -268,7 +269,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                                     consume(docs as MutableList<DocumentSnapshot>)
                                 }
                             }
-                            .addOnFailureListener { e -> toast(e.message ?: "Gagal memuat batch") }
+                            .addOnFailureListener { e -> toast(e.toUserMessage("Gagal memuat batch.")) }
                     }
                     fun consume(batches: List<DocumentSnapshot>) {
                         val avail = batches.sumOf { it.getLong("remainingQty") ?: 0L }
@@ -324,7 +325,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                         }.addOnSuccessListener {
                             toast("Disetujui")
                             stockEventVm.emitAdjustmentEvent()
-                        }.addOnFailureListener { e -> toast(e.message ?: "Gagal menyetujui") }
+                        }.addOnFailureListener { e -> toast(e.toUserMessage("Gagal menyetujui permintaan.")) }
                     }
                     fetchEnough()
                 }
@@ -340,7 +341,7 @@ class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
                 db.collection("stock_adjust_requests").document(r.id)
                     .update(mapOf("status" to "REJECTED", "decidedAt" to FieldValue.serverTimestamp()))
                     .addOnSuccessListener { toast("Ditolak") }
-                    .addOnFailureListener { e -> toast(e.message ?: "Gagal menolak") }
+                    .addOnFailureListener { e -> toast(e.toUserMessage("Gagal menolak permintaan.")) }
             }.show()
     }
 

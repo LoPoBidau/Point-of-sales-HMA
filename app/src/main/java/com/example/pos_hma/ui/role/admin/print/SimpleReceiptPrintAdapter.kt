@@ -9,6 +9,7 @@ import android.print.PageRange
 import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintDocumentInfo
+import com.example.pos_hma.utils.toUserMessage
 import java.io.FileOutputStream
 
 class SimpleReceiptPrintAdapter(
@@ -65,11 +66,10 @@ class SimpleReceiptPrintAdapter(
             }
             callback.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
         } catch (e: Exception) {
-            callback.onWriteFailed(e.message)
+            callback.onWriteFailed(e.toUserMessage("Gagal mencetak dokumen."))
         } finally {
             pdfDocument?.close()
             pdfDocument = null
         }
     }
 }
-

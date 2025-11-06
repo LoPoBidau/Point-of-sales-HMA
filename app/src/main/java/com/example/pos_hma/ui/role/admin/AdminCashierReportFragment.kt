@@ -23,6 +23,7 @@ import com.example.pos_hma.databinding.ItemSaleRowBinding
 import com.example.pos_hma.print.DirectEscPosPrinter
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.example.pos_hma.utils.PrintersPref
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.color.MaterialColors
@@ -504,8 +505,8 @@ class AdminCashierReportFragment : Fragment() {
         binding.ivStatus.setImageResource(R.drawable.ic_printer)
         val errorColor = MaterialColors.getColor(binding.ivStatus, com.google.android.material.R.attr.colorError)
         binding.ivStatus.imageTintList = ColorStateList.valueOf(errorColor)
-        val message = error.message?.takeUnless { it.isBlank() } ?: "-"
-        binding.tvStatus.text = getString(R.string.print_status_failed, message)
+        val message = error.toUserMessage("Gagal mencetak laporan.")
+        binding.tvStatus.text = message
         binding.btnRetry.isVisible = true
         binding.btnRetry.setOnClickListener {
             val retryText = pendingReceiptToPrint
@@ -521,7 +522,7 @@ class AdminCashierReportFragment : Fragment() {
             text = getString(R.string.print_status_close)
             setOnClickListener { printingDialog?.dismiss() }
         }
-        toast("Gagal cetak: $message")
+        toast(message)
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)

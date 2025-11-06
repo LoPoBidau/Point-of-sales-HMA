@@ -14,6 +14,7 @@ import android.print.pdf.PrintedPdfDocument
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import com.example.pos_hma.utils.toUserMessage
 import java.io.FileOutputStream
 
 /**
@@ -95,7 +96,7 @@ class CenteredReceiptPrintAdapter(
         runCatching {
             doc.writeTo(FileOutputStream(destination.fileDescriptor))
             callback.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
-        }.onFailure { callback.onWriteFailed(it.message) }
+        }.onFailure { callback.onWriteFailed(it.toUserMessage("Gagal mencetak dokumen.")) }
             .also { doc.close(); pdf = null }
     }
 }

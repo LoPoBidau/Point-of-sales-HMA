@@ -43,6 +43,7 @@ import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.example.pos_hma.print.DirectEscPosPrinter
 import com.example.pos_hma.utils.PrintersPref
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.utils.toUserMessage
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -335,8 +336,8 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
         val errorColor =
             MaterialColors.getColor(binding.ivStatus, com.google.android.material.R.attr.colorError)
         binding.ivStatus.imageTintList = ColorStateList.valueOf(errorColor)
-        val message = error.message?.takeUnless { it.isBlank() } ?: "-"
-        binding.tvStatus.text = getString(R.string.print_status_failed, message)
+        val message = error.toUserMessage("Gagal mencetak laporan.")
+        binding.tvStatus.text = message
         binding.btnRetry.isVisible = true
         binding.btnRetry.setOnClickListener {
             val retryText = pendingReceiptToPrint
@@ -362,7 +363,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
             text = getString(R.string.print_status_close)
             setOnClickListener { printingDialog?.dismiss() }
         }
-        toast("Gagal cetak: $message")
+        toast(message)
     }
 
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN])
@@ -1250,7 +1251,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
                         if (e != null) {
                             applyRows(
                                 emptyList(),
-                                e.message ?: "Gagal memuat data pembelian",
+                                e.toUserMessage("Gagal memuat data pembelian."),
                                 contextLabel = contextLabel
                             )
                             setSearchControlsEnabled(true)
@@ -1289,7 +1290,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
                             if (e != null) {
                                 applyRows(
                                     emptyList(),
-                                    e.message ?: "Gagal mencari invoice",
+                                    e.toUserMessage("Gagal mencari invoice."),
                                     contextLabel = "Hasil pencarian invoice $label"
                                 )
                                 setSearchControlsEnabled(true)
@@ -1311,7 +1312,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
                 } catch (ex: Exception) {
                     applyRows(
                         emptyList(),
-                        ex.message ?: "Gagal mencari invoice",
+                        ex.toUserMessage("Gagal mencari invoice."),
                         contextLabel = "Hasil pencarian invoice $label"
                     )
                     null
@@ -1612,7 +1613,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
                     }
                     .addOnFailureListener { e ->
                         if (!isStockRequestValid(holder, token)) return@addOnFailureListener
-                        val msg = e.localizedMessage ?: "Gagal memuat pergerakan stok."
+                        val msg = e.toUserMessage("Gagal memuat pergerakan stok.")
                         holder.b.tvDesc.text = msg
                         holder.b.showSummaryButton("Ringkasan Persediaan", baseSummaryRows) { rows ->
                             this@SuperAdminReportFragment.showSummaryDialog("Ringkasan Persediaan", rows)
@@ -1681,7 +1682,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
                     .addOnFailureListener { e ->
                         if (!isStockRequestValid(holder, token)) return@addOnFailureListener
                         pendingError = (pendingError?.plus("\n") ?: "") +
-                                (e.localizedMessage ?: "Gagal memuat antrian invoice.")
+                                e.toUserMessage("Gagal memuat antrian invoice.")
                         complete()
                     }
 
@@ -1726,7 +1727,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
                     .addOnFailureListener { e ->
                         if (!isStockRequestValid(holder, token)) return@addOnFailureListener
                         pendingError = (pendingError?.plus("\n") ?: "") +
-                                (e.localizedMessage ?: "Gagal memuat stok tertahan.")
+                                e.toUserMessage("Gagal memuat stok tertahan.")
                         complete()
                     }
             }
@@ -1774,7 +1775,7 @@ class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
                 }
                 .addOnFailureListener { e ->
                     if (!isStockRequestValid(holder, token)) return@addOnFailureListener
-                    holder.b.tvDesc.text = e.localizedMessage ?: "Gagal memuat ringkasan stok."
+                    holder.b.tvDesc.text = e.toUserMessage("Gagal memuat ringkasan stok.")
                     holder.b.hideSummaryButton()
                     startDetailLoads()
                     applySections()

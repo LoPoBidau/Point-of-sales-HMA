@@ -29,6 +29,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
+import com.example.pos_hma.utils.toUserMessage
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -123,7 +124,7 @@ class SuperAdminReturnRequestFragment : Fragment() {
             if (!isAdded) return@addSnapshotListener
             b.progress.isVisible = false
             if (error != null) {
-                toast(error.localizedMessage ?: "Gagal memuat permintaan retur")
+                toast(error.toUserMessage("Gagal memuat permintaan retur."))
                 return@addSnapshotListener
             }
             rows.clear()
@@ -375,7 +376,7 @@ class SuperAdminReturnRequestFragment : Fragment() {
             toast("Retur disetujui")
         }.addOnFailureListener { e ->
             if (!isAdded) return@addOnFailureListener
-            toast(e.localizedMessage ?: "Gagal menyetujui retur")
+            toast(e.toUserMessage("Gagal menyetujui retur."))
         }.addOnCompleteListener {
             if (!isAdded) return@addOnCompleteListener
             processing -= row.id
@@ -425,7 +426,7 @@ class SuperAdminReturnRequestFragment : Fragment() {
                     runWithRefs(productRefs)
                 }
                 .addOnFailureListener { e ->
-                    toast(e.localizedMessage ?: "Gagal memuat referensi produk")
+                    toast(e.toUserMessage("Gagal memuat referensi produk."))
                     processing -= row.id
                     showProcessing(false)
                     notifyRowChanged(row.id)
@@ -485,7 +486,7 @@ class SuperAdminReturnRequestFragment : Fragment() {
             toast("Retur ditolak")
         }.addOnFailureListener { e ->
             if (!isAdded) return@addOnFailureListener
-            toast(e.localizedMessage ?: "Gagal menolak retur")
+            toast(e.toUserMessage("Gagal menolak retur."))
         }.addOnCompleteListener {
             if (!isAdded) return@addOnCompleteListener
             processing -= row.id

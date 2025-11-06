@@ -32,6 +32,7 @@ import com.example.pos_hma.databinding.*
 import com.example.pos_hma.utils.StockNotificationHelper
 import com.example.pos_hma.utils.AppFlags
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.color.MaterialColors
@@ -189,7 +190,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 cameraTempUri = it
             }
         } catch (e: Exception) {
-            toast("Tidak dapat mengakses kamera: ${e.localizedMessage ?: "Unknown error"}")
+            toast(e.toUserMessage("Tidak dapat mengakses kamera."))
             null
         }
     }
@@ -304,7 +305,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 adapter.updateKnownCategoryIds(activeCategoryIds)
                 applyFilter()
             }
-            .addOnFailureListener { e -> context?.let { Toast.makeText(it, "Kategori gagal dimuat: ${e.message}", Toast.LENGTH_LONG).show() } }
+            .addOnFailureListener { e -> context?.let { Toast.makeText(it, e.toUserMessage("Kategori gagal dimuat. Coba lagi nanti."), Toast.LENGTH_LONG).show() } }
     }
 
     private fun listenCategoriesForUi() {
@@ -367,7 +368,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED &&
                         (AppFlags.isLoggingOut || FirebaseAuth.getInstance().currentUser == null)) return@addSnapshotListener
                     binding.swipeRefresh.isRefreshing = false
-                    toast("Gagal: ${e.message}"); return@addSnapshotListener
+                    toast(e.toUserMessage("Gagal memuat produk.")); return@addSnapshotListener
                 }
                 val items = snap!!.documents.map { it.toProduct() }
                 allProducts.clear(); allProducts.addAll(items)
@@ -383,7 +384,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 allProducts.addAll(qs.documents.map { it.toProduct() })
                 applyFilter()
             }
-            .addOnFailureListener { e -> toast("Refresh gagal: ${e.message}") }
+            .addOnFailureListener { e -> toast(e.toUserMessage("Refresh produk gagal.")) }
             .addOnCompleteListener { _binding?.swipeRefresh?.isRefreshing = false }
     }
 
@@ -566,7 +567,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 catFormList.addAll(categories)
                 onDone?.invoke()
             }
-            .addOnFailureListener { toast("Kategori gagal dimuat: ${it.message}") }
+            .addOnFailureListener { toast(it.toUserMessage("Kategori gagal dimuat.")) }
     }
 
     // ====== Dialog pemilih kategori (dipakai di FORM) ======
@@ -921,12 +922,12 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                                     pRef.update("images", listOf(url))
                                         .addOnSuccessListener { toast("Produk + foto tersimpan"); finalize() }
                                         .addOnFailureListener { err ->
-                                            toast("Produk tersimpan, foto gagal: ${err.message}")
+                                            toast(err.toUserMessage("Produk tersimpan, namun foto gagal diunggah."))
                                             finalize()
                                         }
                                 },
                                 onFail = { err ->
-                                    toast("Produk tersimpan, foto gagal: ${err.message}")
+                                    toast(err.toUserMessage("Produk tersimpan, namun foto gagal diunggah."))
                                     finalize()
                                 }
                             )
@@ -937,7 +938,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         setSavingState(false, btn)
                         if (e is IllegalStateException && e.message == "EXISTS") {
                             form.tilSKU.error = "SKU sudah ada"
-                        } else toast("Gagal simpan: ${e.message}")
+                        } else toast(e.toUserMessage("Gagal menyimpan produk."))
                     }
                 } else {
                     setSavingState(true, btn)
@@ -979,12 +980,12 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                                     }
                                     .addOnFailureListener { err ->
                                         setSavingState(false, btn)
-                                        toast("Update gagal: ${err.message}")
+                                        toast(err.toUserMessage("Perbarui produk gagal."))
                                     }
                             },
                             onFail = { err ->
                                 setSavingState(false, btn)
-                                toast("Upload foto gagal: ${err.message}")
+                                toast(err.toUserMessage("Unggah foto gagal."))
                             }
                         )
                     } else {
@@ -1000,7 +1001,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                             }
                             .addOnFailureListener { err ->
                                 setSavingState(false, btn)
-                                toast("Update gagal: ${err.message}")
+                                toast(err.toUserMessage("Perbarui produk gagal."))
                             }
                     }
                 }
@@ -1047,7 +1048,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     onAdded(Category(id = slug, name = name, slug = slug, isActive = true))
                     dlg.dismiss()
                 }.addOnFailureListener { e ->
-                    cat.tilCatName.error = e.message ?: "Gagal menyimpan"
+                    cat.tilCatName.error = e.toUserMessage("Gagal menyimpan")
                 }
             }
         }
@@ -1077,7 +1078,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 db.collection("products").document(sku)
                     .update(mapOf("lastCost" to unitCost, "salePrice" to newSale, "updatedAt" to now))
                     .addOnSuccessListener { toast("Harga diperbarui") }
-                    .addOnFailureListener { e -> toast("Gagal: ${e.message}") }
+                    .addOnFailureListener { e -> toast(e.toUserMessage("Gagal memuat data.")) }
                 dlg.dismiss()
             }
         }
@@ -1130,7 +1131,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     load(false)
                     toast("Index belum dibuat. Data disortir lokal.")
                 } else {
-                    toast("Gagal memuat riwayat: ${e.message}")
+                    toast(e.toUserMessage("Gagal memuat riwayat stok."))
                 }
             }.addOnCompleteListener { h.progress.visibility = View.GONE }
         }
@@ -1245,7 +1246,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         val pendingReg = db.collection("pending_stock_receipts")
             .whereEqualTo("sku", skuKey)
             .addSnapshotListener { snap, e ->
-                if (e != null) { if (isAdded) toast("Gagal memuat antrian: ${e.message}"); return@addSnapshotListener }
+                if (e != null) { if (isAdded) toast(e.toUserMessage("Gagal memuat antrian.")); return@addSnapshotListener }
                 rows.clear()
                 snap?.documents?.forEach { doc ->
                     val qtyVal = doc.getLong("qty") ?: return@forEach
@@ -1348,7 +1349,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
         val skuKey = p.sku.ifBlank { p.id }
         val productReg = db.collection("products").document(skuKey)
             .addSnapshotListener { doc, e ->
-                if (e != null) { if (isAdded) toast("Gagal memuat info stok: ${e.message}"); return@addSnapshotListener }
+                if (e != null) { if (isAdded) toast(e.toUserMessage("Gagal memuat info stok.")); return@addSnapshotListener }
                 if (doc != null && doc.exists()) {
                     val stagedQty = doc.getLong("stagedOldQty") ?: 0L
                     val parts = mutableListOf<String>()
@@ -1363,7 +1364,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .whereEqualTo("sku", skuKey)
             .whereEqualTo("state", BatchState.HOLD.name)
             .addSnapshotListener { snap, e ->
-                if (e != null) { if (isAdded) toast("Gagal memuat stok tertahan: ${e.message}"); return@addSnapshotListener }
+                if (e != null) { if (isAdded) toast(e.toUserMessage("Gagal memuat stok tertahan.")); return@addSnapshotListener }
                 rows.clear()
                 snap?.documents?.forEach { doc ->
                     val qtyVal = doc.getLong("remainingQty") ?: doc.getLong("receivedQty") ?: return@forEach
@@ -1506,7 +1507,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                             toast("Permintaan dikirim ke Owner")
                             dlg.dismiss()
                         }
-                        .addOnFailureListener { e -> toast("Gagal kirim permintaan: ${e.message}") }
+                        .addOnFailureListener { e -> toast(e.toUserMessage("Gagal mengirim permintaan.")) }
                     return@setOnClickListener
                 }
 
@@ -1585,10 +1586,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                                 toast("Stok ditambah")
                                 dlg.dismiss()
                             }.addOnFailureListener { e ->
-                                toast("Gagal ubah stok: ${e.message}")
+                                toast(e.toUserMessage("Gagal mengubah stok."))
                             }
                         },
-                        onFailure = { e -> toast("Gagal muat batch: ${e.message}") }
+                        onFailure = { e -> toast(e.toUserMessage("Gagal memuat batch.")) }
                     )
                 } else {
                     loadBatchRefsAscending(sku,
@@ -1636,10 +1637,10 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                                 toast("Stok dikurangi")
                                 dlg.dismiss()
                             }.addOnFailureListener { e ->
-                                toast("Gagal mengurangi stok: ${e.message}")
+                                toast(e.toUserMessage("Gagal mengurangi stok."))
                             }
                         },
-                        onFailure = { e -> toast("Gagal muat batch: ${e.message}") }
+                        onFailure = { e -> toast(e.toUserMessage("Gagal memuat batch.")) }
                     )
                 }
             }
@@ -2007,7 +2008,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                     animateStockReceiveSuccess(anchor, R.id.superAdminInventoryFragment)
                 } ?: animateStockReceiveSuccess(anchor, R.id.superAdminInventoryFragment)
             }.addOnFailureListener { e ->
-                toast("Gagal menambah stok: ${e.message}")
+                toast(e.toUserMessage("Gagal menambah stok."))
             }
         }
 
@@ -2252,7 +2253,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                         result.invoiceNo
                     )
                 }
-            }.addOnFailureListener { e -> toast("Gagal terima stok: ${e.message}") }
+            }.addOnFailureListener { e -> toast(e.toUserMessage("Gagal mencatat penerimaan stok.")) }
         }
 
         if (shouldDelayStock) {
@@ -2344,7 +2345,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
                 if (onFail != null) {
                     onFail(e)
                 } else {
-                    toast("Upload foto gagal: ${e.message}")
+                    toast(e.toUserMessage("Unggah foto gagal."))
                 }
             }
     }
@@ -2365,7 +2366,7 @@ class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
             .setPositiveButton("Hapus") { _, _ ->
                 db.collection("products").document(p.sku.ifBlank { p.id }).delete()
                     .addOnSuccessListener { toast("Dihapus") }
-                    .addOnFailureListener { toast("Gagal: ${it.message}") }
+                    .addOnFailureListener { toast(it.toUserMessage("Gagal memuat data.")) }
             }.show()
     }
 

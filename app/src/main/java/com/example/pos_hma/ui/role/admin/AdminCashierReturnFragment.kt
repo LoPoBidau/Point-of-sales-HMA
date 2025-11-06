@@ -16,6 +16,7 @@ import com.example.pos_hma.data.toSaleLineItems
 import com.example.pos_hma.databinding.FragmentAdminCashierReturnBinding
 import com.example.pos_hma.databinding.ItemReturnRequestRowBinding
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -82,7 +83,7 @@ class AdminCashierReturnFragment : Fragment(), SnapshotDisposable {
                 if (!isAdded) return@addSnapshotListener
                 binding.progress.isVisible = false
                 if (error != null) {
-                    toast(error.localizedMessage ?: "Gagal memuat data retur")
+                    toast(error.toUserMessage("Gagal memuat data retur."))
                     return@addSnapshotListener
                 }
                 requests.clear()
@@ -132,7 +133,7 @@ class AdminCashierReturnFragment : Fragment(), SnapshotDisposable {
             }
             .addOnFailureListener { e ->
                 if (!isAdded) return@addOnFailureListener
-                toast(e.localizedMessage ?: "Gagal memuat transaksi")
+                toast(e.toUserMessage("Gagal memuat transaksi."))
             }
             .addOnCompleteListener {
                 if (!isAdded) return@addOnCompleteListener
@@ -255,7 +256,7 @@ class AdminCashierReturnFragment : Fragment(), SnapshotDisposable {
             toast("Permintaan retur dikirim")
         }.addOnFailureListener { e ->
             if (!isAdded) return@addOnFailureListener
-            toast(e.localizedMessage ?: "Gagal mengirim permintaan retur")
+            toast(e.toUserMessage("Gagal mengirim permintaan retur."))
         }.addOnCompleteListener {
             if (!isAdded) return@addOnCompleteListener
             binding.progress.isVisible = false

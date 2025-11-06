@@ -17,6 +17,7 @@ import com.example.pos_hma.data.Supplier
 import com.example.pos_hma.databinding.DialogSupplierFormBinding
 import com.example.pos_hma.databinding.FragmentSuperAdminSupplierBinding
 import com.example.pos_hma.databinding.ItemSupplierBinding
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.firestore.FieldValue
@@ -59,7 +60,7 @@ class SuperAdminSupplierFragment : Fragment() {
     private fun listen() {
         reg?.remove(); reg = null
         reg = db.collection("suppliers").orderBy("nameLowercase").limit(MAX_SUPPLIERS).addSnapshotListener { snap, e ->
-            if (e != null) { toast(e.message ?: "Gagal memuat"); return@addSnapshotListener }
+            if (e != null) { toast(e.toUserMessage("Gagal memuat supplier.")); return@addSnapshotListener }
             val list = snap!!.documents.map { d ->
                 Supplier(
                     id = d.id,
@@ -127,7 +128,7 @@ class SuperAdminSupplierFragment : Fragment() {
                         "createdAt" to now,
                         "updatedAt" to now
                     )).addOnSuccessListener { dlg.dismiss() }
-                        .addOnFailureListener { e -> toast(e.message ?: "Gagal simpan") }
+                        .addOnFailureListener { e -> toast(e.toUserMessage("Gagal menyimpan supplier.")) }
                 } else {
                     db.collection("suppliers").document(s.id).update(mapOf(
                         "name" to name,
@@ -138,7 +139,7 @@ class SuperAdminSupplierFragment : Fragment() {
                         "paymentTermDays" to termValue,
                         "updatedAt" to now
                     )).addOnSuccessListener { dlg.dismiss() }
-                        .addOnFailureListener { e -> toast(e.message ?: "Gagal simpan") }
+                        .addOnFailureListener { e -> toast(e.toUserMessage("Gagal menyimpan supplier.")) }
                 }
 
             }
@@ -167,7 +168,7 @@ class SuperAdminSupplierFragment : Fragment() {
                 db.collection("suppliers").document(s.id)
                     .delete()
                     .addOnSuccessListener { toast("Supplier dihapus") }
-                    .addOnFailureListener { e -> toast(e.message ?: "Gagal menghapus supplier") }
+                    .addOnFailureListener { e -> toast(e.toUserMessage("Gagal menghapus supplier.")) }
             }
             .show()
     }

@@ -35,6 +35,7 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.example.pos_hma.data.SaleStatus
 import com.google.firebase.firestore.Query
+import com.example.pos_hma.utils.toUserMessage
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -157,7 +158,7 @@ class SuperAdminDashboardFragment : Fragment() {
             .addSnapshotListener { snap, error ->
                 if (token != loadToken) return@addSnapshotListener
                 if (error != null) {
-                    val message = error.localizedMessage ?: "Gagal memuat data penjualan."
+                    val message = error.toUserMessage("Gagal memuat data penjualan.")
                     showSummaryStatus(message)
                     showTrendStatus(message)
                     showCompositionStatus(message)

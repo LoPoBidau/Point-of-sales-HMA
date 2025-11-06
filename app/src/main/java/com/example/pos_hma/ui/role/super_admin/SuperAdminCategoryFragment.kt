@@ -18,6 +18,7 @@ import com.example.pos_hma.data.Category
 import com.example.pos_hma.databinding.DialogCategoryFormBinding
 import com.example.pos_hma.databinding.FragmentSuperAdminCategoryBinding
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -75,7 +76,7 @@ class SuperAdminCategoryFragment : Fragment(), SnapshotDisposable {
         catsReg = db.collection("categories")
             .limit(MAX_CATEGORIES)
             .addSnapshotListener { snap, e ->
-                if (e != null) { toast("Gagal memuat: ${e.message}"); return@addSnapshotListener }
+                if (e != null) { toast(e.toUserMessage("Gagal memuat kategori.")); return@addSnapshotListener }
                 val list = snap?.documents?.map { d ->
                     d.toObject(Category::class.java)?.copy(id = d.id) ?: Category(
                         id = d.id,
@@ -144,9 +145,9 @@ class SuperAdminCategoryFragment : Fragment(), SnapshotDisposable {
                                 // ambil data baru segera
                                 refreshOnce()
                             }
-                            .addOnFailureListener { toast("Gagal simpan: ${it.message}") }
+                            .addOnFailureListener { toast(it.toUserMessage("Gagal menyimpan kategori.")) }
                     }
-                }.addOnFailureListener { toast("Gagal cek: ${it.message}") }
+                }.addOnFailureListener { toast(it.toUserMessage("Gagal memeriksa kategori.")) }
             }
         }
         dlg.show()
@@ -160,7 +161,7 @@ class SuperAdminCategoryFragment : Fragment(), SnapshotDisposable {
             .setPositiveButton("Hapus") { _, _ ->
                 db.collection("categories").document(c.id).delete()
                     .addOnSuccessListener { toast("Dihapus") }
-                    .addOnFailureListener { toast("Gagal: ${it.message}") }
+                    .addOnFailureListener { toast(it.toUserMessage("Gagal menghapus kategori.")) }
             }.show()
     }
 
@@ -199,7 +200,7 @@ class SuperAdminCategoryFragment : Fragment(), SnapshotDisposable {
                 adapter.submitList(list)
                 binding.tvCount.text = "Total: ${list.size}"
             }
-            .addOnFailureListener { toast("Gagal memuat: ${it.message}") }
+            .addOnFailureListener { toast(it.toUserMessage("Gagal memuat kategori.")) }
             .addOnCompleteListener { binding.swipeRefresh.isRefreshing = false }
     }
 }

@@ -17,6 +17,7 @@ import com.example.pos_hma.data.Product
 import com.example.pos_hma.databinding.FragmentAdminCashierGoodsBinding
 import com.example.pos_hma.databinding.ItemProductSuperAdminBinding
 import com.example.pos_hma.utils.SnapshotDisposable
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -78,7 +79,7 @@ class AdminCashierGoodsFragment : Fragment(), SnapshotDisposable {
             .orderBy("nameLowercase")
             .limit(MAX_PRODUCTS)
             .addSnapshotListener { snap, e ->
-                if (e != null) { Toast.makeText(requireContext(), e.message, Toast.LENGTH_LONG).show(); return@addSnapshotListener }
+                if (e != null) { Toast.makeText(requireContext(), e.toUserMessage("Gagal memuat data barang."), Toast.LENGTH_LONG).show(); return@addSnapshotListener }
                 val items = snap!!.documents.mapNotNull { d ->
                     d.toObject(Product::class.java)?.copy(id = d.id)
                 }.filter { !it.isService }
@@ -257,7 +258,7 @@ class AdminCashierGoodsFragment : Fragment(), SnapshotDisposable {
                     }
                     .addOnFailureListener { e ->
                         btn.isEnabled = true
-                        Toast.makeText(ctx, e.message ?: "Gagal mengirim", Toast.LENGTH_LONG).show()
+                        Toast.makeText(ctx, e.toUserMessage("Gagal mengirim permintaan."), Toast.LENGTH_LONG).show()
                     }
             }
         }

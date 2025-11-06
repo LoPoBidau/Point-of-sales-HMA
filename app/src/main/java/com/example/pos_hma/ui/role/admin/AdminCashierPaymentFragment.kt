@@ -15,6 +15,7 @@ import com.example.pos_hma.data.BatchState
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter
 import com.example.pos_hma.ui.role.admin.print.ReceiptFormatter.Payload
 import com.example.pos_hma.utils.StockNotificationHelper
+import com.example.pos_hma.utils.toUserMessage
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -429,7 +430,7 @@ class AdminCashierPaymentFragment : Fragment() {
                 onSaleCommitted(noNota, docId, paid, due)
             }.addOnFailureListener { e ->
                 showProcessingOverlay(false)
-                Toast.makeText(requireContext(), e.message ?: "Gagal memproses pembayaran", Toast.LENGTH_LONG).show()
+                Toast.makeText(requireContext(), e.toUserMessage("Gagal memproses pembayaran."), Toast.LENGTH_LONG).show()
             }
         }
 
@@ -450,7 +451,7 @@ class AdminCashierPaymentFragment : Fragment() {
                 }
                 .addOnFailureListener { e ->
                     showProcessingOverlay(false)
-                    Toast.makeText(requireContext(), e.message ?: "Gagal memuat batch stok", Toast.LENGTH_LONG).show()
+                    Toast.makeText(requireContext(), e.toUserMessage("Gagal memuat batch stok."), Toast.LENGTH_LONG).show()
                 }
         }
     }
