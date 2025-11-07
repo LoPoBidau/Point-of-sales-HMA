@@ -1,5 +1,14 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted:
+// Modul ini dipakai super admin untuk mengelompokkan produk ke dalam kategori. Ia menampilkan daftar kategori aktif, menyediakan pencatatan
+// kategori baru, serta memungkinkan edit/hapus sehingga struktur toko tetap teratur dan mudah dipilih saat input produk.
+
+// Class Note:
+// - Membuka listener realtime ke koleksi `categories` lalu memetakan ke adapter berbasis DiffUtil agar perubahan langsung tampak.
+// - Dialog Material digunakan untuk tambah/edit kategori; slug otomatis dihitung dan dicek supaya unik.
+// - Saat kategori dinonaktifkan, fragment mengingatkan user, dan juga memicu refresh agar produk yang memakai kategori tersebut bisa diperbarui.
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -26,6 +35,8 @@ import com.google.firebase.firestore.ListenerRegistration
 
 private const val MAX_CATEGORIES = 200L
 
+// Class Note (Deklarasi):
+// Mengendalikan RecyclerView kategori, listener Firestore, dan dialog form sehingga semua operasi CRUD kategori terpusat dalam satu fragment.
 class SuperAdminCategoryFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentSuperAdminCategoryBinding? = null

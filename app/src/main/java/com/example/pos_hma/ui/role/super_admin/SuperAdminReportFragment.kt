@@ -1,5 +1,12 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted: Fragment laporan super admin (penjualan, pembelian, stok) lengkap dengan filter, detail, dan fitur cetak Bluetooth.
+
+// Class Note:
+// - Menggunakan ViewPager2 + TabLayout untuk tiga tipe laporan (penjualan, pembelian, stok) dengan query Firestore berbeda dan filter tanggal.
+// - Modal detail menampilkan rincian transaksi (items, harga, batch) serta memberi opsi cetak Bluetooth dengan dialog status yang aman dari double click.
+// - Workflow cetak menangani izin Bluetooth, memilih printer yang pernah dipair, serta menyediakan fallback “Tutup” ketika gagal.
+
 import android.os.Bundle
 import android.os.Build
 import android.view.LayoutInflater
@@ -54,6 +61,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
 
+// Class Note (Deklarasi):
+// Mengelola pager laporan, seluruh query Firestore terkait, dan workflow cetak Bluetooth; inilah pusat analitik super admin.
 class SuperAdminReportFragment : Fragment(), SnapshotDisposable {
 
     companion object {

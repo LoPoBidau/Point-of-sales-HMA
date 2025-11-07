@@ -1,5 +1,12 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted: Fragment daftar notifikasi operasional untuk super admin agar mengetahui event penting (adjustment, permintaan, dll).
+
+// Class Note:
+// - Berlangganan pada koleksi `notifications` yang diarahkan ke role super admin, termasuk badge jumlah belum dibaca.
+// - Adapter menampilkan ikon, judul, dan pesan; klik item akan membuka modul tujuan melalui nav component/deep link.
+// - Ketika user melakukan swipe atau klik “tandai dibaca”, fragment memperbarui flag `read` pada dokumen Firestore secara asinkron.
+
 import android.graphics.Color
 import android.os.Bundle
 import com.example.pos_hma.ui.role.super_admin.SuperAdminRequestsFragment.Companion.TAB_RETURNS
@@ -28,6 +35,8 @@ import java.util.Locale
 
 private const val MAX_NOTIFICATIONS = 200L
 
+// Class Note (Deklarasi):
+// Fragment ini mengelola RecyclerView notifikasi, mengatur status read/unread, dan menavigasi ke layar tujuan ketika item ditekan.
 class SuperAdminNotificationFragment : Fragment() {
     private var _b: FragmentSuperAdminNotificationBinding? = null
     private val b get() = _b!!

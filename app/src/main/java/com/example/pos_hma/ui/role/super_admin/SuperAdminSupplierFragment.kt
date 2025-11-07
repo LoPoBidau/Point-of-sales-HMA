@@ -1,5 +1,12 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted: Fragment manajemen supplier untuk super admin; daftar, tambah/edit, dan hapus pemasok lengkap dengan term pembayaran.
+
+// Class Note:
+// - Listener realtime ke koleksi `suppliers` menjaga daftar pemasok selalu sinkron beserta status aktif/nonaktif.
+// - Form Material mem-validasi nama, kontak, alamat, term pembayaran; slug/nama lower-case disimpan untuk pencarian.
+// - Fitur hapus menampilkan konfirmasi dan menghapus dokumen supplier sembari memberi umpan balik toast yang ramah pengguna.
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -26,6 +33,8 @@ import com.google.firebase.firestore.ListenerRegistration
 
 private const val MAX_SUPPLIERS = 200L
 
+// Class Note (Deklarasi):
+// Fragment ini menghubungkan daftar supplier dengan Firestore, memegang adapter, form dialog, dan konfirmasi hapus sehingga semua manajemen pemasok tersentral.
 class SuperAdminSupplierFragment : Fragment() {
 
     private var _b: FragmentSuperAdminSupplierBinding? = null

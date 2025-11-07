@@ -1,5 +1,14 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted:
+// Dashboard adalah beranda super admin. Halaman ini merangkum KPI penjualan, barang favorit, indikator stok, dan pintasan menuju
+// modul penting lainnya sehingga pemilik toko bisa langsung melihat kesehatan bisnis saat membuka aplikasi.
+
+// Class Note:
+// - Mengambil data agregat (penjualan mingguan, top product, dsb) dari Firestore, kemudian memplot menggunakan MPAndroidChart (Bar/Line/Pie).
+// - Menyediakan kartu aksi seperti “Laporan” atau “Permintaan” dengan status badge sehingga user tahu modul mana yang memerlukan perhatian.
+// - Mengatur ulang tampilan ketika pengguna mengganti rentang tanggal atau menarik refresh, menjaga responsif dengan coroutines/snapshot listener.
+
 import android.content.Intent
 import android.graphics.Typeface
 import android.os.Bundle
@@ -43,6 +52,8 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
 
+// Class Note (Deklarasi):
+// Bertugas mengikat layout dashboard, menjalankan query agregasi, lalu merender berbagai komponen (chart, kartu KPI, shortcut) agar super admin mendapat ringkasan bisnis.
 class SuperAdminDashboardFragment : Fragment() {
 
     private var _binding: FragmentSuperAdminDashboardBinding? = null

@@ -1,5 +1,12 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted: Modul CRUD master produk super admin (grid, filter, form create/edit, stok dan batch) sekaligus integrasi upload foto & stok.
+
+// Class Note:
+// - Menarik data dari `products` (dengan limit + filter) kemudian menampilkan grid adaptif lengkap dengan badge stok, kategori, dll.
+// - Form produk meng-handle seluruh validasi harga/stok serta upload foto ke Firebase Storage, kemudian menyimpan URL ke dokumen.
+// - Menyediakan banyak aksi turunan: terima stok, penyesuaian FIFO, pending queue, riwayat stok, bahkan mengirim notifikasi stok rendah.
+
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.net.Uri
@@ -118,6 +125,8 @@ private fun DocumentSnapshot.toProduct(): Product {
 private enum class PendingQueueType { SCHEDULED, STAGED }
 private enum class StockFilter { ALL, IN_STOCK, OUT_OF_STOCK }
 
+// Class Note (Deklarasi):
+// Fragment ini menggabungkan seluruh logic master produk: query Firestore, grid adapter, dialog form, serta tombol aksi stok/pending sehingga super admin dapat mengelola produk dari satu layar.
 class SuperAdminProductFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentSuperAdminProductBinding? = null

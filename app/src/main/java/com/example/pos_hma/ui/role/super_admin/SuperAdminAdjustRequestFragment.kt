@@ -1,5 +1,15 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted:
+// Menangani seluruh siklus penyesuaian stok yang diajukan kasir/admin. Fragment ini menampilkan daftar permintaan, menyediakan detail, lalu
+// mengizinkan super admin untuk menyetujui atau menolak. Ketika disetujui, stok langsung diperbarui (menambah/mengurangi, membuat batch FIFO,
+// serta mencatat inventory movement) sehingga audit stok tetap rapi dan realtime.
+
+// Class Note:
+// - Menggunakan listener Firestore ke koleksi `stock_adjust_requests` dengan limit agar UI tetap responsif.
+// - Adapter menyediakan tombol Approve/Reject, masing-masing akan menjalankan transaksi Firestore melalui beginTransactionApprove()/reject().
+// - Fungsi approve secara otomatis membuat batch baru bila stok bertambah, atau menghabiskan batch existing jika stok berkurang, lalu memicu StockEventViewModel agar layar lain ikut refresh.
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -27,6 +37,8 @@ import com.google.firebase.firestore.DocumentSnapshot
 
 private const val MAX_ADJUST_REQUESTS = 200L
 
+// Class Note (Deklarasi):
+// Fragment ini menghubungkan UI daftar permintaan dengan Firestore, menyediakan aksi persetujuan/penolakan dan memicu notifikasi stok setelah setiap keputusan.
 class SuperAdminAdjustRequestFragment : Fragment(), SnapshotDisposable {
 
     private var _binding: FragmentSuperAdminAdjustRequestBinding? = null

@@ -1,5 +1,7 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted: Activity utama super admin yang mengatur navigasi bottom tabs serta lifecycle global role super admin.
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -47,6 +49,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.*
 import de.hdodenhof.circleimageview.CircleImageView
 
+// Class Note:
+// - Menjadi host NavController untuk seluruh tab super admin (Dashboard, Inventori, Produk, dll) dan menyiapkan bottom navigation + toolbar.
+// - Mengatur izin penting seperti notification/Bluetooth printer serta menangani logout jika token kadaluarsa.
+// - Mengelola back press supaya pengguna tidak keluar tanpa disengaja dan menjaga state fragment via AppBarConfiguration.
+// Class Note (Deklarasi):
+// Merangkum semua tanggung jawab Activity super admin, mulai dari nav graph, permission, sampai monitoring notifikasi/pending request.
 class SuperAdminMainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySuperAdminMainBinding

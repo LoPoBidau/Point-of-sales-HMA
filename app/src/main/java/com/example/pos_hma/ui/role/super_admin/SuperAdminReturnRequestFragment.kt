@@ -1,5 +1,12 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted: Fragment untuk memproses permintaan retur pelanggan oleh super admin, termasuk pemeriksaan batch dan status retur.
+
+// Class Note:
+// - Listener Firestore mengambil dokumen retur dengan status pending lalu memetakan ke adapter (termasuk nilai dan alasan).
+// - Saat membuka detail, fragment menghitung kebutuhan batch FIFO untuk mengembalikan stok, menampilkan rincian item, serta tombol aksi.
+// - Approve/Reject menjalankan transaksi Firestore yang memperbarui stok, batch, dan status retur, kemudian memicu refresh event.
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -36,6 +43,8 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.max
 
+// Class Note (Deklarasi):
+// Fragment ini mengikat daftar permintaan retur dengan aksi approve/reject, lengkap dengan dialog detail dan logika FIFO untuk mengembalikan stok.
 class SuperAdminReturnRequestFragment : Fragment() {
 
     private var _binding: FragmentSuperAdminReturnBinding? = null

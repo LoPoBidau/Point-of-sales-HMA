@@ -1,5 +1,12 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted: Container fragment untuk layar permintaan (retur, penyesuaian, dll) sehingga super admin bisa memantau antrian tugas.
+
+// Class Note:
+// - Membungkus TabLayout + ViewPager untuk dua tab utama: penyesuaian stok dan retur.
+// - Mendaftarkan mediator untuk memperbarui judul tab serta badge jumlah pending jika tersedia.
+// - Memudahkan navigasi karena fragment spesifik cukup disediakan via adapter tanpa perlu activity terpisah.
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,6 +16,8 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.example.pos_hma.databinding.FragmentSuperAdminRequestsBinding
 import com.google.android.material.tabs.TabLayoutMediator
 
+// Class Note (Deklarasi):
+// Container pager untuk tab permintaan; hanya menginisialisasi ViewPager2, adapter, dan TabLayoutMediator berdasarkan tab awal.
 class SuperAdminRequestsFragment : Fragment() {
 
     companion object {

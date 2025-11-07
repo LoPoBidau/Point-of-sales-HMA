@@ -1,5 +1,14 @@
 package com.example.pos_hma.ui.role.super_admin
 
+// Noted:
+// Layar Inventori memberikan gambaran stok terkini (jumlah unit, nilai, dan batch FIFO) sehingga super admin dapat memantau kesehatan gudang
+// tanpa harus membuka tiap produk satu per satu.
+
+// Class Note:
+// - Mengambil data dari koleksi stok/batch, kemudian menghitung ringkasan seperti total nilai stok dan daftar batch mendekati kadaluarsa.
+// - Menampilkan hasil ke recycler view dengan format kartu ringkas agar mudah dipindai.
+// - Bekerja beriringan dengan modul penyesuaian/penerimaan stok sehingga angka selalu up to date.
+
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -9,6 +18,8 @@ import androidx.viewpager2.adapter.FragmentStateAdapter
 import com.example.pos_hma.databinding.FragmentSuperAdminInventoryBinding
 import com.google.android.material.tabs.TabLayoutMediator
 
+// Class Note (Deklarasi):
+// Fragment ini menggunakan ViewPager2 untuk memperlihatkan sub-modul inventori (barang, kategori, supplier) dalam satu layar tab.
 class SuperAdminInventoryFragment : Fragment() {
 
     private var _b: FragmentSuperAdminInventoryBinding? = null
